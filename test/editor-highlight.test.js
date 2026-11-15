@@ -360,11 +360,46 @@ test('SSJS ends at the closing script tag even inside an open string or comment'
     );
 });
 
-test('leaves personalisation strings and plain text alone', () => {
+test('colours personalisation strings and leaves plain text alone', () => {
     const context = page();
     const editor = addEditor(context, 'Hello %%firstname%%, set 100% var');
     runExtension(context.window);
-    assert.deepEqual(styled(editor), []);
+    assert.deepEqual(styled(editor), ['%%firstname%%:sfmc-personalization']);
+});
+
+test('the end of a personalisation string never opens AMPscript', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        [
+            '<a href="x?e=%%emailaddr%%=1&k=%%_subscriberkey%%">go</a>',
+            '<td>%%First Name%%[x] set @a</td>',
+            '%%=v(@a)=%%%%=v(@b)=%% %%[ set @c = 1 ]%%',
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(
+        styled(editor).filter((token) => token.includes(':sfmc-')),
+        [
+            '%%emailaddr%%:sfmc-personalization',
+            '%%_subscriberkey%%:sfmc-personalization',
+            '%%First Name%%:sfmc-personalization',
+            '%%=:sfmc-delimiter',
+            'v:sfmc-function',
+            '@a:sfmc-variable',
+            // two expressions back to back: the helper shows the touching delimiters as one
+            '=%%%%=:sfmc-delimiter',
+            'v:sfmc-function',
+            '@b:sfmc-variable',
+            '=%%:sfmc-delimiter',
+            '%%[:sfmc-delimiter',
+            'set:sfmc-keyword',
+            '@c:sfmc-variable',
+            '=:sfmc-operator',
+            '1:sfmc-number',
+            ']%%:sfmc-delimiter',
+        ],
+    );
 });
 
 test('does not change the content, the mode name or the clean state', () => {

@@ -22,6 +22,7 @@
     const SSJS_PLATFORM_FUNCTIONS = new Set(DATA.ssjsPlatformFunctions);
     const SCRIPT_REGIONS = new Set(['script', 'ssjs']);
     const CLOSING = { block: ']%%', inline: '=%%' };
+    const PERSONALIZATION = /^%%[^%]+%%/;
     const SCRIPT_OPEN = /^<script\b[^>]*>/i;
     const SCRIPT_CLOSE = /^<\/script/i;
     const SCRIPT_CLOSE_AHEAD = /<\/script/i;
@@ -180,6 +181,11 @@
         if (hasConsumed(stream, '%%=')) {
             state.region = 'inline';
             return 'sfmc-delimiter';
+        }
+        if (hasConsumed(stream, PERSONALIZATION)) {
+            // Marketing Cloud replaces %%name%% before it looks for AMPscript, so the closing %%
+            // can never open a block or expression, as in href="?e=%%emailaddr%%=1"
+            return 'sfmc-personalization';
         }
         if (hasConsumed(stream, SCRIPT_OPEN)) {
             // the tag itself keeps its HTML colours; only its content is ours

@@ -9,6 +9,7 @@
 .CodeMirror .cm-sfmc-function {
     color: #795e26;
 }
+.CodeMirror .cm-sfmc-personalization,
 .CodeMirror .cm-sfmc-variable {
     color: #001080;
 }

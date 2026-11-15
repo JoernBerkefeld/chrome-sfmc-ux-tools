@@ -3,7 +3,8 @@
  */
 import { extractScriptBodies, getScriptRegions } from 'sfmc-language-lsp';
 
-const BASE_MODE = 'ampScriptHtmlMixed';
+export { isInMode, report } from './editors.js';
+
 export const AMPSCRIPT = 'ampscript';
 export const SSJS = 'ssjs';
 export const JAVASCRIPT = 'javascript';
@@ -15,35 +16,6 @@ const AMPSCRIPT_DELIMITERS = [
     ['%%[', ']%%'],
     ['%%=', '=%%'],
 ];
-const state = { hasReported: false };
-
-/**
- * Notes the first failure in the console and stays silent afterwards.
- *
- * @param {unknown} ex what was thrown
- */
-export function report(ex) {
-    if (state.hasReported) {
-        return;
-    }
-    state.hasReported = true;
-    // eslint-disable-next-line no-console -- the only trace of a failure that is otherwise swallowed
-    console.debug('SFMC UX Tools: a language feature failed', ex);
-}
-
-/**
- * Tells whether an editor currently uses Marketing Cloud's AMPscript mode.
- *
- * @param {object} cm CodeMirror instance
- * @returns {boolean} true for the AMPscript mode, also through a MIME type or another alias
- */
-export function isInMode(cm) {
-    try {
-        return cm.constructor.resolveMode(cm.getOption('mode')).name === BASE_MODE;
-    } catch {
-        return false;
-    }
-}
 
 /**
  * Tells which language a place in the document belongs to, the way the language server of the

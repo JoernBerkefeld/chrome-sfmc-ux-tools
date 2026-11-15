@@ -154,7 +154,7 @@ export default [
     },
     {
         // sources of the language bundle; esbuild turns them into a classic script
-        files: ['src/editor-language.js', 'src/editor-language/**/*.js'],
+        files: ['src/editor-language.js', 'src/editor-format.js', 'src/editor-language/**/*.js'],
 
         languageOptions: {
             sourceType: 'module',

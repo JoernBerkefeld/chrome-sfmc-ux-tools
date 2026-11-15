@@ -19,6 +19,7 @@ const htmlModeSources = [
 const dataScript = read('../dist/extension/language-data.js');
 const highlightScript = read('../dist/extension/editor-highlight.js');
 const completionsScript = read('../dist/extension/editor-language.js');
+const formatScript = read('../dist/extension/editor-format.js');
 const BASE_MODE = 'ampScriptHtmlMixed';
 const POPUP = '.CodeMirror-hints';
 
@@ -77,6 +78,7 @@ function runExtension(window) {
     window.eval(dataScript);
     window.eval(highlightScript);
     window.eval(completionsScript);
+    window.eval(formatScript);
 }
 
 /**
@@ -653,6 +655,85 @@ test('resting the mouse on an underline says what is wrong, before the documenta
     assert.equal(other.querySelector('pre'), null, 'a problem alone is shown too');
 });
 
+const NOTICE = '.sfmc-notice';
+const formatPause = () => new Promise((resolve) => setTimeout(resolve, 1000));
+
+/**
+ * Presses Shift-Alt-F the way CodeMirror would: through the key map the extension registered.
+ *
+ * @param {object} editor CodeMirror instance
+ * @returns {unknown} what the key binding returned
+ */
+function pressFormat(editor) {
+    const keyMap = editor.state.keyMaps.find((map) => 'Shift-Alt-F' in map);
+    assert.ok(keyMap, 'Shift-Alt-F is bound');
+    return keyMap['Shift-Alt-F'](editor);
+}
+
+test('Shift-Alt-F formats AMPscript, SSJS, HTML and CSS in one step that can be undone', async () => {
+    const context = page();
+    const messy =
+        '<p>%%=Lookup("a","b","c",@d)=%%</p>\n%%[ set @a=1 if @a==1 then set @b = 2 endif ]%%\n' +
+        '<style>a{color:red}</style>\n<script runat="server">\nvar a=Platform.Function.Lookup("a","b","c",1);if(a){Write(a)}\n</script>';
+    const editor = addEditor(context, messy);
+    editor.setCursor({ line: 0, ch: 2 });
+    runExtension(context.window);
+    assert.equal(pressFormat(editor), undefined);
+    assert.equal(editor.getValue(), messy, 'formatting takes a moment');
+    await formatPause();
+    assert.equal(
+        editor.getValue(),
+        [
+            "<p>%%= Lookup('a', 'b', 'c', @d) =%%</p>",
+            '%%[',
+            '    set @a = 1',
+            '    if @a == 1 then',
+            '        set @b = 2',
+            '    endif',
+            ']%%',
+            '<style>',
+            '    a {',
+            '        color: red;',
+            '    }',
+            '</style>',
+            '<script runat="server">',
+            "    var a = Platform.Function.Lookup('a', 'b', 'c', 1);",
+            '    if (a) {',
+            '        Write(a);',
+            '    }',
+            '</script>',
+        ].join('\n'),
+    );
+    assert.deepEqual({ ...editor.getCursor() }.line, 0);
+    assert.equal(editor.getCursor().ch, 2, 'the cursor stays in front of what changed');
+    editor.undo();
+    assert.equal(editor.getValue(), messy);
+    assert.equal(context.window.document.querySelector(NOTICE), null);
+});
+
+test('formatting leaves read-only editors, later edits and broken content alone', async () => {
+    const context = page();
+    const locked = addEditor(context, '%%[ set @a=1 ]%%');
+    locked.setOption('readOnly', true);
+    const edited = addEditor(context, '%%[ set @a=1 ]%%');
+    // Prettier and the plugin put up with any content; an editor that hands out something else
+    // than text stands in for a failure
+    const broken = addEditor(context, '%%[ set @a=1 ]%%');
+    const getValue = broken.getValue.bind(broken);
+    broken.getValue = () => 5;
+    runExtension(context.window);
+    assert.equal(pressFormat(locked), context.CodeMirror.Pass);
+    pressFormat(edited);
+    edited.replaceRange('<p>x</p>', { line: 0, ch: 0 });
+    pressFormat(broken);
+    await formatPause();
+    assert.equal(locked.getValue(), '%%[ set @a=1 ]%%');
+    assert.equal(edited.getValue(), '<p>x</p>%%[ set @a=1 ]%%', 'what was typed meanwhile stays');
+    assert.equal(getValue(), '%%[ set @a=1 ]%%');
+    const notice = context.window.document.querySelector(NOTICE);
+    assert.match(notice.textContent, /^Not formatted: /);
+});
+
 test('sets up editors that are opened later, each one only once', async () => {
     const context = page();
     runExtension(context.window);
@@ -726,6 +807,7 @@ test('the built extension is complete and its manifest references only existing 
         ...Object.values(manifest.icons),
     ];
     assert.ok(files.includes('editor-language.js'));
+    assert.ok(files.includes('editor-format.js'));
     for (const file of files) {
         assert.ok(
             existsSync(new URL(`../dist/extension/${file}`, import.meta.url)),
@@ -743,6 +825,9 @@ test('the language bundle is one classic script without eval or new Function', (
     assert.deepEqual(findDynamicCode(completionsScript), []);
     assert.doesNotMatch(completionsScript, /^\s*(?:import|export)\s/m);
     assert.match(completionsScript, /includes sfmc-language-lsp \d+\.\d+\.\d+/);
+    assert.deepEqual(findDynamicCode(formatScript), []);
+    assert.doesNotMatch(formatScript, /^\s*(?:import|export)\s/m);
+    assert.match(formatScript, /includes prettier-plugin-sfmc \d+\.\d+\.\d+/);
     // the check itself recognises both, and is not fooled by text that merely mentions them
     assert.deepEqual(findDynamicCode('var a = "eval(1) new Function"; // eval(2)'), []);
     assert.equal(findDynamicCode('eval("1"); var f = new Function("return 1");').length, 2);

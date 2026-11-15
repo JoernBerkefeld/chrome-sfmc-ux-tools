@@ -24,7 +24,7 @@
         {
             "matches": ["https://*.marketingcloudapps.com/*"],
             "include_globs": ["https://content-builder.*"],
-            "js": ["language-data.js", "editor-highlight.js", "editor-language.js"],
+            "js": ["language-data.js", "editor-highlight.js", "editor-language.js", "editor-format.js"],
             "css": ["editor-highlight.css"],
             "world": "MAIN",
             "all_frames": true,

@@ -365,3 +365,9 @@ li.CodeMirror-hint-active {
     opacity: 0.7;
     font-size: 12px;
 }
+
+/* Says why formatting did not happen; goes away by itself. */
+.sfmc-notice {
+    left: auto;
+    border-left: 3px solid var(--sfmc-error);
+}

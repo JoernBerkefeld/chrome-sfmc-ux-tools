@@ -32,6 +32,13 @@ The extension checks your AMPscript and SSJS while you type and underlines what 
 
 While the cursor is inside the brackets of an AMPscript function or of one of Marketing Cloud's SSJS functions, a box above the line lists the function's parameters, marks the one you are typing and says what it is for. It follows the cursor, also in calls that are already written, and **Esc** closes it.
 
+### Formatting
+
+Press **Shift+Alt+F** in the code view to format the whole content: AMPscript, SSJS, HTML, CSS and browser JavaScript, with the rules of the [prettier-plugin-sfmc](https://github.com/JoernBerkefeld/prettier-plugin-sfmc) plugin and the settings the SFMC Language Service extension for VS Code uses (4 spaces, 100 characters per line, single quotes). **Ctrl+Z** undoes it in one step.
+
+- Formatting only changes the text in the editor. Nothing is saved until you save.
+- There are no settings yet, and it always formats the whole content, not a selection.
+
 ### Completions
 
 While you type AMPscript or server-side JavaScript (SSJS) in the code view of Content Builder, the extension suggests what fits. Press **Ctrl+Space** to ask for suggestions at any time.
@@ -97,7 +104,7 @@ npm run build
 ```
 
 - `src/` holds the extension's sources. `npm run build` writes the loadable extension to `dist/extension` and packs that folder as `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store. For **Load unpacked**, always pick `dist/extension`, not `src`.
-- The build bundles `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.4.0) into one classic script with esbuild, and fails if that bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
+- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.4.0) into one classic script with esbuild, and fails if that bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
 - `npm test` runs the build first, because the completion tests run the built bundle.
 - `npm run icons` redraws the icons in `src/icons/`.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.

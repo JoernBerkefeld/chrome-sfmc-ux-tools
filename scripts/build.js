@@ -2,7 +2,8 @@
  * Builds the extension:
  * - dist/extension is the complete extension, ready for "Load unpacked": a copy of ./src in which
  *   editor-language.js is replaced by a bundle of that file, the files in src/editor-language
- *   and sfmc-language-lsp;
+ *   and sfmc-language-lsp, and editor-format.js by a bundle of that file, Prettier and
+ *   prettier-plugin-sfmc;
  * - dist/chrome-sfmc-ux-tools-v<version>.zip is the same folder packed for the Chrome Web Store.
  * manifest.json ends up at the root of the archive; entry paths always use forward slashes.
  */
@@ -18,7 +19,14 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const sourceDirectory = path.join(root, 'src');
 const outputDirectory = path.join(root, 'dist');
 const extensionDirectory = path.join(outputDirectory, 'extension');
-const LANGUAGE = 'editor-language.js';
+// scripts that are bundled with a package: what they are for, and the package they are built around
+const BUNDLES = {
+    'editor-language.js': {
+        title: 'language features of the code editor',
+        library: 'sfmc-language-lsp',
+    },
+    'editor-format.js': { title: 'formatting in the code editor', library: 'prettier-plugin-sfmc' },
+};
 // sources that only exist inside the bundle
 const BUNDLED_DIRECTORY = 'editor-language/';
 
@@ -44,18 +52,35 @@ function collect(directory, prefix = '') {
     return files;
 }
 
+// prettier-plugin-sfmc asks for Prettier's Node build; the browser build has all it needs.
+// esbuild's "alias" would also rewrite "prettier/plugins/...", so only the bare name is redirected.
+const browserPrettier = {
+    name: 'browser-prettier',
+    setup: (setup) => {
+        setup.onResolve({ filter: /^prettier$/ }, (parameters) =>
+            setup.resolve('prettier/standalone', {
+                kind: parameters.kind,
+                resolveDir: parameters.resolveDir,
+            }),
+        );
+    },
+};
+
 /**
- * Bundles the language script and the language service into one classic script.
+ * Bundles a script and the packages it uses into one classic script.
  *
+ * @param {string} file name of the script in ./src
  * @returns {Promise.<Uint8Array>} the bundle
  */
-async function bundleLanguage() {
-    // the package does not export its package.json, so it is read by path
+async function bundle(file) {
+    const { title, library } = BUNDLES[file];
+    // the packages do not export their package.json, so it is read by path
     const { version } = JSON.parse(
-        readFileSync(path.join(root, 'node_modules/sfmc-language-lsp/package.json'), 'utf8'),
+        readFileSync(path.join(root, 'node_modules', library, 'package.json'), 'utf8'),
     );
     const result = await build({
-        entryPoints: [path.join(sourceDirectory, LANGUAGE)],
+        entryPoints: [path.join(sourceDirectory, file)],
+        plugins: [browserPrettier],
         bundle: true,
         format: 'iife',
         platform: 'browser',
@@ -64,14 +89,14 @@ async function bundleLanguage() {
         write: false,
         logLevel: 'warning',
         banner: {
-            js: `/* SFMC UX Tools - language features of the code editor. Built from src/${LANGUAGE}; includes sfmc-language-lsp ${version}. */`,
+            js: `/* SFMC UX Tools - ${title}. Built from src/${file}; includes ${library} ${version}. */`,
         },
     });
     const [{ contents, text }] = result.outputFiles;
     // Chrome refuses both in the scripts of an extension
     const dynamicCode = findDynamicCode(text);
     if (dynamicCode.length) {
-        throw new Error(`the bundle of ${LANGUAGE} contains ${dynamicCode.join(', ')}`);
+        throw new Error(`the bundle of ${file} contains ${dynamicCode.join(', ')}`);
     }
     return contents;
 }
@@ -82,7 +107,9 @@ const files = Object.fromEntries(
         ([archivePath]) => !archivePath.startsWith(BUNDLED_DIRECTORY),
     ),
 );
-files[LANGUAGE] = await bundleLanguage();
+for (const file of Object.keys(BUNDLES)) {
+    files[file] = await bundle(file);
+}
 
 for (const [archivePath, contents] of Object.entries(files)) {
     const target = path.join(extensionDirectory, archivePath);

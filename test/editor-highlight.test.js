@@ -610,8 +610,13 @@ test('the manifest runs the editor scripts in the page world, language data firs
     );
     assert.equal(entry.world, 'MAIN');
     assert.equal(entry.all_frames, true);
-    // the completions come last and in a file of their own, so that they can never break the colouring
-    assert.deepEqual(entry.js, ['language-data.js', 'editor-highlight.js', 'editor-language.js']);
+    // the language features come last and in files of their own, so that they can never break the colouring
+    assert.deepEqual(entry.js, [
+        'language-data.js',
+        'editor-highlight.js',
+        'editor-language.js',
+        'editor-format.js',
+    ]);
     assert.deepEqual(entry.css, ['editor-highlight.css']);
     assert.deepEqual(entry.matches, ['https://*.marketingcloudapps.com/*']);
     // a match pattern cannot express "content-builder.<stack>", so a glob narrows it to that app

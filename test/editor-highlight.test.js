@@ -311,13 +311,7 @@ test('adds Marketing Cloud colours to server-side JavaScript and keeps the JavaS
         ],
     );
     const tokens = styled(editor);
-    for (const expected of [
-        'var:keyword',
-        'de:def',
-        '"core":string',
-        '5:number',
-        'Load:property',
-    ]) {
+    for (const expected of ['var:keyword', 'de:def', 'core":string', '5:number', 'Load:property']) {
         assert.ok(tokens.includes(expected), expected + ' missing in ' + tokens.join(' | '));
     }
 });
@@ -340,6 +334,124 @@ test('does not colour SSJS names in strings, comments, member positions or plain
         styled(editor).filter((token) => token.includes(':sfmc-')),
         [],
     );
+});
+
+test('SSJS object names are only coloured in front of a dot', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        [
+            '<script runat="server">',
+            'var o = { Email: { ID: 1 }, List: [], Send: 1 }; var Folder = o ? Email : List;',
+            'function Write() {} DataExtension .Init("x");',
+            '</script>',
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(
+        styled(editor).filter((token) => token.includes(':sfmc-')),
+        ['DataExtension:sfmc-ssjs-object'],
+    );
+});
+
+test('SSJS regular expressions do not hide the code after them', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        [
+            '<script runat="server">',
+            String.raw`var a = s.replace(/\/*$/, ""); Platform.Load("core", "1");`,
+            'if (/["\']/.test(a)) { Variable.SetValue("@a", a / 2 / 1); }',
+            'var b = a / 2; /* Platform */ HTTP.Get(a);',
+            '</script>',
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(
+        styled(editor).filter((token) => token.includes(':sfmc-')),
+        ['Platform:sfmc-ssjs-object', 'Variable:sfmc-ssjs-object', 'HTTP:sfmc-ssjs-object'],
+    );
+});
+
+test('personalisation strings are coloured inside SSJS, also within strings', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        [
+            '<script runat="server">',
+            'var e = "%%emailaddr%%"; var f = \'Hi %%First Name%%, 50%% off\'; Platform.Load("core", "1");',
+            'var g = "open %%jobid%%',
+            'Variable.SetValue("@a", %%memberid%%);',
+            '</script>',
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(
+        styled(editor).filter((token) => token.includes(':sfmc-')),
+        [
+            '%%emailaddr%%:sfmc-personalization',
+            '%%First Name%%:sfmc-personalization',
+            'Platform:sfmc-ssjs-object',
+            '%%jobid%%:sfmc-personalization',
+            'Variable:sfmc-ssjs-object',
+            '%%memberid%%:sfmc-personalization',
+        ],
+    );
+});
+
+test('doubled percent signs in text are not a personalisation string', () => {
+    const context = page();
+    const editor = addEditor(context, '50%% off and then %%=v(@a)=%% and 20%% more');
+    runExtension(context.window);
+    assert.deepEqual(styled(editor), [
+        '%%=:sfmc-delimiter',
+        'v:sfmc-function',
+        '@a:sfmc-variable',
+        '=%%:sfmc-delimiter',
+    ]);
+});
+
+test('percent signs next to quotes or tags are not a personalisation string', () => {
+    const context = page();
+    const editor = addEditor(context, '<td width="100%%">%%=v(@a)=%%</td>');
+    runExtension(context.window);
+    assert.deepEqual(
+        styled(editor).filter((token) => token.includes(':sfmc-')),
+        ['%%=:sfmc-delimiter', 'v:sfmc-function', '@a:sfmc-variable', '=%%:sfmc-delimiter'],
+    );
+});
+
+test('an inline expression that is never closed ends at a script tag or a blank-looking line', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        [
+            '50%%= off',
+            '<script runat="server">Platform.Load("core", "1");</script>',
+            '20%%= off',
+            ' '.repeat(3),
+            'set @b <b>',
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    const tokens = styled(editor);
+    assert.ok(tokens.includes('Platform:sfmc-ssjs-object'), tokens.join(' | '));
+    assert.ok(tokens.includes('script:tag'));
+    assert.deepEqual(tokens.slice(-4), [
+        '%%=:sfmc-delimiter',
+        '<:tag bracket',
+        'b:tag',
+        '>:tag bracket',
+    ]);
+});
+
+test('refreshes open editors that use the mode through a MIME type', () => {
+    const context = page();
+    context.CodeMirror.defineMIME('text/x-ampscript-html', BASE_MODE);
+    const editor = addEditor(context, '%%[ set @a = 1 ]%%', 'text/x-ampscript-html');
+    runExtension(context.window);
+    assert.ok(styled(editor).includes('set:sfmc-keyword'));
+    assert.equal(editor.getOption('mode'), 'text/x-ampscript-html');
 });
 
 test('SSJS ends at the closing script tag even inside an open string or comment', () => {
@@ -374,6 +486,7 @@ test('the end of a personalisation string never opens AMPscript', () => {
         [
             '<a href="x?e=%%emailaddr%%=1&k=%%_subscriberkey%%">go</a>',
             '<td>%%First Name%%[x] set @a</td>',
+            '<i>%%MSG(0).NOUN(2)%%=1 %%microsite_base_url[default]1[/default]%%[x]</i>',
             '%%=v(@a)=%%%%=v(@b)=%% %%[ set @c = 1 ]%%',
         ].join('\n'),
     );
@@ -384,6 +497,8 @@ test('the end of a personalisation string never opens AMPscript', () => {
             '%%emailaddr%%:sfmc-personalization',
             '%%_subscriberkey%%:sfmc-personalization',
             '%%First Name%%:sfmc-personalization',
+            '%%MSG(0).NOUN(2)%%:sfmc-personalization',
+            '%%microsite_base_url[default]1[/default]%%:sfmc-personalization',
             '%%=:sfmc-delimiter',
             'v:sfmc-function',
             '@a:sfmc-variable',

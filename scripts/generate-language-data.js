@@ -8,7 +8,6 @@ import { AMPSCRIPT_KEYWORDS } from 'ampscript-data';
 import {
     CONSTRUCTIBLE_BUILTINS,
     CORE_LIBRARY_OBJECTS,
-    HTTP_METHODS,
     PLATFORM_FUNCTIONS,
     SSJS_GLOBALS,
 } from 'ssjs-data';
@@ -37,8 +36,6 @@ function collect() {
                         (global) => isNamespace(global) && !global.notDefinedAtRuntime,
                     ),
                     ...CORE_LIBRARY_OBJECTS,
-                    // ssjs-data lists the methods of the global HTTP object, but not the object itself
-                    ...(HTTP_METHODS.length > 0 ? [{ name: 'HTTP' }] : []),
                 ].map((entry) => firstSegment(entry.name)),
             ),
         ].filter((name) => isOwnName(name)),

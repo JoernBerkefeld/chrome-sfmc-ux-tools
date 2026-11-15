@@ -22,7 +22,12 @@
     const SSJS_PLATFORM_FUNCTIONS = new Set(DATA.ssjsPlatformFunctions);
     const SCRIPT_REGIONS = new Set(['script', 'ssjs']);
     const CLOSING = { block: ']%%', inline: '=%%' };
-    const PERSONALIZATION = /^%%[^%]+%%/;
+    // %%name%%, the same pattern as in ampscript-parser: the name starts with a word character and
+    // may contain spaces and . : ; ~ ( ) [ ] / - (as in %%MSG(0).NOUN(2)%%), so neither
+    // "50%% off, 20%% more" nor width="100%%">%%=...=%% is mistaken for one
+    const PERSONALIZATION = /^%%\w(?:[\w .:;~()[\]/-]*[\w)\]])?%%/;
+    const REGEX_LITERAL = /^\/(?:[^/\\[]|\\.|\[(?:[^\]\\]|\\.)*\])+\/[a-z]*/;
+    const BEFORE_REGEX = /(?:^|[(,=:[!&|?{};]|\breturn)$/;
     const SCRIPT_OPEN = /^<script\b[^>]*>/i;
     const SCRIPT_CLOSE = /^<\/script/i;
     const SCRIPT_CLOSE_AHEAD = /<\/script/i;
@@ -120,18 +125,60 @@
     }
 
     /**
+     * Reads on inside a JavaScript string: up to its closing quote, a personalization string,
+     * the closing script tag or the end of the line. A string never continues on the next line.
+     *
+     * @param {object} stream CodeMirror string stream, positioned inside the string
+     * @param {object} state tokenizer state; state.quote is the open quote
+     * @returns {string | null} token style
+     */
+    function ssjsStringToken(stream, state) {
+        if (hasConsumed(stream, PERSONALIZATION)) {
+            // Marketing Cloud fills these in before the script runs, also inside strings
+            return 'sfmc-personalization';
+        }
+        const rest = stream.string.slice(stream.pos);
+        const limit = rest.search(SCRIPT_CLOSE_AHEAD);
+        const text = limit === -1 ? rest : rest.slice(0, limit);
+        let index = 0;
+        while (index < text.length) {
+            const character = text[index];
+            if (character === '\\') {
+                index += 2;
+            } else if (character === state.quote) {
+                index++;
+                state.quote = null;
+                break;
+            } else if (character === '%' && index > 0 && PERSONALIZATION.test(text.slice(index))) {
+                break;
+            } else {
+                index++;
+            }
+        }
+        stream.pos += Math.max(1, Math.min(index, text.length));
+        return null;
+    }
+
+    /**
      * Reads the next token of server-side JavaScript. The base mode colours the JavaScript itself;
-     * this only adds styles for Marketing Cloud's own objects and functions and returns null otherwise.
-     * Strings and comments are skipped so that names inside them stay untouched.
+     * this only adds styles for Marketing Cloud's own objects and functions and for personalization
+     * strings, and returns null otherwise. Strings, comments and regular expressions are skipped so
+     * that names inside them stay untouched.
      *
      * @param {object} stream CodeMirror string stream
      * @param {object} state tokenizer state
      * @returns {string | null} token style, or null for text that keeps its JavaScript colouring
      */
     function ssjsToken(stream, state) {
+        if (stream.sol()) {
+            state.quote = null;
+        }
         if (state.isInComment || hasConsumed(stream, '/*')) {
             state.isInComment = !hasReachedEnd(stream, state, '*/');
             return null;
+        }
+        if (state.quote) {
+            return ssjsStringToken(stream, state);
         }
         if (stream.eatSpace()) {
             return null;
@@ -141,28 +188,46 @@
             return null;
         }
         if (hasConsumed(stream, /^["']/)) {
-            // JavaScript strings end with the line at the latest
-            const pattern = stream.current() === '"' ? /^(?:[^"\\]|\\.)*"?/ : /^(?:[^'\\]|\\.)*'?/;
-            const rest = stream.string.slice(stream.pos);
-            const limit = rest.search(SCRIPT_CLOSE_AHEAD);
-            stream.pos += pattern.exec(limit === -1 ? rest : rest.slice(0, limit))[0].length;
+            state.quote = stream.current();
+            return null;
+        }
+        if (hasConsumed(stream, PERSONALIZATION)) {
+            return 'sfmc-personalization';
+        }
+        const before = stream.string.slice(0, stream.start);
+        if (BEFORE_REGEX.test(before.trimEnd()) && hasConsumed(stream, REGEX_LITERAL)) {
             return null;
         }
         if (!hasConsumed(stream, /^[a-z_$][\w$]*/i)) {
             stream.next();
             return null;
         }
-        const name = stream.current();
-        const before = stream.string.slice(0, stream.start);
+        return ssjsNameStyle(stream.current(), before, stream.string.slice(stream.pos));
+    }
+
+    /**
+     * Decides the style of a JavaScript identifier from the text around it.
+     *
+     * @param {string} name the identifier
+     * @param {string} before text of the line in front of it
+     * @param {string} after text of the line behind it
+     * @returns {string | null} token style, or null for names that are not Marketing Cloud's
+     */
+    function ssjsNameStyle(name, before, after) {
+        if (/\bfunction\s+$/.test(before)) {
+            // a function of the script's own that happens to share a name
+            return null;
+        }
         if (/\.\s*$/.test(before)) {
             const isPlatformFunction =
                 /\bFunction\s*\.\s*$/.test(before) && SSJS_PLATFORM_FUNCTIONS.has(name);
             return isPlatformFunction ? 'sfmc-ssjs-function' : null;
         }
         if (SSJS_OBJECTS.has(name)) {
-            return 'sfmc-ssjs-object';
+            // only as "Name.member": the same words are common as property and variable names
+            return /^\s*\./.test(after) ? 'sfmc-ssjs-object' : null;
         }
-        const isCall = /^\s*\(/.test(stream.string.slice(stream.pos));
+        const isCall = /^\s*\(/.test(after);
         return isCall && SSJS_GLOBAL_FUNCTIONS.has(name) ? 'sfmc-ssjs-function' : null;
     }
 
@@ -183,8 +248,9 @@
             return 'sfmc-delimiter';
         }
         if (hasConsumed(stream, PERSONALIZATION)) {
-            // Marketing Cloud replaces %%name%% before it looks for AMPscript, so the closing %%
-            // can never open a block or expression, as in href="?e=%%emailaddr%%=1"
+            // Marketing Cloud fills in a known %%name%% before it looks for AMPscript, so the
+            // closing %% never opens a block or expression, as in href="?e=%%emailaddr%%=1".
+            // Whether a name is known depends on the account, so every well-formed one counts.
             return 'sfmc-personalization';
         }
         if (hasConsumed(stream, SCRIPT_OPEN)) {
@@ -203,6 +269,20 @@
     }
 
     /**
+     * Tells whether an inline expression that was never closed should be given up here, so that
+     * it cannot colour the rest of the document: at a script tag or on a line of whitespace only.
+     *
+     * @param {object} stream CodeMirror string stream
+     * @returns {boolean} true if the expression ends without its closing delimiter
+     */
+    function hasInlineEnded(stream) {
+        return (
+            Boolean(stream.match(/^<\/?script\b/i, false)) ||
+            (stream.sol() && stream.string.trim() === '')
+        );
+    }
+
+    /**
      * Reads the next AMPscript token. Inside AMPscript every token gets a style of its own, so
      * that the HTML colouring of the base mode never shows through the code.
      *
@@ -213,6 +293,9 @@
     function ampscriptToken(stream, state) {
         if (SCRIPT_REGIONS.has(state.region) && stream.match(SCRIPT_CLOSE, false)) {
             // like the browser, end the script here even inside a comment or string
+            Object.assign(state, initialState());
+        }
+        if (state.region === 'inline' && hasInlineEnded(stream)) {
             Object.assign(state, initialState());
         }
         if (!state.region) {
@@ -409,7 +492,8 @@
             }
             try {
                 const mode = editor.getOption('mode');
-                if ((mode?.name ?? mode) === BASE_MODE) {
+                // resolveMode also follows MIME types and other aliases of the mode
+                if (CodeMirror.resolveMode(mode).name === BASE_MODE) {
                     editor.setOption('mode', mode);
                 }
             } catch {

@@ -29,6 +29,7 @@ globalThis.sfmcUxToolsLanguageData = {
         'Request',
         'Attribute',
         'HTTPHeader',
+        'HTTP',
         'Platform',
         'Script',
         'DateTime',
@@ -59,7 +60,6 @@ globalThis.sfmcUxToolsLanguageData = {
         'SentEvent',
         'SurveyEvent',
         'UnsubEvent',
-        'HTTP',
     ],
     ssjsGlobalFunctions: [
         'Base64Encode',

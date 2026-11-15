@@ -62,7 +62,12 @@ function update(cm) {
                 let to = toPlace(diagnostic.range.end);
                 // something has to carry the underline
                 if (from.line === to.line && from.ch === to.ch) {
-                    to = { line: to.line, ch: to.ch + 1 };
+                    // the character after the place, or the one before it at the end of a line
+                    if (to.ch < cm.getLine(to.line).length) {
+                        to = { line: to.line, ch: to.ch + 1 };
+                    } else {
+                        from.ch = Math.max(0, from.ch - 1);
+                    }
                 }
                 const severity = SEVERITY_NAMES[diagnostic.severity] ?? SEVERITY_NAMES[1];
                 const mark = cm.markText(from, to, {
@@ -119,5 +124,7 @@ export function registerDiagnostics(cm) {
     cm.on('change', schedule);
     // a change of the mode may make this an editor for something else
     cm.on('optionChange', schedule);
+    // another document in the same editor is other content
+    cm.on('swapDoc', schedule);
     schedule();
 }

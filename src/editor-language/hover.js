@@ -10,6 +10,8 @@ import { createTooltip } from './tooltip.js';
 const SHOW_DELAY = 350;
 // time to move the mouse from the code onto the box
 const HIDE_DELAY = 250;
+// languages of code blocks that are coloured as JavaScript
+const SCRIPT_LANGUAGES = new Set(['typescript', 'javascript', 'js', 'ssjs']);
 
 /**
  * Asks the language service what it knows about a place in the document.
@@ -54,14 +56,75 @@ function characterAt(cm, point) {
 }
 
 /**
+ * Colours code the way the editor does, with the editor's own rules: its mode for AMPscript,
+ * which includes this extension's colouring, and CodeMirror's JavaScript rules for signatures
+ * and SSJS examples.
+ *
+ * @param {object} cm CodeMirror instance
+ * @param {string} code the code
+ * @param {string} language language named by the documentation
+ * @returns {DocumentFragment | null} the code in coloured pieces, or null if there are no rules for the language
+ */
+function colour(cm, code, language) {
+    try {
+        const CodeMirror = cm.constructor;
+        const mode = SCRIPT_LANGUAGES.has(language)
+            ? CodeMirror.getMode(
+                  { indentUnit: 4 },
+                  { name: 'javascript', typescript: language === 'typescript' },
+              )
+            : language === AMPSCRIPT
+              ? cm.getMode()
+              : null;
+        if (!mode?.token || mode.name === 'null') {
+            return null;
+        }
+        const document = cm.getWrapperElement().ownerDocument;
+        const result = document.createDocumentFragment();
+        const state = CodeMirror.startState(mode);
+        for (const [number, line] of code.split('\n').entries()) {
+            if (number) {
+                result.append('\n');
+            }
+            if (!line) {
+                mode.blankLine?.(state);
+            }
+            const stream = new CodeMirror.StringStream(line);
+            while (!stream.eol()) {
+                const style = mode.token(stream, state);
+                const text = stream.current();
+                if (!text) {
+                    // rules that do not move on would never end
+                    return null;
+                }
+                stream.start = stream.pos;
+                if (style) {
+                    const piece = document.createElement('span');
+                    piece.className = style.replaceAll(/\S+/g, 'cm-$&');
+                    piece.textContent = text;
+                    result.append(piece);
+                } else {
+                    result.append(text);
+                }
+            }
+        }
+        return result;
+    } catch (ex) {
+        report(ex);
+        return null;
+    }
+}
+
+/**
  * Builds the content of the box: first what is wrong at the place, then its documentation.
  *
- * @param {Document} document document of the editor
+ * @param {object} cm CodeMirror instance
  * @param {{severity: string, message: string, code: string, address: string}[]} problems errors and warnings at the place
  * @param {string} [markdown] documentation of the language service
  * @returns {DocumentFragment} what to show
  */
-function render(document, problems, markdown) {
+function render(cm, problems, markdown) {
+    const document = cm.getWrapperElement().ownerDocument;
     const result = document.createDocumentFragment();
     for (const { severity, message, code, address } of problems) {
         const element = document.createElement('p');
@@ -81,7 +144,9 @@ function render(document, problems, markdown) {
         result.append(element);
     }
     if (markdown) {
-        result.append(renderMarkdown(document, markdown));
+        result.append(
+            renderMarkdown(document, markdown, (code, language) => colour(cm, code, language)),
+        );
     }
     return result;
 }
@@ -90,6 +155,7 @@ function render(document, problems, markdown) {
  * Sets up hovers for one editor.
  *
  * @param {object} cm CodeMirror instance
+ * @returns {() => void} takes the box away
  */
 export function registerHover(cm) {
     const wrapper = cm.getWrapperElement();
@@ -110,7 +176,7 @@ export function registerHover(cm) {
     };
     const show = (point) => {
         try {
-            const place = isInMode(cm) ? characterAt(cm, point) : null;
+            const place = isInMode(cm) && wrapper.isConnected ? characterAt(cm, point) : null;
             const hover = place && hoverAt(cm, place);
             const markdown = hover?.contents?.value;
             const problems = place ? diagnosticsAt(cm, place) : [];
@@ -125,10 +191,7 @@ export function registerHover(cm) {
                 return;
             }
             shown = key;
-            tooltip.show(
-                render(wrapper.ownerDocument, problems, markdown),
-                cm.charCoords(anchor, 'window'),
-            );
+            tooltip.show(render(cm, problems, markdown), cm.charCoords(anchor, 'window'));
         } catch (ex) {
             report(ex);
         }
@@ -151,4 +214,5 @@ export function registerHover(cm) {
     cm.on('keydown', hide);
     cm.on('scroll', hide);
     cm.on('change', hide);
+    return hide;
 }

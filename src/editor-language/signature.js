@@ -125,6 +125,7 @@ function render(document, signature, active) {
  * Sets up parameter help for one editor.
  *
  * @param {object} cm CodeMirror instance
+ * @returns {() => void} takes the box away
  */
 export function registerSignature(cm) {
     const document = cm.getWrapperElement().ownerDocument;
@@ -138,7 +139,12 @@ export function registerSignature(cm) {
     const update = () => {
         try {
             const help =
-                isInMode(cm) && cm.hasFocus() && !cm.somethingSelected() ? helpAt(cm) : null;
+                isInMode(cm) &&
+                cm.getWrapperElement().isConnected &&
+                cm.hasFocus() &&
+                !cm.somethingSelected()
+                    ? helpAt(cm)
+                    : null;
             if (help) {
                 tooltip.show(
                     render(document, help.signature, help.active),
@@ -166,4 +172,5 @@ export function registerSignature(cm) {
             return editor.constructor.Pass;
         },
     });
+    return hide;
 }

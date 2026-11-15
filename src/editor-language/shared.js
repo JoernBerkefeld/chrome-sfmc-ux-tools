@@ -12,9 +12,12 @@ export const JAVASCRIPT = 'javascript';
 export const DOCUMENT_URI = 'inmemory://editor';
 export const BROWSER_KINDS = ['browser-classic', 'browser-module'];
 // an opening delimiter and what closes it; inside one, AMPscript wins over a browser script around it
+// the last two are those of Marketing Cloud Next, which the language server gives way to as well
 const AMPSCRIPT_DELIMITERS = [
     ['%%[', ']%%'],
     ['%%=', '=%%'],
+    ['{{', '}}'],
+    ['{!$', '}'],
 ];
 
 /**

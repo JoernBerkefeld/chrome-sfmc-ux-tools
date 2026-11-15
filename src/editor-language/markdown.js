@@ -48,9 +48,10 @@ function addInline(parent, text) {
  *
  * @param {Document} document document the elements are for
  * @param {string} markdown the Markdown
+ * @param {(code: string, language: string) => Node | null} [colour] turns the code of a fenced block into coloured elements, or returns null to leave it plain
  * @returns {DocumentFragment} what to show
  */
-export function renderMarkdown(document, markdown) {
+export function renderMarkdown(document, markdown, colour) {
     const result = document.createDocumentFragment();
     const lines = markdown.split(/\r?\n/);
     let paragraph = [];
@@ -75,12 +76,14 @@ export function renderMarkdown(document, markdown) {
         const line = lines[index];
         if (FENCE.test(line)) {
             flush();
+            const language = line.slice(3).trim().toLowerCase();
             const code = [];
             while (++index < lines.length && !FENCE.test(lines[index])) {
                 code.push(lines[index]);
             }
             const element = document.createElement('pre');
-            element.textContent = code.join('\n');
+            const text = code.join('\n');
+            element.append(colour?.(text, language) ?? text);
             result.append(element);
         } else if (!line.trim()) {
             flush();

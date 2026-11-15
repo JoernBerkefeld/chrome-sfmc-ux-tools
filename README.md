@@ -18,7 +18,7 @@ Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. Wi
 
 ### Documentation on hover
 
-Rest the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, and a box shows what it does: its parameters with their types, what it returns, an example and links to the full documentation. You can move the mouse onto the box to scroll it or to follow a link. Nothing is shown inside browser scripts.
+Rest the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, and a box shows what it does: its parameters with their types, what it returns, an example and links to the full documentation. The text is the one the SFMC Language Service extension for VS Code shows, and the code in it has the colours of the editor. You can move the mouse onto the box to scroll it or to follow a link. Nothing is shown inside browser scripts.
 
 ### Errors and warnings
 

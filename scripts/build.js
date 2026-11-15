@@ -84,7 +84,7 @@ async function bundle(file) {
         bundle: true,
         format: 'iife',
         platform: 'browser',
-        target: 'chrome111',
+        target: 'chrome122',
         minify: false,
         write: false,
         logLevel: 'warning',

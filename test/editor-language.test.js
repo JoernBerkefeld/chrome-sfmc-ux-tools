@@ -457,6 +457,12 @@ test('resting the mouse on an AMPscript function shows its documentation', async
     assert.match(link.rel, /noopener/);
     assert.equal(box.querySelector('script'), null);
     assert.doesNotMatch(box.textContent, /\*\*|```/, 'no Markdown marks are left');
+    // the code has the editor's colours: the signature as JavaScript, the example as AMPscript
+    const [signature, example] = box.querySelectorAll('pre');
+    assert.ok(signature.querySelector('span[class^="cm-"]'), signature.textContent);
+    assert.match(example.textContent, /^%%=Lookup\(/);
+    assert.equal(example.querySelector('.cm-sfmc-function').textContent, 'Lookup');
+    assert.equal(example.querySelector('.cm-sfmc-delimiter').textContent, '%%=');
 
     rest(context, editor, '<');
     await hoverPause();
@@ -485,6 +491,20 @@ test('hover: SSJS in server-side scripts, nothing in browser scripts, gone on ty
     assert.equal(document.querySelector(HOVER), null);
     rest(context, editor, 'var b = Platform.Function.Look');
     await hoverPause();
+    assert.equal(document.querySelector(HOVER), null);
+});
+
+test('boxes go away with their editor', async () => {
+    const context = page();
+    const { editor, box } = await withCursor(context, '%%[ set @a = Lookup("de", |"field") ]%%');
+    const { document } = context.window;
+    rest(context, editor, 'set @a = Look');
+    await hoverPause();
+    assert.ok(box());
+    assert.ok(document.querySelector(HOVER));
+    editor.getWrapperElement().remove();
+    await pause();
+    assert.equal(box(), null);
     assert.equal(document.querySelector(HOVER), null);
 });
 

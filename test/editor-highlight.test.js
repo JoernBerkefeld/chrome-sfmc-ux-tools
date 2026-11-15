@@ -621,7 +621,8 @@ test('the manifest runs the editor scripts in the page world, language data firs
     assert.deepEqual(entry.matches, ['https://*.marketingcloudapps.com/*']);
     // a match pattern cannot express "content-builder.<stack>", so a glob narrows it to that app
     assert.deepEqual(entry.include_globs, ['https://content-builder.*']);
-    assert.equal(manifest.minimum_chrome_version, '111');
+    // 111 for scripts in the page world, 122 for the iterator helpers the scripts use
+    assert.equal(manifest.minimum_chrome_version, '122');
 });
 
 test('two copies of the extension in one page do not wrap each other', async () => {

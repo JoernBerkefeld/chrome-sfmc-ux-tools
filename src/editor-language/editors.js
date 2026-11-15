@@ -39,14 +39,24 @@ export function isInMode(cm) {
  * Sets features up for every AMPscript editor of the page, now and whenever one is added.
  *
  * @param {string} name names this set of features; editors that have it are not set up again, also not by a second copy of the script
- * @param {((cm: object) => void)[]} features each one sets a feature up for an editor
+ * @param {((cm: object) => void | (() => void))[]} features each one sets a feature up for an editor; what it returns is called when the editor is found off the page, to take away what the feature shows outside of it
  */
 export function watchEditors(name, features) {
     const marker = Symbol.for(`sfmcUxTools.${name}`);
+    const cleanups = [];
     let isScanPending = false;
 
     const scan = () => {
         isScanPending = false;
+        for (const { wrapper, cleanup } of cleanups) {
+            try {
+                if (!wrapper.isConnected) {
+                    cleanup();
+                }
+            } catch (ex) {
+                report(ex);
+            }
+        }
         for (const { CodeMirror: cm } of document.querySelectorAll(EDITOR_SELECTOR)) {
             try {
                 if (
@@ -65,7 +75,10 @@ export function watchEditors(name, features) {
             for (const feature of features) {
                 // a feature that fails does not keep the others away
                 try {
-                    feature(cm);
+                    const cleanup = feature(cm);
+                    if (cleanup) {
+                        cleanups.push({ wrapper: cm.getWrapperElement(), cleanup });
+                    }
                 } catch (ex) {
                     report(ex);
                 }

@@ -152,89 +152,89 @@ html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-dialog {
 }
 
 /* What CodeMirror recognises in HTML, CSS and JavaScript. */
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-keyword,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-atom,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-meta {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-keyword,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-atom,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-meta {
     color: var(--sfmc-keyword);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-def,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-variable,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-variable-2,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-property {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-def,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-variable,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-variable-2,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-property {
     color: var(--sfmc-variable);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-variable-3,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-type,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-builtin {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-variable-3,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-type,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-builtin {
     color: var(--sfmc-type);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-string,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-link {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-string,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-link {
     color: var(--sfmc-string);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-string-2 {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-string-2 {
     color: var(--sfmc-regexp);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-number {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-number {
     color: var(--sfmc-number);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-comment {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-comment {
     color: var(--sfmc-comment);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-operator,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-bracket {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-operator,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-bracket {
     color: var(--sfmc-operator);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-tag {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-tag {
     color: var(--sfmc-tag);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-tag.cm-bracket {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-tag.cm-bracket {
     color: var(--sfmc-tag-bracket);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-attribute {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-attribute {
     color: var(--sfmc-attribute);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-qualifier {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-qualifier {
     color: var(--sfmc-selector);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-header {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-header {
     color: var(--sfmc-keyword);
 }
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-error,
-html[data-sfmc-ux-tools-theme] .CodeMirror .cm-invalidchar {
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-error,
+html[data-sfmc-ux-tools-theme] :is(.CodeMirror, .sfmc-tooltip) .cm-invalidchar {
     color: var(--sfmc-error);
 }
 
 /* AMPscript and Marketing Cloud's server-side JavaScript. These also apply without the attribute. */
-html .CodeMirror .cm-sfmc-delimiter {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-delimiter {
     color: var(--sfmc-keyword);
     font-weight: bold;
 }
-html .CodeMirror .cm-sfmc-keyword {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-keyword {
     color: var(--sfmc-control);
 }
-html .CodeMirror .cm-sfmc-function,
-html .CodeMirror .cm-sfmc-ssjs-function {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-function,
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-ssjs-function {
     color: var(--sfmc-function);
 }
-html .CodeMirror .cm-sfmc-personalization,
-html .CodeMirror .cm-sfmc-variable {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-personalization,
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-variable {
     color: var(--sfmc-variable);
 }
-html .CodeMirror .cm-sfmc-string {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-string {
     color: var(--sfmc-string);
 }
-html .CodeMirror .cm-sfmc-number {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-number {
     color: var(--sfmc-number);
 }
-html .CodeMirror .cm-sfmc-comment {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-comment {
     color: var(--sfmc-comment);
 }
-html .CodeMirror .cm-sfmc-text,
-html .CodeMirror .cm-sfmc-operator {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-text,
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-operator {
     color: var(--sfmc-operator);
 }
-html .CodeMirror .cm-sfmc-ssjs-object {
+html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-ssjs-object {
     color: var(--sfmc-type);
 }
 

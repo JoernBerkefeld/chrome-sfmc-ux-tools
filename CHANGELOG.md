@@ -15,6 +15,9 @@
 - **Formatting**: the **{ }** button in the editor's toolbar and **Shift+Alt+F** format the whole content of the code editor, AMPscript, SSJS, HTML, CSS and browser JavaScript, with the bundled `prettier-plugin-sfmc` and the settings of the SFMC Language Service extension for VS Code.
 - **Format on save**: an option, off by default. When it is on, the code is formatted before Marketing Cloud saves it.
 - **Save with Ctrl+S / Cmd+S** in the code editor, which does what Marketing Cloud's Save button does.
+- **Quick fixes**: the box of an error or warning offers the fixes the language service knows, as buttons; **Ctrl+.** / **Cmd+.** opens them at the cursor.
+- **Go to definition**: **Ctrl+click** / **Cmd+click** on the name of a function declared in the content's SSJS jumps to its declaration.
+- **Documentation next to the completion popup** for the suggestion that is currently chosen.
 - **JavaScript completions in browser scripts**: inside a `<script>` that runs in the browser, the names used in the content's browser scripts, JavaScript's keywords and the usual globals are suggested. Marketing Cloud's server-side names stay out of browser scripts, and SSJS gets the names of its own scripts and its keywords in the same way.
 
 ## [0.3.0]

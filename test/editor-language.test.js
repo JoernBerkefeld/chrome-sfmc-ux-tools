@@ -963,6 +963,237 @@ test('the format-on-save setting reaches the page, off by default', async () => 
     assert.equal(entry.run_at, 'document_start');
 });
 
+const FIX = '.sfmc-fix';
+
+test('quick fixes: the box of a problem offers them, and a click applies one in a single step', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        '<p>%%=v(@a)=%%</p>\n<script runat="server">\nvar a = [1].map(function (b) { return b; });\n</script>',
+    );
+    runExtension(context.window);
+    await checkPause();
+    const { document } = context.window;
+    rest(context, editor, 'var a = [1].m');
+    await hoverPause();
+    const buttons = [...document.querySelectorAll(`${HOVER} .sfmc-problem ${FIX}`)];
+    assert.ok(buttons.length > 0, 'the polyfill is on offer');
+    assert.match(buttons[0].textContent, /polyfill/i);
+    const before = editor.getValue();
+    buttons[0].click();
+    const after = editor.getValue();
+    assert.equal(document.querySelector(HOVER), null, 'the box closes');
+    assert.match(after, /Array\.prototype\.map = Array\.prototype\.map \|\|/);
+    assert.ok(
+        after.startsWith('<p>%%=v(@a)=%%</p>\n<script runat="server">'),
+        'added inside the script, not at the top of the HTML',
+    );
+    assert.ok(after.includes('var a = [1].map(function (b) { return b; });'));
+    editor.undo();
+    assert.equal(editor.getValue(), before);
+    context.window.close();
+});
+
+test('quick fixes: a polyfill for a one-line script stays inside the script, and stale fixes do nothing', async () => {
+    const context = page();
+    const content =
+        '<script runat="server">Platform.Load("core", "1.1.5"); var a = [1].map(String);</script>';
+    const editor = addEditor(context, content);
+    runExtension(context.window);
+    await checkPause();
+    const { document } = context.window;
+    rest(context, editor, 'var a = [1].m');
+    await hoverPause();
+    document.querySelector(`${HOVER} ${FIX}`).click();
+    const fixed = editor.getValue();
+    assert.match(fixed, /Array\.prototype\.map = Array\.prototype\.map \|\|/);
+    assert.ok(fixed.startsWith('<script runat="server">'), fixed);
+    assert.ok(
+        fixed.endsWith('Platform.Load("core", "1.1.5"); var a = [1].map(String);</script>'),
+        'the code itself is untouched',
+    );
+
+    // a box that is still open when the editor gets another document must not change that one
+    editor.undo();
+    rest(context, editor, 'var a = [1].m');
+    await hoverPause();
+    const stale = document.querySelector(`${HOVER} ${FIX}`);
+    const other = context.CodeMirror.Doc('<p>another asset</p>', BASE_MODE);
+    editor.swapDoc(other);
+    assert.equal(document.querySelector(HOVER), null);
+    stale.click();
+    assert.equal(editor.getValue(), '<p>another asset</p>');
+    context.window.close();
+});
+
+test('the content is only checked again after it changed', async () => {
+    const context = page();
+    const editor = addEditor(context, '%%[ set @a = Lookupx("a") ]%%');
+    runExtension(context.window);
+    await checkPause();
+    const marks = [...editor.getAllMarks()];
+    assert.equal(marks.length, 1);
+    rest(context, editor, 'set @a = Look');
+    await hoverPause();
+    assert.equal(
+        editor.getAllMarks()[0],
+        marks[0],
+        'resting the mouse leaves the underlines as they are',
+    );
+    editor.replaceRange(' ', { line: 0, ch: 3 });
+    rest(context, editor, 'set @a = Look');
+    await hoverPause();
+    assert.notEqual(editor.getAllMarks()[0], marks[0]);
+    assert.equal(editor.getAllMarks().length, 1);
+});
+
+test('quick fixes: Ctrl-. opens them at the cursor, for the text as it is now', async () => {
+    const context = page();
+    const editor = addEditor(context, '<script runat="server">\nvar a = 1;\n</script>');
+    editor.charCoords = () => ({ left: 10, right: 20, top: 100, bottom: 115 });
+    runExtension(context.window);
+    await checkPause();
+    const { document } = context.window;
+    const keys = editor.state.keyMaps.find((map) => 'Ctrl-.' in map);
+    assert.equal(typeof keys['Cmd-.'], 'function');
+    editor.setCursor({ line: 1, ch: 3 });
+    assert.equal(
+        keys['Ctrl-.'](editor),
+        context.CodeMirror.Pass,
+        'nothing to fix: the key goes on',
+    );
+    assert.equal(document.querySelector(HOVER), null);
+
+    // typed just now; the check that runs when typing pauses has not happened yet
+    editor.replaceRange('var b = [1].map(String);\n', { line: 1, ch: 0 });
+    editor.setCursor({ line: 1, ch: 14 });
+    assert.equal(keys['Ctrl-.'](editor), undefined);
+    const button = document.querySelector(`${HOVER} ${FIX}`);
+    assert.ok(button);
+    assert.equal(document.activeElement, button, 'ready for Enter');
+    assert.equal(document.querySelector(`${HOVER} pre`), null, 'fixes only, no documentation');
+    button.dispatchEvent(
+        new context.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    assert.equal(document.querySelector(HOVER), null);
+
+    editor.setOption('readOnly', true);
+    assert.equal(keys['Ctrl-.'](editor), context.CodeMirror.Pass);
+    // a read-only editor still explains the problem, but offers no fix
+    rest(context, editor, 'var b = [1].m');
+    await hoverPause();
+    assert.ok(document.querySelector(`${HOVER} .sfmc-problem`));
+    assert.equal(document.querySelector(`${HOVER} ${FIX}`), null);
+    context.window.close();
+});
+
+const CTRL = { ctrlKey: true };
+
+/**
+ * Presses the mouse button on a character of an editor.
+ *
+ * @param {object} context page from `page()`
+ * @param {object} editor CodeMirror instance
+ * @param {string} before text that ends right before the character
+ * @param {object} keys modifier keys that are held
+ * @returns {boolean} false if the click was taken away from the editor
+ */
+function wasLeftToEditor(context, editor, before, keys) {
+    const place = editor.posFromIndex(editor.getValue().indexOf(before) + before.length);
+    editor.coordsChar = () => ({ line: place.line, ch: place.ch + 1, xRel: -1 });
+    return editor.getWrapperElement().dispatchEvent(
+        new context.window.MouseEvent('mousedown', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            ...keys,
+        }),
+    );
+}
+
+test('Ctrl-click on the name of a function of the content goes to its declaration', () => {
+    const context = page();
+    const content =
+        '<p>greet</p>\n<script runat="server">\nfunction greet(name) { return name; }\n' +
+        'var a = greet("x");\nvar b = other.greet("y");\nvar c = Stringify(a);\n</script>\n' +
+        '<script>\nvar d = greet("z");\n</script>';
+    const editor = addEditor(context, content);
+    editor.setCursor({ line: 0, ch: 0 });
+    runExtension(context.window);
+    const cursor = () => ({ line: editor.getCursor().line, ch: editor.getCursor().ch });
+
+    assert.equal(
+        wasLeftToEditor(context, editor, 'var a = gr', CTRL),
+        false,
+        'taken from the editor',
+    );
+    assert.deepEqual(cursor(), { line: 2, ch: 9 });
+
+    editor.setCursor({ line: 0, ch: 0 });
+    assert.equal(
+        wasLeftToEditor(context, editor, 'var a = gr', {}),
+        true,
+        "a plain click is the editor's",
+    );
+    assert.equal(
+        wasLeftToEditor(context, editor, 'var a = gr', { ctrlKey: true, shiftKey: true }),
+        true,
+    );
+    assert.equal(
+        wasLeftToEditor(context, editor, 'other.gr', CTRL),
+        true,
+        'a member of something else',
+    );
+    assert.equal(
+        wasLeftToEditor(context, editor, 'var c = Stri', CTRL),
+        true,
+        'not declared in the content',
+    );
+    assert.equal(wasLeftToEditor(context, editor, 'var d = gr', CTRL), true, 'a browser script');
+    assert.equal(wasLeftToEditor(context, editor, '<p>gr', CTRL), true, 'plain text');
+    assert.deepEqual(cursor(), { line: 0, ch: 0 });
+    context.window.close();
+});
+
+const DOCUMENTATION = '.sfmc-completion-documentation';
+
+test('the documentation of the chosen suggestion stands next to the popup', () => {
+    const context = page();
+    const editor = addEditor(context, '%%[ var @count\nset @a = Look| ]%%');
+    runExtension(context.window);
+    const { document } = context.window;
+    pressCtrlSpace(editor);
+    const box = document.querySelector(DOCUMENTATION);
+    assert.equal(box.parentNode, document.body);
+    assert.match(box.querySelector('pre').textContent, /^\(function\) Lookup\(dataObject: string/);
+    assert.match(box.textContent, /Returns a single field value/);
+    assert.ok(box.querySelector(':scope pre span[class^="cm-"]'), 'coloured like the hover box');
+
+    // another suggestion, another text
+    const completion = editor.state.completionActive;
+    completion.widget.changeActive(1);
+    assert.match(box.querySelector('pre').textContent, /^\(function\) LookupOrderedRows\(/);
+    completion.close();
+    assert.equal(document.querySelector(DOCUMENTATION), null, 'gone with the popup');
+
+    // SSJS items bring their documentation along; plain names have none
+    const ssjs = addEditor(context, '<script runat="server">\nvar total = 1;\nWrit|\n</script>');
+    context.window.eval(completionsScript);
+    pressCtrlSpace(ssjs);
+    assert.match(
+        document.querySelector(`${DOCUMENTATION} pre`).textContent,
+        /^\(function\) Write\(text: string\)/,
+    );
+    ssjs.state.completionActive.close();
+    ssjs.replaceRange('tot', { line: 2, ch: 0 }, { line: 2, ch: 4 });
+    pressCtrlSpace(ssjs);
+    assert.deepEqual(
+        hints(ssjs).map((hint) => hint.displayText),
+        ['total'],
+    );
+    assert.equal(document.querySelector(DOCUMENTATION), null);
+});
+
 test('sets up editors that are opened later, each one only once', async () => {
     const context = page();
     runExtension(context.window);

@@ -26,7 +26,12 @@ The extension checks your AMPscript and SSJS while you type and underlines what 
 
 - AMPscript: unknown functions, a wrong number of arguments, blocks and `IF` statements that are never closed, and more.
 - SSJS: syntax that Marketing Cloud's engine rejects (`let`, arrow functions, template literals, …), JavaScript methods the engine does not have, Core library calls without `Platform.Load`, and more.
-- The checks are those of the language service; browser scripts are not checked. There are no quick fixes and no list of all problems yet.
+- **Quick fixes**: where the language service knows a remedy, the box offers it as a button, for example adding the polyfill for a JavaScript method that SSJS lacks. **Ctrl+.** (**Cmd+.** on a Mac) opens the fixes for the problem at the cursor; Enter applies the first one, Esc closes the box. A fix is one step for **Ctrl+Z**.
+- The checks are those of the language service; browser scripts are not checked. There is no list of all problems yet.
+
+### Go to definition
+
+Hold **Ctrl** (**Cmd** on a Mac) and click the name of a function that the server-side JavaScript of the content declares; the cursor jumps to the declaration. It covers functions declared with `function name(...)` in the same content, not variables and not AMPscript.
 
 ### Parameter help
 
@@ -54,6 +59,7 @@ While you type AMPscript or server-side JavaScript (SSJS) in the code view of Co
 - **SSJS**, inside `<script runat="server">`: Marketing Cloud's functions and objects (`Platform.Function.Lookup`, `Write`, `DataExtension`, `HTTP.Get`, …), the JavaScript built-ins that work in SSJS, and the functions declared in the content. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`).
 - **JavaScript for the browser**, inside any other `<script>`: the names used in the content's browser scripts, JavaScript's keywords and the usual globals (`document`, `console`, …). Marketing Cloud's server-side names are never suggested there. SSJS gets the names of its own scripts and its keywords in the same way.
 
+- Next to the popup, a box shows the documentation of the suggestion that is currently chosen: parameters, return value and an example.
 - AMPscript suggestions appear inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript script tags, never in plain HTML. While you type, they stay away inside strings and comments.
 - Picking a function inserts its name and the opening bracket; picking anything else inserts the plain word. Nothing is inserted unless you pick it.
 - Not covered yet, in SSJS and in browser scripts: the members of a value, such as the methods of a `DataExtension.Init(...)` result or of `document`.

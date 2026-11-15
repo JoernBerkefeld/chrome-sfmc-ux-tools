@@ -4,6 +4,9 @@
  * The suggestions come from sfmc-language-lsp; this file connects it to CodeMirror 5's hint popup.
  */
 import { sfmcLanguageService } from 'sfmc-language-lsp';
+import { colour } from './colour.js';
+import { createTooltip } from './tooltip.js';
+import { renderMarkdown } from './markdown.js';
 import {
     AMPSCRIPT,
     BROWSER_KINDS,
@@ -131,6 +134,7 @@ const KIND_FUNCTION = 3;
 const CALLABLE_KINDS = new Set([2, KIND_FUNCTION, 4, 7]);
 const KIND_NAMES = { 3: 'function', 6: 'variable', 14: 'keyword' };
 const timers = new WeakMap();
+const boxes = new WeakMap();
 
 /**
  * Draws one entry of the popup: the name, followed by a short muted description.
@@ -198,6 +202,7 @@ function toHint(item, text) {
         text,
         displayText: item.label,
         render: (element) => render(element, item.label, detail),
+        item,
     };
 }
 
@@ -381,6 +386,71 @@ function hintsFor(cm, language, text, line) {
 }
 
 /**
+ * Gives the box that shows the documentation of the chosen suggestion of an editor.
+ *
+ * @param {object} cm CodeMirror instance
+ * @returns {object} box from `createTooltip`
+ */
+function documentationBox(cm) {
+    if (!boxes.has(cm)) {
+        boxes.set(
+            cm,
+            createTooltip(cm.getWrapperElement().ownerDocument, 'sfmc-completion-documentation'),
+        );
+    }
+    return boxes.get(cm);
+}
+
+/**
+ * Gets the documentation of a suggestion. SSJS items carry it; AMPscript items get it from the
+ * language service when asked, and plain words have none.
+ *
+ * @param {object} [item] completion item of the language service
+ * @returns {string} Markdown, or an empty string
+ */
+function documentationOf(item) {
+    if (!item) {
+        return '';
+    }
+    const { documentation } = item.documentation
+        ? item
+        : sfmcLanguageService.resolveCompletion(item);
+    return String(documentation?.value ?? documentation ?? '');
+}
+
+/**
+ * Shows the documentation of whichever suggestion is chosen in the popup, next to the popup.
+ *
+ * @param {object} cm CodeMirror instance
+ * @param {object} data what the hint function hands to the hint addon, which reports to it what happens in the popup
+ */
+function document(cm, data) {
+    const CodeMirror = cm.constructor;
+    const box = documentationBox(cm);
+    CodeMirror.on(data, 'select', (hint, element) => {
+        try {
+            const markdown = documentationOf(hint?.item);
+            const popup = element?.parentNode;
+            if (!markdown || !popup) {
+                box.hide();
+                return;
+            }
+            box.showBeside(
+                renderMarkdown(popup.ownerDocument, markdown, (code, language) =>
+                    colour(cm, code, language),
+                ),
+                popup.getBoundingClientRect(),
+            );
+        } catch (ex) {
+            box.hide();
+            report(ex);
+        }
+    });
+    CodeMirror.on(data, 'update', box.hide);
+    CodeMirror.on(data, 'close', box.hide);
+}
+
+/**
  * CodeMirror hint function: asks the language service what fits at the cursor.
  *
  * @param {object} cm CodeMirror instance
@@ -406,11 +476,13 @@ function hint(cm) {
         if (!list.length) {
             return null;
         }
-        return {
+        const data = {
             list,
             from: { line: cursor.line, ch: cursor.ch - found.typed.length },
             to: { line: cursor.line, ch: end },
         };
+        document(cm, data);
+        return data;
     } catch (ex) {
         report(ex);
         return null;
@@ -493,6 +565,7 @@ function onInputRead(cm, change) {
  * Sets up completions for one editor: Ctrl-Space, and the popup while typing.
  *
  * @param {object} cm CodeMirror instance
+ * @returns {() => void} takes the documentation box away
  */
 export function registerCompletions(cm) {
     // the key goes on to the editor's own handling whenever there is nothing for us to do
@@ -500,4 +573,8 @@ export function registerCompletions(cm) {
         'Ctrl-Space': (editor) => (didShow(editor) ? undefined : editor.constructor.Pass),
     });
     cm.on('inputRead', onInputRead);
+    // the popup can go without telling the suggestions it showed last
+    const hide = () => documentationBox(cm).hide();
+    cm.on('endCompletion', hide);
+    return hide;
 }

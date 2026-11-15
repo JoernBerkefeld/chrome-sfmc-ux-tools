@@ -10,6 +10,7 @@
  * so that a failure in here can never break the colouring.
  */
 import { registerCompletions } from './editor-language/completions.js';
+import { registerDefinition } from './editor-language/definition.js';
 import { registerDiagnostics } from './editor-language/diagnostics.js';
 import { watchEditors } from './editor-language/editors.js';
 import { registerHover } from './editor-language/hover.js';
@@ -20,4 +21,5 @@ watchEditors('language', [
     registerHover,
     registerSignature,
     registerDiagnostics,
+    registerDefinition,
 ]);

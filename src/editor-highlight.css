@@ -400,3 +400,26 @@ li.CodeMirror-hint-active {
 .sfmc-format-floating:hover {
     opacity: 1;
 }
+
+/* Quick fixes in the box of a problem. */
+.sfmc-tooltip .sfmc-fix {
+    display: block;
+    margin: 4px 0 0;
+    padding: 1px 8px;
+    border: 1px solid var(--sfmc-widget-border);
+    border-radius: 3px;
+    background: var(--sfmc-widget-active-background);
+    color: var(--sfmc-widget-active-foreground);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.sfmc-tooltip .sfmc-fix:hover,
+.sfmc-tooltip .sfmc-fix:focus {
+    outline: 1px solid var(--sfmc-link);
+}
+/* The documentation of the chosen suggestion stands next to the popup and is never in the way of a click. */
+.sfmc-completion-documentation {
+    max-width: min(480px, 45vw);
+    pointer-events: none;
+}

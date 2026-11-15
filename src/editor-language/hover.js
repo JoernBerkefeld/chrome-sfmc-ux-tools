@@ -1,17 +1,18 @@
 /*
- * SFMC UX Tools — documentation for what the mouse rests on in the code editor.
+ * SFMC UX Tools — the box for a place in the code editor: what is wrong there, how to fix it,
+ * and its documentation. It opens where the mouse rests, and at the cursor on Ctrl-. (Cmd-.).
  */
 import { sfmcLanguageService } from 'sfmc-language-lsp';
 import { AMPSCRIPT, DOCUMENT_URI, SSJS, isInMode, languageAt, report, ssjsOnly } from './shared.js';
-import { diagnosticsAt } from './diagnostics.js';
-import { renderMarkdown } from './markdown.js';
+import { applyFix, fixesFor } from './quickfix.js';
+import { checkNow, diagnosticsAt } from './diagnostics.js';
+import { colour } from './colour.js';
 import { createTooltip } from './tooltip.js';
+import { renderMarkdown } from './markdown.js';
 
 const SHOW_DELAY = 350;
 // time to move the mouse from the code onto the box
 const HIDE_DELAY = 250;
-// languages of code blocks that are coloured as JavaScript
-const SCRIPT_LANGUAGES = new Set(['typescript', 'javascript', 'js', 'ssjs']);
 
 /**
  * Asks the language service what it knows about a place in the document.
@@ -44,7 +45,7 @@ function hoverAt(cm, place) {
  * @param {{clientX: number, clientY: number}} point where the mouse is
  * @returns {{line: number, ch: number} | null} the character, or null beside the text
  */
-function characterAt(cm, point) {
+export function characterAt(cm, point) {
     const found = cm.coordsChar({ left: point.clientX, top: point.clientY }, 'window');
     if (found.outside) {
         return null;
@@ -56,77 +57,41 @@ function characterAt(cm, point) {
 }
 
 /**
- * Colours code the way the editor does, with the editor's own rules: its mode for AMPscript,
- * which includes this extension's colouring, and CodeMirror's JavaScript rules for signatures
- * and SSJS examples.
+ * Lists what is wrong at a place, each problem with the fixes the language service offers. The
+ * content is checked first, so that problems and fixes belong to the text as it is now.
  *
  * @param {object} cm CodeMirror instance
- * @param {string} code the code
- * @param {string} language language named by the documentation
- * @returns {DocumentFragment | null} the code in coloured pieces, or null if there are no rules for the language
+ * @param {{line: number, ch: number}} place line and column of a character
+ * @returns {object[]} problems from `diagnosticsAt`, each with its `fixes`
  */
-function colour(cm, code, language) {
-    try {
-        const CodeMirror = cm.constructor;
-        const mode = SCRIPT_LANGUAGES.has(language)
-            ? CodeMirror.getMode(
-                  { indentUnit: 4 },
-                  { name: 'javascript', typescript: language === 'typescript' },
-              )
-            : language === AMPSCRIPT
-              ? cm.getMode()
-              : null;
-        if (!mode?.token || mode.name === 'null') {
-            return null;
+function problemsAt(cm, place) {
+    checkNow(cm);
+    const text = cm.getValue();
+    const canFix = !cm.isReadOnly();
+    return diagnosticsAt(cm, place).map(({ diagnostic, ...problem }) => {
+        try {
+            return { ...problem, fixes: canFix ? fixesFor(text, diagnostic) : [] };
+        } catch (ex) {
+            report(ex);
+            return { ...problem, fixes: [] };
         }
-        const document = cm.getWrapperElement().ownerDocument;
-        const result = document.createDocumentFragment();
-        const state = CodeMirror.startState(mode);
-        for (const [number, line] of code.split('\n').entries()) {
-            if (number) {
-                result.append('\n');
-            }
-            if (!line) {
-                mode.blankLine?.(state);
-            }
-            const stream = new CodeMirror.StringStream(line);
-            while (!stream.eol()) {
-                const style = mode.token(stream, state);
-                const text = stream.current();
-                if (!text) {
-                    // rules that do not move on would never end
-                    return null;
-                }
-                stream.start = stream.pos;
-                if (style) {
-                    const piece = document.createElement('span');
-                    piece.className = style.replaceAll(/\S+/g, 'cm-$&');
-                    piece.textContent = text;
-                    result.append(piece);
-                } else {
-                    result.append(text);
-                }
-            }
-        }
-        return result;
-    } catch (ex) {
-        report(ex);
-        return null;
-    }
+    });
 }
 
 /**
- * Builds the content of the box: first what is wrong at the place, then its documentation.
+ * Builds the content of the box: first what is wrong at the place and how to fix it, then the
+ * documentation of the place.
  *
  * @param {object} cm CodeMirror instance
- * @param {{severity: string, message: string, code: string, address: string}[]} problems errors and warnings at the place
- * @param {string} [markdown] documentation of the language service
+ * @param {object[]} problems errors and warnings at the place, from `problemsAt`
+ * @param {string | undefined} markdown documentation of the language service
+ * @param {(fix: object) => void} onFix called with the fix the user chose
  * @returns {DocumentFragment} what to show
  */
-function render(cm, problems, markdown) {
+function render(cm, problems, markdown, onFix) {
     const document = cm.getWrapperElement().ownerDocument;
     const result = document.createDocumentFragment();
-    for (const { severity, message, code, address } of problems) {
+    for (const { severity, message, code, address, fixes } of problems) {
         const element = document.createElement('p');
         element.className = `sfmc-problem sfmc-problem-${severity}`;
         element.textContent = message;
@@ -141,6 +106,14 @@ function render(cm, problems, markdown) {
             }
             element.append(' ', rule);
         }
+        for (const fix of fixes) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'sfmc-fix';
+            button.textContent = fix.title;
+            button.addEventListener('click', () => onFix(fix));
+            element.append(button);
+        }
         result.append(element);
     }
     if (markdown) {
@@ -152,7 +125,7 @@ function render(cm, problems, markdown) {
 }
 
 /**
- * Sets up hovers for one editor.
+ * Sets up the box for one editor.
  *
  * @param {object} cm CodeMirror instance
  * @returns {() => void} takes the box away
@@ -162,6 +135,8 @@ export function registerHover(cm) {
     const tooltip = createTooltip(wrapper.ownerDocument, 'sfmc-hover');
     const timers = { show: undefined, hide: undefined };
     let shown = '';
+    // the content the fixes on show were worked out for
+    let fixedText = '';
 
     const hide = () => {
         clearTimeout(timers.show);
@@ -174,27 +149,62 @@ export function registerHover(cm) {
         clearTimeout(timers.hide);
         timers.hide = setTimeout(hide, HIDE_DELAY);
     };
-    const show = (point) => {
+    const fix = (chosen) => {
         try {
-            const place = isInMode(cm) && wrapper.isConnected ? characterAt(cm, point) : null;
-            const hover = place && hoverAt(cm, place);
-            const markdown = hover?.contents?.value;
-            const problems = place ? diagnosticsAt(cm, place) : [];
-            if (!markdown && !problems.length) {
-                hide();
-                return;
+            hide();
+            // a fix only fits the content it was worked out for, in an editor that can be edited
+            if (!cm.isReadOnly() && cm.getValue() === fixedText) {
+                applyFix(cm, chosen);
             }
-            const start = hover?.range?.start;
-            const anchor = start ? { line: start.line, ch: start.character } : place;
-            const key = JSON.stringify([anchor, problems, markdown]);
-            if (key === shown && tooltip.isShown()) {
-                return;
-            }
-            shown = key;
-            tooltip.show(render(cm, problems, markdown), cm.charCoords(anchor, 'window'));
+            cm.focus();
         } catch (ex) {
             report(ex);
         }
+    };
+    /**
+     * Shows the box for a place, or takes it away if there is nothing to say about the place.
+     *
+     * @param {{line: number, ch: number} | null} place line and column of a character
+     * @param {boolean} [isForFixes] true to only show it if there is something to fix
+     * @returns {boolean} true if the box is shown
+     */
+    const didShowAt = (place, isForFixes = false) => {
+        const isUsable = place && isInMode(cm) && wrapper.isConnected;
+        const problems = isUsable ? problemsAt(cm, place) : [];
+        const hover = !isUsable || isForFixes ? null : hoverAt(cm, place);
+        const markdown = hover?.contents?.value;
+        const hasContent = isForFixes
+            ? problems.some((problem) => problem.fixes.length > 0)
+            : markdown || problems.length > 0;
+        if (!hasContent) {
+            hide();
+            return false;
+        }
+        const start = hover?.range?.start;
+        const anchor = start ? { line: start.line, ch: start.character } : place;
+        const key = JSON.stringify([anchor, problems, markdown]);
+        if (key !== shown || !tooltip.isShown()) {
+            shown = key;
+            fixedText = cm.getValue();
+            tooltip.show(render(cm, problems, markdown, fix), cm.charCoords(anchor, 'window'));
+        }
+        return true;
+    };
+    const showAtCursor = () => {
+        try {
+            const cursor = cm.getCursor();
+            // the cursor stands between two characters; a problem may end right before it
+            const places = [cursor, { line: cursor.line, ch: cursor.ch - 1 }].filter(
+                (place) => place.ch >= 0,
+            );
+            if (cm.isReadOnly() || places.every((place) => !didShowAt(place, true))) {
+                return cm.constructor.Pass;
+            }
+            tooltip.element.querySelector('.sfmc-fix')?.focus();
+        } catch (ex) {
+            report(ex);
+        }
+        return;
     };
 
     wrapper.addEventListener('mousemove', (event) => {
@@ -205,14 +215,32 @@ export function registerHover(cm) {
             return;
         }
         const point = { clientX: event.clientX, clientY: event.clientY };
-        timers.show = setTimeout(() => show(point), SHOW_DELAY);
+        timers.show = setTimeout(() => {
+            try {
+                didShowAt(characterAt(cm, point));
+            } catch (ex) {
+                report(ex);
+            }
+        }, SHOW_DELAY);
     });
     wrapper.addEventListener('mouseleave', hideSoon);
     wrapper.addEventListener('mousedown', hide);
     tooltip.element.addEventListener('mouseenter', () => clearTimeout(timers.hide));
     tooltip.element.addEventListener('mouseleave', hideSoon);
+    // with the keyboard in the box: Escape closes it and hands the focus back
+    tooltip.element.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') {
+            return;
+        }
+
+        hide();
+        cm.focus();
+    });
     cm.on('keydown', hide);
     cm.on('scroll', hide);
     cm.on('change', hide);
+    cm.on('swapDoc', hide);
+    // the key of VS Code for quick fixes; it goes on to the editor where there is nothing to fix
+    cm.addKeyMap({ 'Ctrl-.': showAtCursor, 'Cmd-.': showAtCursor });
     return hide;
 }

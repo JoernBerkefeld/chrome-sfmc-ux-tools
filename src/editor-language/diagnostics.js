@@ -14,6 +14,8 @@ const CHECK_DELAY = 500;
 // severities of the language service, most serious first
 const SEVERITY_NAMES = { 1: 'error', 2: 'warning', 3: 'info', 4: 'info' };
 const found = new WeakMap();
+// what each editor's content was when it was last checked
+const checked = new WeakMap();
 
 /**
  * Collects what the language service objects to in a document: its AMPscript, and the SSJS of
@@ -51,7 +53,18 @@ function toPlace(position) {
  */
 function update(cm) {
     try {
-        const list = isInMode(cm) ? check(cm.getValue()) : [];
+        // nothing to do for content that was checked already: the same document, unchanged, in the same mode
+        const now = { doc: cm.getDoc(), generation: cm.changeGeneration(), isInMode: isInMode(cm) };
+        const last = checked.get(cm);
+        if (
+            last?.doc === now.doc &&
+            last.generation === now.generation &&
+            last.isInMode === now.isInMode
+        ) {
+            return;
+        }
+        checked.set(cm, now);
+        const list = now.isInMode ? check(cm.getValue()) : [];
         cm.operation(() => {
             const old = found.get(cm) ?? [];
             for (const { mark } of old) {
@@ -83,11 +96,21 @@ function update(cm) {
 }
 
 /**
+ * Checks an editor's content at once, for those who need what is found to fit the text as it
+ * is now, without waiting for typing to pause.
+ *
+ * @param {object} cm CodeMirror instance
+ */
+export function checkNow(cm) {
+    update(cm);
+}
+
+/**
  * Lists what was found at a character of an editor.
  *
  * @param {object} cm CodeMirror instance
  * @param {{line: number, ch: number}} place line and column of the character
- * @returns {{severity: string, message: string, code: string, address: string}[]} what to tell about that place
+ * @returns {{severity: string, message: string, code: string, address: string, diagnostic: object}[]} what to tell about that place, each with the diagnostic of the language service it comes from
  */
 export function diagnosticsAt(cm, place) {
     const result = [];
@@ -104,6 +127,7 @@ export function diagnosticsAt(cm, place) {
                 message: String(diagnostic.message),
                 code: String(diagnostic.code ?? ''),
                 address: String(diagnostic.codeDescription?.href ?? ''),
+                diagnostic,
             });
         }
     }

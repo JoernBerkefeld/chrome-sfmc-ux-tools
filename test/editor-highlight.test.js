@@ -292,7 +292,7 @@ test('adds Marketing Cloud colours to server-side JavaScript and keeps the JavaS
             'Platform.Load("core", "1.1.5");',
             'var de = DataExtension.Init("x"), n = 5;',
             'var v = Platform.Function.Lookup("de", "f", "k", n);',
-            'Write(Stringify(v)); Variable.SetValue("@v", v);',
+            'Write(Stringify(v)); Variable.SetValue("@v", HTTP.Get("u")); Recipient.x();',
             '</script>',
         ].join('\n'),
     );
@@ -307,6 +307,7 @@ test('adds Marketing Cloud colours to server-side JavaScript and keeps the JavaS
             'Write:sfmc-ssjs-function',
             'Stringify:sfmc-ssjs-function',
             'Variable:sfmc-ssjs-object',
+            'HTTP:sfmc-ssjs-object',
         ],
     );
     const tokens = styled(editor);
@@ -463,6 +464,21 @@ test('the manifest runs the editor scripts in the page world, language data firs
     assert.deepEqual(entry.css, ['editor-highlight.css']);
     assert.deepEqual(entry.matches, ['https://*.marketingcloudapps.com/*']);
     assert.equal(manifest.minimum_chrome_version, '111');
+});
+
+test('two copies of the extension in one page do not wrap each other', async () => {
+    const context = page();
+    const editor = addEditor(context, '%%[ set @a = 1 ]%%');
+    runExtension(context.window);
+    runExtension(context.window);
+    for (let round = 0; round < 3; round++) {
+        context.window.document.body.append(context.window.document.createElement('i'));
+        await tick();
+    }
+    const state = editor.getStateAfter(0, true);
+    assert.ok(state.ampscript, 'the mode is wrapped');
+    assert.equal(state.base.ampscript, undefined, 'the mode is wrapped only once');
+    assert.ok(styled(editor).includes('set:sfmc-keyword'));
 });
 
 test('leaves editors with other modes untouched', () => {

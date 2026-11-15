@@ -28,7 +28,8 @@
     const NEXT_CANDIDATE = /%%|<script\b/i;
     const RUNS_ON_SERVER = /\brunat\s*=\s*["']?server\b/i;
     const AMPSCRIPT_LANGUAGE = /\blanguage\s*=\s*["']?ampscript\b/i;
-    const wrappedFactories = new WeakSet();
+    // marks our mode factory; a registered symbol, so that a second copy of this script recognises it too
+    const WRAPPED = Symbol.for('sfmcUxTools.wrappedMode');
 
     /**
      * Consumes the pattern if the stream continues with it.
@@ -386,7 +387,7 @@
         const wrapped = (config, parserConfig) =>
             combinedMode(CodeMirror, original(config, parserConfig));
         wrapped.dependencies = original.dependencies;
-        wrappedFactories.add(wrapped);
+        wrapped[WRAPPED] = true;
         CodeMirror.defineMode(BASE_MODE, wrapped);
     }
 
@@ -425,7 +426,7 @@
             const original = CodeMirror?.modes?.[BASE_MODE];
             if (!(
                 typeof original === 'function' &&
-                !wrappedFactories.has(original) &&
+                original[WRAPPED] !== true &&
                 typeof CodeMirror.defineMode === 'function'
             )) {
                 continue;

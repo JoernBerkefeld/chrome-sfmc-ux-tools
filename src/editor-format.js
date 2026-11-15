@@ -26,7 +26,23 @@ const OPTIONS = {
     plugins: [html, babel, estree, postcss, sfmc],
 };
 const NOTICE_TIME = 6000;
+// the isolated script editor-format-setting.js writes the user's choice to this attribute
+const ON_SAVE_ATTRIBUTE = 'data-sfmc-ux-tools-format-on-save';
+// Marketing Cloud's buttons that save the content; the attribute is the same in every language
+const SAVE_BUTTONS = '[data-action="editor-save"], [data-action="editor-save-exit"]';
+const SAVE_BUTTON = '[data-action="editor-save"]';
+// where Marketing Cloud's editor keeps its own buttons
+const TOOLBAR = '.et-codemirror-toolbar ul';
+const EDITOR_FRAME = '.et-codemirror';
+// time for the page to take note of the formatted content before it saves
+const SETTLE_TIME = 300;
+// a save never waits longer than this for the formatting
+const FORMAT_TIME_LIMIT = 5000;
+const IS_MAC = /mac/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? '');
+const SHORTCUT = IS_MAC ? '⇧⌥F' : 'Shift+Alt+F';
 const busy = new WeakSet();
+const editors = new Set();
+const state = { isSaving: false, isPending: false };
 
 /**
  * Tells the user why the content was not formatted, in a box at the top of the editor that
@@ -112,20 +128,178 @@ async function formatEditor(cm) {
 }
 
 /**
- * Sets up formatting for one editor: Shift-Alt-F, as in VS Code.
+ * Tells whether an editor is one whose content may be formatted right now.
+ *
+ * @param {object} cm CodeMirror instance
+ * @returns {boolean} true for an AMPscript editor on the page that can be edited
+ */
+function canFormat(cm) {
+    return isInMode(cm) && !cm.isReadOnly() && cm.getWrapperElement().isConnected;
+}
+
+/**
+ * Adds the "format code" button for an editor: next to Marketing Cloud's own editor buttons
+ * where there are any, in the corner of the editor otherwise.
+ *
+ * @param {object} cm CodeMirror instance
+ */
+function addButton(cm) {
+    const wrapper = cm.getWrapperElement();
+    const document = wrapper.ownerDocument;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'sfmc-format-button';
+    button.textContent = '{ }';
+    button.title = `Format code (${SHORTCUT})`;
+    button.setAttribute('aria-label', button.title);
+    button.addEventListener('click', () => {
+        if (canFormat(cm)) {
+            formatEditor(cm);
+        }
+        cm.focus();
+    });
+    const toolbar = wrapper.closest(EDITOR_FRAME)?.querySelector(TOOLBAR);
+    if (toolbar) {
+        const item = document.createElement('li');
+        item.className = 'toolbar-button sfmc-format-item';
+        item.append(button);
+        toolbar.append(item);
+    } else {
+        button.classList.add('sfmc-format-floating');
+        wrapper.append(button);
+    }
+}
+
+/**
+ * Tells whether an element is on show, as opposed to being part of a hidden view.
+ *
+ * @param {Element} element element of the page
+ * @returns {boolean} true if it takes up room on the page
+ */
+function isOnShow(element) {
+    return element.getClientRects().length > 0;
+}
+
+/**
+ * Finds a button of Marketing Cloud that is on show.
+ *
+ * @param {string} [selector] which button; the Save button if left out
+ * @returns {Element | undefined} the button
+ */
+function saveButton(selector = SAVE_BUTTON) {
+    return [...document.querySelectorAll(selector)].find((button) => isOnShow(button));
+}
+
+/**
+ * Formats the editors of the page and then lets the save go ahead that was held back for it.
+ * Whatever happens to the formatting, the save is never lost: it does not wait for a formatter
+ * that takes too long, and if the page has redrawn its button meanwhile, the new one is clicked.
+ *
+ * @param {object[]} targets CodeMirror instances to format
+ * @param {Element} button the save button that was clicked
+ */
+async function formatThenSave(targets, button) {
+    try {
+        await Promise.race([
+            Promise.all(targets.map((cm) => formatEditor(cm))),
+            new Promise((resolve) => setTimeout(resolve, FORMAT_TIME_LIMIT)),
+        ]);
+        await new Promise((resolve) => setTimeout(resolve, SETTLE_TIME));
+    } catch (ex) {
+        report(ex);
+    }
+    state.isPending = false;
+    state.isSaving = true;
+    try {
+        const selector = `[data-action="${button.dataset.action}"]`;
+        // "Save and Exit" sits in a menu that has closed again by now, so a hidden one will do
+        const current = button.isConnected
+            ? button
+            : (saveButton(selector) ?? document.querySelector(selector));
+        current?.click();
+    } finally {
+        state.isSaving = false;
+    }
+}
+
+/**
+ * Handles a click on the page: with "format on save" switched on, a click on one of Marketing
+ * Cloud's save buttons is held back until the editors are formatted.
+ *
+ * @param {MouseEvent} event the click
+ */
+function onClick(event) {
+    try {
+        if (
+            state.isSaving ||
+            document.documentElement.getAttribute(ON_SAVE_ATTRIBUTE) !== 'on' ||
+            !(event.target instanceof Element)
+        ) {
+            return;
+        }
+        const button = event.target.closest(SAVE_BUTTONS);
+        if (!button) {
+            return;
+        }
+        // a save is being held back already; this click belongs to it and must not become a second save
+        if (state.isPending) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
+        // only what the user sees is saved now; editors of hidden views are left alone
+        const targets = [...editors].filter(
+            (cm) => canFormat(cm) && isOnShow(cm.getWrapperElement()),
+        );
+        if (!targets.length) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        state.isPending = true;
+        formatThenSave(targets, button);
+    } catch (ex) {
+        report(ex);
+    }
+}
+
+/**
+ * Saves the content the way a click on Marketing Cloud's Save button does.
+ *
+ * @param {object} cm CodeMirror instance
+ * @returns {unknown} CodeMirror's sign to go on with the key if there is no Save button
+ */
+function save(cm) {
+    const button = saveButton();
+    if (!button) {
+        return cm.constructor.Pass;
+    }
+    button.click();
+    return;
+}
+
+/**
+ * Sets up formatting for one editor: the button, Shift-Alt-F as in VS Code, and Ctrl-S or
+ * Cmd-S for saving, which Marketing Cloud's editor does not have.
  *
  * @param {object} cm CodeMirror instance
  */
 function registerFormat(cm) {
+    editors.add(cm);
     cm.addKeyMap({
         'Shift-Alt-F': (editor) => {
-            if (!isInMode(editor) || editor.isReadOnly()) {
+            if (!canFormat(editor)) {
                 return editor.constructor.Pass;
             }
             formatEditor(editor);
             return;
         },
+        'Ctrl-S': save,
+        'Cmd-S': save,
     });
+    addButton(cm);
 }
 
+// in the capture phase, so that the page has not acted on the click yet
+document.addEventListener('click', onClick, { capture: true });
 watchEditors('format', [registerFormat]);

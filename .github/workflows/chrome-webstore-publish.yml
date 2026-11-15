@@ -1,9 +1,12 @@
 # Builds the extension zip when a GitHub Release is published, attaches it to the release
 # and uploads it to the Chrome Web Store.
 #
-# The store upload needs these repository secrets and is skipped while they are missing:
-# CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN
-# The very first version has to be submitted manually in the Chrome Web Store dashboard.
+# The store upload uses version 2 of the Chrome Web Store API. It needs these repository
+# secrets and is skipped while any of them is missing:
+# CWS_PUBLISHER_ID, CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN
+# The very first version has to be submitted manually in the Chrome Web Store dashboard; the
+# API cannot create an item. The README lists the one-time setup at Google.
+# An uploaded version is submitted for review and goes live when Google approves it.
 #
 # The release tag must equal the version in src/manifest.json (an optional leading "v" is ignored).
 # Prereleases only get the zip attached; they are never uploaded to the store.
@@ -51,14 +54,17 @@ jobs:
             - name: Upload to Chrome Web Store (skipped for prereleases and without credentials)
               if: ${{ !github.event.release.prerelease }}
               env:
+                  PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
                   EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
                   CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
                   CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
                   REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
               run: |
                   set -euo pipefail
-                  if [ -z "${EXTENSION_ID}" ] || [ -z "${CLIENT_ID}" ] || [ -z "${CLIENT_SECRET}" ] || [ -z "${REFRESH_TOKEN}" ]; then
+                  if [ -z "${PUBLISHER_ID}" ] || [ -z "${EXTENSION_ID}" ] || [ -z "${CLIENT_ID}" ] || [ -z "${CLIENT_SECRET}" ] || [ -z "${REFRESH_TOKEN}" ]; then
                     echo "::notice::Chrome Web Store secrets are not configured — skipping store upload."
                     exit 0
                   fi
-                  npx --yes chrome-webstore-upload-cli@3 upload --source dist/*.zip --auto-publish
+                  VERSION="$(node -p "require('./src/manifest.json').version")"
+                  # without a command the tool uploads the zip and submits it for publication
+                  npx --yes chrome-webstore-upload-cli@4 --source "dist/chrome-sfmc-ux-tools-v${VERSION}.zip"

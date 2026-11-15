@@ -371,3 +371,32 @@ li.CodeMirror-hint-active {
     left: auto;
     border-left: 3px solid var(--sfmc-error);
 }
+
+/* The "format code" button: in Marketing Cloud's editor toolbar, or in the corner of the editor. */
+.sfmc-format-button {
+    box-sizing: border-box;
+    height: 24px;
+    margin: 0 4px;
+    padding: 0 6px;
+    border: 1px solid var(--sfmc-widget-border);
+    border-radius: 3px;
+    background: var(--sfmc-widget-background);
+    color: var(--sfmc-foreground);
+    font: 12px/22px monospace;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.sfmc-format-button:hover {
+    background: var(--sfmc-widget-active-background);
+    color: var(--sfmc-widget-active-foreground);
+}
+.sfmc-format-floating {
+    position: absolute;
+    z-index: 5;
+    top: 4px;
+    right: 20px;
+    opacity: 0.6;
+}
+.sfmc-format-floating:hover {
+    opacity: 1;
+}

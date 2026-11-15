@@ -34,9 +34,16 @@ While the cursor is inside the brackets of an AMPscript function or of one of Ma
 
 ### Formatting
 
-Press **Shift+Alt+F** in the code view to format the whole content: AMPscript, SSJS, HTML, CSS and browser JavaScript, with the rules of the [prettier-plugin-sfmc](https://github.com/JoernBerkefeld/prettier-plugin-sfmc) plugin and the settings the SFMC Language Service extension for VS Code uses (4 spaces, 100 characters per line, single quotes). **Ctrl+Z** undoes it in one step.
+Click the **{ }** button in the toolbar of the code view, or press **Shift+Alt+F**, to format the whole content: AMPscript, SSJS, HTML, CSS and browser JavaScript, with the rules of the [prettier-plugin-sfmc](https://github.com/JoernBerkefeld/prettier-plugin-sfmc) plugin and the settings the SFMC Language Service extension for VS Code uses (4 spaces, 100 characters per line, single quotes). **Ctrl+Z** undoes it in one step.
 
 - Formatting only changes the text in the editor. Nothing is saved until you save.
+- AMPscript with a syntax error is left exactly as written; the rest is formatted.
+- **Format on save** can be switched on in the extension's options. The code is then formatted first whenever you save with Marketing Cloud's **Save** or **Save and Exit** button or with the shortcut below.
+
+### Save with Ctrl+S
+
+**Ctrl+S** (**Cmd+S** on a Mac) in the code view saves the content, exactly like a click on Marketing Cloud's **Save** button. Without the extension the key opens the browser's "save page" dialog.
+
 - There are no settings yet, and it always formats the whole content, not a selection.
 
 ### Completions
@@ -50,7 +57,7 @@ While you type AMPscript or server-side JavaScript (SSJS) in the code view of Co
 - AMPscript suggestions appear inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript script tags, never in plain HTML. While you type, they stay away inside strings and comments.
 - Picking a function inserts its name and the opening bracket; picking anything else inserts the plain word. Nothing is inserted unless you pick it.
 - Not covered yet, in SSJS and in browser scripts: the members of a value, such as the methods of a `DataExtension.Init(...)` result or of `document`.
-- The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.4.0), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
+- The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.4.1), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
 - The popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
 
 ### Editor themes
@@ -69,6 +76,19 @@ When you add or edit an API integration under **Setup → Platform Tools → App
 - Once everything is ticked, the button turns into **Deselect all** and clears every scope again.
 
 Nothing is saved until you press the dialog's own **Save** button. The button works in every language of the Marketing Cloud user interface, in the dialog for adding a component and in the one for editing it.
+
+## Where it comes from, and what goes with it
+
+The editor features are not written for this extension alone. They are the same building blocks as in the tools for working on Marketing Cloud code outside the browser, so both sides behave alike:
+
+| Tool                                                                                                                                                                                     | What it is                                                                                            | How this extension relates to it                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [SFMC Language Service for VS Code](https://marketplace.visualstudio.com/items?itemName=joernberkefeld.sfmc-language) ([source](https://github.com/JoernBerkefeld/vscode-sfmc-language)) | AMPscript and SSJS support in VS Code: completions, hovers, diagnostics, formatting                   | The model for this extension. Both use the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service, so completions, hovers, parameter help and diagnostics show the same texts and rules. The editor themes are VS Code's Light Modern and Dark Modern. |
+| [prettier-plugin-sfmc](https://www.npmjs.com/package/prettier-plugin-sfmc) ([source](https://github.com/JoernBerkefeld/prettier-plugin-sfmc))                                            | Prettier plugin for AMPscript, SSJS, Marketing Cloud HTML and SQL                                     | Built into this extension; it does the formatting behind the **{ }** button, with the same settings as the VS Code extension. Use it directly to format files in a project or in CI.                                                                                                      |
+| [sfmc.guide](https://sfmc.guide)                                                                                                                                                         | Reference for Marketing Cloud Engagement and Marketing Cloud Next, including every AMPscript function | The hover boxes for AMPscript link to its function pages.                                                                                                                                                                                                                                 |
+| [ssjs.guide](https://ssjs.guide)                                                                                                                                                         | Reference for server-side JavaScript in Marketing Cloud, verified against the live platform           | The source of the SSJS descriptions and of the notes on what really works; the hover boxes for SSJS link to its pages.                                                                                                                                                                    |
+
+If you write Marketing Cloud code in files, for example with [mcdev](https://github.com/Accenture/sfmc-devtools), the VS Code extension and the Prettier plugin give you there what this extension gives you in the browser.
 
 ## Installation
 
@@ -90,7 +110,7 @@ This works the same way in other Chromium browsers such as Edge.
 The extension runs on two places of Marketing Cloud Engagement:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
-- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colouring rules and completions to the code editor. The editor reads your code through these rules to colour it, and the built-in language service reads it to suggest completions; both happen inside the page only. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the Content Builder address.
+- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the Content Builder address.
 
 It does not collect or transmit any data and makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 
@@ -104,7 +124,7 @@ npm run build
 ```
 
 - `src/` holds the extension's sources. `npm run build` writes the loadable extension to `dist/extension` and packs that folder as `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store. For **Load unpacked**, always pick `dist/extension`, not `src`.
-- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.4.0) into one classic script with esbuild, and fails if that bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
+- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.4.1) into one classic script with esbuild, and fails if that bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
 - `npm test` runs the build first, because the completion tests run the built bundle.
 - `npm run icons` redraws the icons in `src/icons/`.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.
@@ -112,7 +132,21 @@ npm run build
 
 ### Releasing
 
-Publishing a GitHub Release runs `.github/workflows/chrome-webstore-publish.yml`. The release tag must equal the version in `src/manifest.json` (a leading `v` is allowed), otherwise the run fails. Prereleases only get the zip attached and are not uploaded to the store. For a regular release it attaches the zip to the release and uploads it to the Chrome Web Store when the repository secrets `CWS_EXTENSION_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET` and `CWS_REFRESH_TOKEN` are set. The first version has to be submitted by hand in the Chrome Web Store developer dashboard, which is also where the extension ID comes from.
+Publishing a GitHub Release runs `.github/workflows/chrome-webstore-publish.yml`:
+
+- The release tag must equal the version in `src/manifest.json` (a leading `v` is allowed), otherwise the run fails.
+- The run lints, tests and builds, and attaches the zip to the release.
+- For a regular release it then uploads the zip to the Chrome Web Store and submits it for publication. Google reviews every version; it goes live when the review passes. Prereleases are not uploaded.
+- The upload is skipped while any of the repository secrets below is missing.
+
+One-time setup at Google, before the first automatic upload:
+
+1. Register a [Chrome Web Store developer account](https://chrome.google.com/webstore/devconsole) (one-time fee) and switch on 2-step verification for the Google account; the store requires it for publishing.
+2. Upload the first version by hand in the developer dashboard and fill in the store listing and the privacy tab. The API cannot create an item or fill in the listing. Publish it once with the visibility it should keep, because later uploads reuse that visibility.
+3. Note the **publisher ID** (dashboard, Account) and the **extension ID** (the item's page).
+4. In a Google Cloud project, enable the **Chrome Web Store API** and create OAuth credentials. The [chrome-webstore-upload-keys](https://github.com/fregante/chrome-webstore-upload-keys) guide walks through this and yields the client ID, the client secret and a refresh token.
+5. Set the OAuth consent screen to **In production**. While it is in "Testing", Google lets refresh tokens expire after 7 days, and the uploads would start failing.
+6. Store the values as repository secrets: `CWS_PUBLISHER_ID`, `CWS_EXTENSION_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET` and `CWS_REFRESH_TOKEN`.
 
 ## License
 

@@ -56,6 +56,45 @@
             </label>
             <p>Changes apply at once; open editors need no reload.</p>
         </fieldset>
+        <fieldset>
+            <legend>Format on save</legend>
+            <label>
+                <input type="radio" name="editorFormatOnSave" value="off" />
+                Off
+            </label>
+            <label>
+                <input type="radio" name="editorFormatOnSave" value="on" />
+                On: format the code before Marketing Cloud saves it
+            </label>
+            <p>
+                Applies to the Save and Save and Exit buttons and to Ctrl+S / Cmd+S in the code
+                editor. Format at any time with Shift+Alt+F or the { } button of the editor.
+            </p>
+        </fieldset>
+        <fieldset>
+            <legend>Related tools</legend>
+            <p>
+                The same language features for files in VS Code:
+                <a
+                    href="https://marketplace.visualstudio.com/items?itemName=joernberkefeld.sfmc-language"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >SFMC Language Service</a
+                >. The formatter for projects and CI:
+                <a
+                    href="https://www.npmjs.com/package/prettier-plugin-sfmc"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >prettier-plugin-sfmc</a
+                >. Reference:
+                <a href="https://sfmc.guide" target="_blank" rel="noopener noreferrer"
+                    >sfmc.guide</a
+                >
+                and
+                <a href="https://ssjs.guide" target="_blank" rel="noopener noreferrer">ssjs.guide</a
+                >.
+            </p>
+        </fieldset>
         <script src="options.js"></script>
     </body>
 </html>

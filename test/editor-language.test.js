@@ -754,6 +754,215 @@ test('formatting leaves read-only editors, later edits and broken content alone'
     assert.match(notice.textContent, /^Not formatted: /);
 });
 
+const FORMAT_BUTTON = '.sfmc-format-button';
+const ON_SAVE = 'data-sfmc-ux-tools-format-on-save';
+
+/**
+ * Adds an editor inside the frame Marketing Cloud gives its code editor: a toolbar above it,
+ * and a Save button elsewhere on the page.
+ *
+ * @param {object} context page from `page()`
+ * @returns {{editor: object, toolbar: Element, saveButton: Element, saves: string[]}} the editor, its toolbar, the page's Save button and the content at each save the page got to see
+ */
+function inFrame(context) {
+    const { document } = context.window;
+    const frame = document.createElement('div');
+    frame.className = 'et-codemirror';
+    frame.innerHTML =
+        '<div class="et-codemirror-toolbar"><ul><li class="toolbar-button"></li></ul></div>' +
+        '<div class="et-codemirror-bin"></div>';
+    document.body.append(frame);
+    const editor = new context.CodeMirror(frame.querySelector('.et-codemirror-bin'), {
+        value: '%%[ set @a=1 ]%%',
+        mode: BASE_MODE,
+    });
+    const saveButton = document.createElement('span');
+    saveButton.dataset.action = 'editor-save';
+    // jsdom has no layout; what is "on show" is what has boxes
+    saveButton.getClientRects = () => [{}];
+    editor.getWrapperElement().getClientRects = () => [{}];
+    document.body.append(saveButton);
+    const saves = [];
+    saveButton.addEventListener('click', () => {
+        saves.push(editor.getValue());
+    });
+    return { editor, toolbar: frame.querySelector('ul'), saveButton, saves };
+}
+
+test('the format button sits in the editor toolbar, names its shortcut and formats', async () => {
+    const context = page();
+    const { editor, toolbar } = inFrame(context);
+    const plain = addEditor(context, '%%[ set @a=1 ]%%');
+    runExtension(context.window);
+    const button = toolbar.querySelector(`li.toolbar-button > ${FORMAT_BUTTON}`);
+    assert.equal(toolbar.querySelectorAll(FORMAT_BUTTON).length, 1);
+    assert.equal(button.title, 'Format code (Shift+Alt+F)');
+    assert.equal(button.getAttribute('aria-label'), button.title);
+    assert.equal(button.type, 'button');
+    button.click();
+    await formatPause();
+    assert.equal(editor.getValue(), '%%[\n    set @a = 1\n]%%');
+    // without a toolbar the button floats in the corner of the editor
+    const floating = plain.getWrapperElement().querySelector(FORMAT_BUTTON);
+    assert.ok(floating.classList.contains('sfmc-format-floating'));
+    floating.click();
+    await formatPause();
+    assert.equal(plain.getValue(), '%%[\n    set @a = 1\n]%%');
+    const css = read('../dist/extension/editor-highlight.css');
+    assert.ok(css.includes('.sfmc-format-button {'));
+    // the button hands the focus back to the editor, whose blinking cursor would keep the test run alive
+    context.window.close();
+});
+
+test('Ctrl-S and Cmd-S save through the Save button of the page, unformatted by default', async () => {
+    const context = page();
+    const { editor, saves } = inFrame(context);
+    runExtension(context.window);
+    const keyMap = editor.state.keyMaps.find((map) => 'Ctrl-S' in map);
+    assert.equal(keyMap['Ctrl-S'](editor), undefined);
+    assert.equal(keyMap['Cmd-S'](editor), undefined);
+    assert.deepEqual(saves, ['%%[ set @a=1 ]%%', '%%[ set @a=1 ]%%']);
+    await formatPause();
+    assert.equal(editor.getValue(), '%%[ set @a=1 ]%%');
+
+    const other = page();
+    const lonely = addEditor(other, '%%[ set @a=1 ]%%');
+    runExtension(other.window);
+    const lonelyKeys = lonely.state.keyMaps.find((map) => 'Ctrl-S' in map);
+    assert.equal(
+        lonelyKeys['Ctrl-S'](lonely),
+        other.CodeMirror.Pass,
+        'no Save button: the key goes on',
+    );
+});
+
+test('format on save: the save waits for the formatting, and happens exactly once', async () => {
+    const context = page();
+    const { editor, saveButton, saves } = inFrame(context);
+    const { document } = context.window;
+    const exit = document.createElement('a');
+    exit.dataset.action = 'editor-save-exit';
+    document.body.append(exit);
+    const exits = [];
+    exit.addEventListener('click', () => {
+        exits.push(editor.getValue());
+    });
+    runExtension(context.window);
+    document.documentElement.setAttribute(ON_SAVE, 'on');
+
+    saveButton.click();
+    assert.deepEqual(saves, [], 'held back until the code is formatted');
+    await formatPause();
+    assert.deepEqual(saves, ['%%[\n    set @a = 1\n]%%']);
+
+    editor.setValue('%%[ set @b=2 ]%%');
+    editor.state.keyMaps.find((map) => 'Ctrl-S' in map)['Ctrl-S'](editor);
+    await formatPause();
+    assert.deepEqual(saves.slice(1), ['%%[\n    set @b = 2\n]%%']);
+
+    editor.setValue('%%[ set @c=3 ]%%');
+    exit.click();
+    await formatPause();
+    assert.deepEqual(exits, ['%%[\n    set @c = 3\n]%%']);
+
+    // more clicks while a save is held back do not become more saves
+    editor.setValue('%%[ set @e=5 ]%%');
+    saveButton.click();
+    saveButton.click();
+    exit.click();
+    await formatPause();
+    assert.deepEqual(saves.slice(2), ['%%[\n    set @e = 5\n]%%']);
+    assert.equal(exits.length, 1);
+    saves.pop();
+
+    // a button the page has redrawn meanwhile is found again
+    editor.setValue('%%[ set @f=6 ]%%');
+    saveButton.click();
+    const redrawn = saveButton.cloneNode(true);
+    redrawn.getClientRects = () => [{}];
+    let redrawnSaves = 0;
+    redrawn.addEventListener('click', () => {
+        redrawnSaves++;
+    });
+    saveButton.replaceWith(redrawn);
+    await formatPause();
+    assert.equal(redrawnSaves, 1);
+    redrawn.replaceWith(saveButton);
+
+    // editors of hidden views are neither formatted nor a reason to wait
+    const hidden = addEditor(context, '%%[ set @h=1 ]%%');
+    await pause();
+    editor.setValue('%%[ set @g=7 ]%%');
+    saveButton.click();
+    await formatPause();
+    assert.equal(hidden.getValue(), '%%[ set @h=1 ]%%');
+    assert.equal(saves.pop(), '%%[\n    set @g = 7\n]%%');
+
+    // switched off again, and editors that cannot be formatted, never hold a save back
+    document.documentElement.setAttribute(ON_SAVE, 'off');
+    editor.setValue('%%[ set @d=4 ]%%');
+    saveButton.click();
+    assert.equal(saves.at(-1), '%%[ set @d=4 ]%%');
+    document.documentElement.setAttribute(ON_SAVE, 'on');
+    editor.setOption('readOnly', true);
+    saveButton.click();
+    assert.equal(saves.length, 4);
+    assert.equal(saves.at(-1), '%%[ set @d=4 ]%%');
+});
+
+test('the format-on-save setting reaches the page, off by default', async () => {
+    const script = read('../src/editor-format-setting.js');
+    const run = (stored) => {
+        const { window } = new JSDOM('<!doctype html><body></body>', {
+            runScripts: 'outside-only',
+        });
+        const listeners = [];
+        window.chrome = {
+            storage: {
+                sync: { get: (defaults) => Promise.resolve({ ...defaults, ...stored }) },
+                onChanged: {
+                    addListener: (listener) => {
+                        listeners.push(listener);
+                    },
+                },
+            },
+        };
+        window.eval(script);
+        return {
+            value: () => window.document.documentElement.getAttribute(ON_SAVE),
+            change: (newValue) => {
+                for (const listener of listeners) {
+                    listener({ editorFormatOnSave: { newValue } }, 'sync');
+                }
+            },
+        };
+    };
+    const fresh = run({});
+    const saved = run({ editorFormatOnSave: 'on' });
+    assert.equal(fresh.value(), 'off');
+    await pause();
+    assert.equal(fresh.value(), 'off');
+    assert.equal(saved.value(), 'on');
+    saved.change('off');
+    assert.equal(saved.value(), 'off');
+    saved.change('anything');
+    assert.equal(saved.value(), 'off');
+
+    const options = new JSDOM(read('../src/options.html')).window.document;
+    assert.deepEqual(
+        [...options.querySelectorAll('input[name="editorFormatOnSave"]')].map(
+            (input) => input.value,
+        ),
+        ['off', 'on'],
+    );
+    const manifest = JSON.parse(read('../src/manifest.json'));
+    const entry = manifest.content_scripts.find((item) =>
+        item.js.includes('editor-format-setting.js'),
+    );
+    assert.equal(entry.world, undefined);
+    assert.equal(entry.run_at, 'document_start');
+});
+
 test('sets up editors that are opened later, each one only once', async () => {
     const context = page();
     runExtension(context.window);

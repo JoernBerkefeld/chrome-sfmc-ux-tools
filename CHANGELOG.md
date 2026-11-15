@@ -12,7 +12,9 @@
 - **Documentation on hover**: resting the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, shows its parameters, return value, an example and links to the documentation.
 - **Parameter help**: inside the brackets of an AMPscript function or of one of Marketing Cloud's SSJS functions, a box lists the parameters, marks the one that is being typed and says what it is for.
 - **Errors and warnings**: AMPscript and SSJS are checked while you type. What will not work is underlined, red for errors and yellow for warnings, and resting the mouse on it says why.
-- **Formatting**: **Shift+Alt+F** formats the whole content of the code editor, AMPscript, SSJS, HTML, CSS and browser JavaScript, with the bundled `prettier-plugin-sfmc` and the settings of the SFMC Language Service extension for VS Code.
+- **Formatting**: the **{ }** button in the editor's toolbar and **Shift+Alt+F** format the whole content of the code editor, AMPscript, SSJS, HTML, CSS and browser JavaScript, with the bundled `prettier-plugin-sfmc` and the settings of the SFMC Language Service extension for VS Code.
+- **Format on save**: an option, off by default. When it is on, the code is formatted before Marketing Cloud saves it.
+- **Save with Ctrl+S / Cmd+S** in the code editor, which does what Marketing Cloud's Save button does.
 - **JavaScript completions in browser scripts**: inside a `<script>` that runs in the browser, the names used in the content's browser scripts, JavaScript's keywords and the usual globals are suggested. Marketing Cloud's server-side names stay out of browser scripts, and SSJS gets the names of its own scripts and its keywords in the same way.
 
 ## [0.3.0]

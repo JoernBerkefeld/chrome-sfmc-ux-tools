@@ -132,7 +132,12 @@ export default [
     },
     {
         // these run in the extension's own world and use its API
-        files: ['src/editor-context-menu.js', 'src/editor-theme.js', 'src/options.js'],
+        files: [
+            'src/editor-context-menu.js',
+            'src/editor-theme.js',
+            'src/editor-format-setting.js',
+            'src/options.js',
+        ],
 
         languageOptions: {
             globals: {

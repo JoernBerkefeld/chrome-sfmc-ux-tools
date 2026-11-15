@@ -33,7 +33,7 @@
         {
             "matches": ["https://*.marketingcloudapps.com/*"],
             "include_globs": ["https://content-builder.*"],
-            "js": ["editor-context-menu.js", "editor-theme.js"],
+            "js": ["editor-context-menu.js", "editor-theme.js", "editor-format-setting.js"],
             "all_frames": true,
             "run_at": "document_start"
         }

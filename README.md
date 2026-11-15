@@ -27,6 +27,10 @@ While you type AMPscript in the code view of Content Builder, the extension sugg
 - The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.4.0), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
 - The popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
 
+### Editor themes
+
+The code editor of Content Builder is shown in the colours of Visual Studio Code's **Light Modern** theme. To switch to **Dark Modern**, open the extension's options (`chrome://extensions` → SFMC UX Tools → Details → Extension options); the change applies at once. The theme covers the whole editor, not only AMPscript and SSJS, and replaces the themes that Marketing Cloud's own menu offers.
+
 ### Browser context menu in the code editor
 
 A right-click in the code editor opens the browser's own context menu instead of the menu Marketing Cloud draws over the code. To get Marketing Cloud's menu back, open the extension's options (`chrome://extensions` → SFMC UX Tools → Details → Extension options) and choose it there; the change applies at once.

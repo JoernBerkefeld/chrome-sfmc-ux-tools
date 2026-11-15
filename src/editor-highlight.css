@@ -1,36 +1,240 @@
-/* SFMC UX Tools - AMPscript and SSJS colours for Marketing Cloud's CodeMirror editor. */
-.CodeMirror .cm-sfmc-delimiter {
-    color: #0000ff;
+/*
+ * SFMC UX Tools - editor themes and AMPscript / SSJS colours for Marketing Cloud's CodeMirror editor.
+ *
+ * The colours follow the "Light Modern" and "Dark Modern" themes of Visual Studio Code. The theme
+ * is chosen on the extension's options page; editor-theme.js writes it to the attribute
+ * data-sfmc-ux-tools-theme of the html element. Light is the default.
+ *
+ * Where CodeMirror knows less than Visual Studio Code, one colour stands for several:
+ * - strings in HTML attributes and in JavaScript share the string colour;
+ * - all AMPscript keywords share the colour of control keywords;
+ * - the AMPscript delimiters get the keyword blue, so that blocks stand out.
+ */
+:root {
+    --sfmc-background: #ffffff;
+    --sfmc-foreground: #3b3b3b;
+    --sfmc-gutter-border: #ffffff;
+    --sfmc-line-number: #6e7681;
+    --sfmc-line-number-active: #171184;
+    --sfmc-active-line: #f5f5f5;
+    --sfmc-selection: #add6ff;
+    --sfmc-selection-inactive: #e5ebf1;
+    --sfmc-cursor: #000000;
+    --sfmc-bracket-match: #b9b9b9;
+    --sfmc-search-match: #ea5c0055;
+    --sfmc-widget-background: #f8f8f8;
+    --sfmc-widget-border: #e5e5e5;
+    --sfmc-widget-active-background: #e8e8e8;
+    --sfmc-widget-active-foreground: #000000;
+    --sfmc-error: #cd3131;
+    --sfmc-keyword: #0000ff;
+    --sfmc-control: #af00db;
+    --sfmc-function: #795e26;
+    --sfmc-variable: #001080;
+    --sfmc-type: #267f99;
+    --sfmc-string: #a31515;
+    --sfmc-regexp: #811f3f;
+    --sfmc-number: #098658;
+    --sfmc-comment: #008000;
+    --sfmc-operator: #000000;
+    --sfmc-tag: #800000;
+    --sfmc-tag-bracket: #800000;
+    --sfmc-attribute: #e50000;
+    --sfmc-selector: #800000;
+    --sfmc-scheme: light;
+}
+:root[data-sfmc-ux-tools-theme='dark'] {
+    --sfmc-background: #1f1f1f;
+    --sfmc-foreground: #cccccc;
+    --sfmc-gutter-border: #1f1f1f;
+    --sfmc-line-number: #6e7681;
+    --sfmc-line-number-active: #cccccc;
+    --sfmc-active-line: #282828;
+    --sfmc-selection: #264f78;
+    --sfmc-selection-inactive: #3a3d41;
+    --sfmc-cursor: #aeafad;
+    --sfmc-bracket-match: #888888;
+    --sfmc-search-match: #9e6a03;
+    --sfmc-widget-background: #202020;
+    --sfmc-widget-border: #454545;
+    --sfmc-widget-active-background: #04395e;
+    --sfmc-widget-active-foreground: #ffffff;
+    --sfmc-error: #f44747;
+    --sfmc-keyword: #569cd6;
+    --sfmc-control: #c586c0;
+    --sfmc-function: #dcdcaa;
+    --sfmc-variable: #9cdcfe;
+    --sfmc-type: #4ec9b0;
+    --sfmc-string: #ce9178;
+    --sfmc-regexp: #d16969;
+    --sfmc-number: #b5cea8;
+    --sfmc-comment: #6a9955;
+    --sfmc-operator: #d4d4d4;
+    --sfmc-tag: #569cd6;
+    --sfmc-tag-bracket: #808080;
+    --sfmc-attribute: #9cdcfe;
+    --sfmc-selector: #d7ba7d;
+    --sfmc-scheme: dark;
+}
+
+/* The editor itself. The html attribute makes these rules win over Marketing Cloud's own themes. */
+html[data-sfmc-ux-tools-theme] .CodeMirror {
+    background: var(--sfmc-background);
+    color: var(--sfmc-foreground);
+    caret-color: var(--sfmc-cursor);
+    color-scheme: var(--sfmc-scheme);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-gutters {
+    background: var(--sfmc-background);
+    border-right: 1px solid var(--sfmc-gutter-border);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-scrollbar-filler,
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-gutter-filler {
+    background: var(--sfmc-background);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-linenumber,
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-guttermarker-subtle,
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-foldgutter-open,
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-foldgutter-folded {
+    color: var(--sfmc-line-number);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-guttermarker,
+html[data-sfmc-ux-tools-theme]
+    .CodeMirror
+    .CodeMirror-activeline-gutter
+    .CodeMirror-linenumber {
+    color: var(--sfmc-line-number-active);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-activeline-background {
+    background: var(--sfmc-active-line);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-activeline-gutter {
+    background: var(--sfmc-background);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-cursor {
+    border-left-color: var(--sfmc-cursor);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror.cm-fat-cursor .CodeMirror-cursor {
+    background: var(--sfmc-cursor);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-selected {
+    background: var(--sfmc-selection-inactive);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror.CodeMirror-focused .CodeMirror-selected {
+    background: var(--sfmc-selection);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-line::selection,
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-line > span::selection,
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-line > span > span::selection {
+    background: var(--sfmc-selection);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror span.CodeMirror-matchingbracket,
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-matchingtag {
+    background: transparent;
+    color: inherit;
+    outline: 1px solid var(--sfmc-bracket-match);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror span.CodeMirror-nonmatchingbracket {
+    color: var(--sfmc-error);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-searching {
+    background: var(--sfmc-search-match);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-foldmarker {
+    color: var(--sfmc-line-number);
+    text-shadow: none;
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-dialog {
+    background: var(--sfmc-widget-background);
+    color: var(--sfmc-foreground);
+    border-color: var(--sfmc-widget-border);
+}
+
+/* What CodeMirror recognises in HTML, CSS and JavaScript. */
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-keyword,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-atom,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-meta {
+    color: var(--sfmc-keyword);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-def,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-variable,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-variable-2,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-property {
+    color: var(--sfmc-variable);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-variable-3,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-type,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-builtin {
+    color: var(--sfmc-type);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-string,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-link {
+    color: var(--sfmc-string);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-string-2 {
+    color: var(--sfmc-regexp);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-number {
+    color: var(--sfmc-number);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-comment {
+    color: var(--sfmc-comment);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-operator,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-bracket {
+    color: var(--sfmc-operator);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-tag {
+    color: var(--sfmc-tag);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-tag.cm-bracket {
+    color: var(--sfmc-tag-bracket);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-attribute {
+    color: var(--sfmc-attribute);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-qualifier {
+    color: var(--sfmc-selector);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-header {
+    color: var(--sfmc-keyword);
+}
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-error,
+html[data-sfmc-ux-tools-theme] .CodeMirror .cm-invalidchar {
+    color: var(--sfmc-error);
+}
+
+/* AMPscript and Marketing Cloud's server-side JavaScript. These also apply without the attribute. */
+html .CodeMirror .cm-sfmc-delimiter {
+    color: var(--sfmc-keyword);
     font-weight: bold;
 }
-.CodeMirror .cm-sfmc-keyword {
-    color: #af00db;
+html .CodeMirror .cm-sfmc-keyword {
+    color: var(--sfmc-control);
 }
-.CodeMirror .cm-sfmc-function {
-    color: #795e26;
+html .CodeMirror .cm-sfmc-function,
+html .CodeMirror .cm-sfmc-ssjs-function {
+    color: var(--sfmc-function);
 }
-.CodeMirror .cm-sfmc-personalization,
-.CodeMirror .cm-sfmc-variable {
-    color: #001080;
+html .CodeMirror .cm-sfmc-personalization,
+html .CodeMirror .cm-sfmc-variable {
+    color: var(--sfmc-variable);
 }
-.CodeMirror .cm-sfmc-string {
-    color: #a31515;
+html .CodeMirror .cm-sfmc-string {
+    color: var(--sfmc-string);
 }
-.CodeMirror .cm-sfmc-number {
-    color: #098658;
+html .CodeMirror .cm-sfmc-number {
+    color: var(--sfmc-number);
 }
-.CodeMirror .cm-sfmc-comment {
-    color: #008000;
+html .CodeMirror .cm-sfmc-comment {
+    color: var(--sfmc-comment);
 }
-.CodeMirror .cm-sfmc-text,
-.CodeMirror .cm-sfmc-operator {
-    color: #000000;
+html .CodeMirror .cm-sfmc-text,
+html .CodeMirror .cm-sfmc-operator {
+    color: var(--sfmc-operator);
 }
-.CodeMirror .cm-sfmc-ssjs-object {
-    color: #267f99;
-}
-.CodeMirror .cm-sfmc-ssjs-function {
-    color: #795e26;
+html .CodeMirror .cm-sfmc-ssjs-object {
+    color: var(--sfmc-type);
 }
 
 /* Completions popup. It is added to the page body, outside of the editor. */
@@ -43,10 +247,11 @@
     margin: 0;
     padding: 2px;
     list-style: none;
-    border: 1px solid #c8c8c8;
+    border: 1px solid var(--sfmc-widget-border);
     border-radius: 3px;
-    background: #ffffff;
+    background: var(--sfmc-widget-background);
     box-shadow: 2px 3px 5px rgba(0, 0, 0, 0.2);
+    color-scheme: var(--sfmc-scheme);
     font-family: monospace;
     font-size: 90%;
 }
@@ -54,13 +259,13 @@
     margin: 0;
     padding: 0 4px;
     border-radius: 2px;
-    color: #000000;
+    color: var(--sfmc-foreground);
     white-space: pre;
     cursor: pointer;
 }
 li.CodeMirror-hint-active {
-    background: #0060c0;
-    color: #ffffff;
+    background: var(--sfmc-widget-active-background);
+    color: var(--sfmc-widget-active-foreground);
 }
 .CodeMirror-hint .sfmc-hint-detail {
     margin-left: 1.5em;

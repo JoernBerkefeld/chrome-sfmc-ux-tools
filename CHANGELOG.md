@@ -6,9 +6,11 @@
 
 - **AMPscript completions in the code editor** of Content Builder: functions, keywords, personalisation strings and the variables of the current content are suggested while you type and on **Ctrl+Space**. Picking a function inserts its name and the opening bracket. The suggestions come from the bundled `sfmc-language-lsp` 4.4.0 language service. Server-side JavaScript has no completions yet.
 
+- **Editor themes**: the code editor of Content Builder is shown in the colours of Visual Studio Code's **Light Modern** theme, or in **Dark Modern** if you choose that in the extension's options. This covers the whole editor (background, line numbers, selection, HTML, CSS and JavaScript) and replaces the themes of Marketing Cloud's own menu.
+
 ### Changed
 
-- A right-click in the code editor now opens the browser's own context menu (copy, paste, spell check, …) instead of Marketing Cloud's menu. Marketing Cloud's menu (source formatting, theme, word wrap, line numbers) can be switched back on in the extension's options. The setting is stored with Chrome's `storage` permission, which needs no confirmation.
+- A right-click in the code editor now opens the browser's own context menu (copy, paste, spell check, …) instead of Marketing Cloud's menu. Marketing Cloud's menu (source formatting, word wrap, line numbers) can be switched back on in the extension's options. The setting is stored with Chrome's `storage` permission, which needs no confirmation.
 - The extension now has a build step. To load it unpacked, run `npm run build` and pick `dist/extension` instead of `src`.
 
 ## [0.2.0]

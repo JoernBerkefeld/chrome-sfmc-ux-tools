@@ -13,7 +13,7 @@
             }
             fieldset {
                 border: 0;
-                margin: 0;
+                margin: 0 0 20px;
                 padding: 0;
             }
             legend {
@@ -33,6 +33,18 @@
     </head>
     <body>
         <fieldset>
+            <legend>Theme of the code editor</legend>
+            <label>
+                <input type="radio" name="editorTheme" value="light" />
+                Light Modern
+            </label>
+            <label>
+                <input type="radio" name="editorTheme" value="dark" />
+                Dark Modern
+            </label>
+            <p>Replaces the themes of Marketing Cloud's own menu.</p>
+        </fieldset>
+        <fieldset>
             <legend>Right-click menu in the code editor</legend>
             <label>
                 <input type="radio" name="editorContextMenu" value="browser" />
@@ -40,7 +52,7 @@
             </label>
             <label>
                 <input type="radio" name="editorContextMenu" value="page" />
-                Marketing Cloud's menu (source formatting, theme, word wrap, line numbers)
+                Marketing Cloud's menu (source formatting, word wrap, line numbers)
             </label>
             <p>Changes apply at once; open editors need no reload.</p>
         </fieldset>

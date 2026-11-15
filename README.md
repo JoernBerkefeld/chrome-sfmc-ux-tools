@@ -6,10 +6,11 @@ A Chrome extension with small usability helpers for Salesforce Marketing Cloud E
 
 ## Features
 
-### AMPscript colours in the code editor
+### AMPscript and SSJS colours in the code editor
 
 Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. With the extension, the code inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and `<script runat="server" language="ampscript">` tags is coloured as well: keywords, functions, variables, strings, numbers and comments.
 
+- In server-side JavaScript (`<script runat="server">`), Marketing Cloud's own objects and functions get colours of their own, for example `Platform`, `DataExtension`, `Variable`, `Write()` and the functions behind `Platform.Function.`. The JavaScript itself keeps the colours the editor already gives it.
 - Works in the code view of Content Builder and in other Marketing Cloud apps that use the same editor.
 - The content itself is never changed; only the colours are.
 - A script tag is only recognised if its opening tag fits on one line.
@@ -61,7 +62,7 @@ npm run build
 - `src/` is the extension itself; there is no compile step.
 - `npm run build` writes `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store.
 - `npm run icons` redraws the icons in `src/icons/`.
-- `npm run generate` rewrites `src/ampscript-keywords.js` from the `ampscript-data` package; run it after updating that dependency. A test fails if the file is out of date.
+- `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.
 - Keep `version` in `package.json` and `src/manifest.json` identical; a test checks this.
 
 ### Releasing

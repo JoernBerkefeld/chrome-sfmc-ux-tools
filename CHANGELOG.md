@@ -5,6 +5,7 @@
 ### Added
 
 - **AMPscript colours in the code editor** of Content Builder and other Marketing Cloud apps that use the same editor: keywords, functions, variables, strings, numbers and comments inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and `<script runat="server" language="ampscript">` tags.
+- **SSJS colours in the code editor**: inside `<script runat="server">`, Marketing Cloud's objects (`Platform`, `DataExtension`, `Variable`, …), its global functions (`Write()`, `Stringify()`, …) and the functions behind `Platform.Function.` are coloured.
 
 ### Changed
 

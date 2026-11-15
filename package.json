@@ -20,7 +20,7 @@
     },
     "scripts": {
         "build": "node scripts/build.js",
-        "generate": "node scripts/generate-keywords.js",
+        "generate": "node scripts/generate-language-data.js",
         "icons": "node scripts/generate-icons.js",
         "lint": "eslint --max-warnings 0 .",
         "lint:fix": "eslint --fix .",
@@ -42,6 +42,7 @@
         "globals": "^17.14.0",
         "husky": "^9.1.7",
         "jsdom": "^31.0.1",
-        "prettier": "^3.10.1"
+        "prettier": "^3.10.1",
+        "ssjs-data": "^2.1.1"
     }
 }

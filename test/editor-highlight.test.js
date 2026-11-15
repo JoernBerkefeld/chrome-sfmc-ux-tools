@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
-import { renderKeywords } from '../scripts/generate-keywords.js';
+import { renderLanguageData } from '../scripts/generate-language-data.js';
 
 const require = createRequire(import.meta.url);
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
@@ -14,7 +14,7 @@ const codeMirrorSources = [
     'codemirror/mode/css/css.js',
     'codemirror/mode/htmlmixed/htmlmixed.js',
 ].map((id) => readFileSync(require.resolve(id), 'utf8'));
-const keywordScript = read('../src/ampscript-keywords.js');
+const dataScript = read('../src/language-data.js');
 const highlightScript = read('../src/editor-highlight.js');
 const BASE_MODE = 'ampScriptHtmlMixed';
 
@@ -59,7 +59,7 @@ function addEditor({ window, CodeMirror }, value, mode = BASE_MODE) {
  * @param {object} window page window
  */
 function runExtension(window) {
-    window.eval(keywordScript);
+    window.eval(dataScript);
     window.eval(highlightScript);
 }
 
@@ -275,12 +275,88 @@ test('leaves scripts that run in the browser alone', () => {
     const context = page();
     const editor = addEditor(
         context,
-        '<script>var set = 1;</script>\n<script language="ampscript">var set = 2;</script>',
+        '<script>var set = 1; Platform.Load("core", "1");</script>\n<script language="ampscript">var set = 2;</script>',
     );
     runExtension(context.window);
     const tokens = styled(editor);
     assert.equal(tokens.filter((token) => token.includes(':sfmc-')).length, 0);
     assert.equal(tokens.filter((token) => token === 'var:keyword').length, 2);
+});
+
+test('adds Marketing Cloud colours to server-side JavaScript and keeps the JavaScript colours', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        [
+            '<script runat="server">',
+            'Platform.Load("core", "1.1.5");',
+            'var de = DataExtension.Init("x"), n = 5;',
+            'var v = Platform.Function.Lookup("de", "f", "k", n);',
+            'Write(Stringify(v)); Variable.SetValue("@v", v);',
+            '</script>',
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(
+        styled(editor).filter((token) => token.includes(':sfmc-')),
+        [
+            'Platform:sfmc-ssjs-object',
+            'DataExtension:sfmc-ssjs-object',
+            'Platform:sfmc-ssjs-object',
+            'Lookup:sfmc-ssjs-function',
+            'Write:sfmc-ssjs-function',
+            'Stringify:sfmc-ssjs-function',
+            'Variable:sfmc-ssjs-object',
+        ],
+    );
+    const tokens = styled(editor);
+    for (const expected of [
+        'var:keyword',
+        'de:def',
+        '"core":string',
+        '5:number',
+        'Load:property',
+    ]) {
+        assert.ok(tokens.includes(expected), expected + ' missing in ' + tokens.join(' | '));
+    }
+});
+
+test('does not colour SSJS names in strings, comments, member positions or plain JavaScript built-ins', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        [
+            '<script runat="server" language="javascript">',
+            String.raw`var a = "Platform \" Variable"; // Platform Write(`,
+            "var b = 'DataExtension'; /* Request",
+            'Subscriber */ foo.Platform.Lookup(); my.Function.Nope();',
+            'var Write = 1; new Error(String(a)); Lookup(1);',
+            '</script>',
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(
+        styled(editor).filter((token) => token.includes(':sfmc-')),
+        [],
+    );
+});
+
+test('SSJS ends at the closing script tag even inside an open string or comment', () => {
+    const context = page();
+    const open = '<script runat="server">';
+    const editor = addEditor(
+        context,
+        [
+            open + 'var a = "open</script><p>Platform Email List</p>',
+            open + '/* open</script><p>Platform Email List</p>',
+            open + '// Platform</script><p>Platform Email List</p>%%=v(@a)=%%',
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(
+        styled(editor).filter((token) => token.includes(':sfmc-')),
+        ['%%=:sfmc-delimiter', 'v:sfmc-function', '@a:sfmc-variable', '=%%:sfmc-delimiter'],
+    );
 });
 
 test('leaves personalisation strings and plain text alone', () => {
@@ -370,20 +446,20 @@ test('an inline expression that is never closed ends at the next block or empty 
     ]);
 });
 
-test('does not leave its keyword list on the page', () => {
+test('does not leave its language data on the page', () => {
     const context = page();
     runExtension(context.window);
-    assert.equal(context.window.sfmcUxToolsAmpscriptKeywords, undefined);
+    assert.equal(context.window.sfmcUxToolsLanguageData, undefined);
 });
 
-test('the manifest runs the editor scripts in the page world, keywords first', () => {
+test('the manifest runs the editor scripts in the page world, language data first', () => {
     const manifest = JSON.parse(read('../src/manifest.json'));
     const entry = manifest.content_scripts.find((script) =>
         script.js.includes('editor-highlight.js'),
     );
     assert.equal(entry.world, 'MAIN');
     assert.equal(entry.all_frames, true);
-    assert.deepEqual(entry.js, ['ampscript-keywords.js', 'editor-highlight.js']);
+    assert.deepEqual(entry.js, ['language-data.js', 'editor-highlight.js']);
     assert.deepEqual(entry.css, ['editor-highlight.css']);
     assert.deepEqual(entry.matches, ['https://*.marketingcloudapps.com/*']);
     assert.equal(manifest.minimum_chrome_version, '111');
@@ -407,7 +483,7 @@ test('does nothing on pages without a matching editor', () => {
 test('falls back to the plain base colours if the AMPscript tokenizer breaks', () => {
     const context = page();
     const editor = addEditor(context, '<b>%%[ set @a = 1\nset @b = 2 ]%%</b>');
-    context.window.eval(keywordScript);
+    context.window.eval(dataScript);
     // a keyword lookup that throws stands in for any unexpected tokenizer failure
     context.window.eval('Set.prototype.has = () => { throw new Error("broken"); };');
     context.window.eval(highlightScript);
@@ -416,13 +492,12 @@ test('falls back to the plain base colours if the AMPscript tokenizer breaks', (
         '<:tag bracket',
         'b:tag',
         '>:tag bracket',
-        '%%[:sfmc-delimiter',
         '</:tag bracket',
         'b:tag',
         '>:tag bracket',
     ]);
 });
 
-test('the generated keyword file is up to date with ampscript-data', () => {
-    assert.equal(keywordScript.replaceAll('\r\n', '\n'), renderKeywords());
+test('the generated language data is up to date with ampscript-data and ssjs-data', () => {
+    assert.equal(dataScript.replaceAll('\r\n', '\n'), renderLanguageData());
 });

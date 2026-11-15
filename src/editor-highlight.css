@@ -1,4 +1,4 @@
-/* SFMC UX Tools - AMPscript colours for Marketing Cloud's CodeMirror editor. */
+/* SFMC UX Tools - AMPscript and SSJS colours for Marketing Cloud's CodeMirror editor. */
 .CodeMirror .cm-sfmc-delimiter {
     color: #0000ff;
     font-weight: bold;
@@ -24,4 +24,10 @@
 .CodeMirror .cm-sfmc-text,
 .CodeMirror .cm-sfmc-operator {
     color: #000000;
+}
+.CodeMirror .cm-sfmc-ssjs-object {
+    color: #267f99;
+}
+.CodeMirror .cm-sfmc-ssjs-function {
+    color: #795e26;
 }

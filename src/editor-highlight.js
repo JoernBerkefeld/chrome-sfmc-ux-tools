@@ -1,9 +1,10 @@
 /*
- * SFMC UX Tools — AMPscript colouring for Marketing Cloud's code editor.
+ * SFMC UX Tools — AMPscript and SSJS colouring for Marketing Cloud's code editor.
  *
  * Marketing Cloud edits code with CodeMirror 5 and its own "ampScriptHtmlMixed" mode, which
  * colours the HTML but leaves AMPscript plain. This script wraps that mode so that the code in
  * %%[ ... ]%% blocks, %%= ... =%% expressions and AMPscript script tags is coloured as well.
+ * In server-side JavaScript (SSJS) it adds colours for the Marketing Cloud objects and functions.
  *
  * It has to run in the page's own script world, because the editor instance is only reachable there.
  */
@@ -13,8 +14,13 @@
     const BASE_MODE = 'ampScriptHtmlMixed';
     const EDITOR_SELECTOR = '.CodeMirror';
     const SCAN_DELAY = 50;
-    const KEYWORDS = new Set(globalThis.sfmcUxToolsAmpscriptKeywords);
-    delete globalThis.sfmcUxToolsAmpscriptKeywords;
+    const DATA = globalThis.sfmcUxToolsLanguageData ?? {};
+    delete globalThis.sfmcUxToolsLanguageData;
+    const KEYWORDS = new Set(DATA.ampscriptKeywords);
+    const SSJS_OBJECTS = new Set(DATA.ssjsObjects);
+    const SSJS_GLOBAL_FUNCTIONS = new Set(DATA.ssjsGlobalFunctions);
+    const SSJS_PLATFORM_FUNCTIONS = new Set(DATA.ssjsPlatformFunctions);
+    const SCRIPT_REGIONS = new Set(['script', 'ssjs']);
     const CLOSING = { block: ']%%', inline: '=%%' };
     const SCRIPT_OPEN = /^<script\b[^>]*>/i;
     const SCRIPT_CLOSE = /^<\/script/i;
@@ -58,7 +64,7 @@
     function hasReachedEnd(stream, state, marker) {
         const rest = stream.string.slice(stream.pos);
         const end = rest.indexOf(marker);
-        const limit = state.region === 'script' ? rest.search(SCRIPT_CLOSE_AHEAD) : -1;
+        const limit = SCRIPT_REGIONS.has(state.region) ? rest.search(SCRIPT_CLOSE_AHEAD) : -1;
         if (limit !== -1 && (end === -1 || end > limit)) {
             stream.pos += limit;
             return false;
@@ -105,7 +111,57 @@
      * @returns {string | null} region name, or null for scripts that run in the browser
      */
     function scriptRegion(tag) {
-        return RUNS_ON_SERVER.test(tag) && AMPSCRIPT_LANGUAGE.test(tag) ? 'script' : null;
+        if (!RUNS_ON_SERVER.test(tag)) {
+            return null;
+        }
+        return AMPSCRIPT_LANGUAGE.test(tag) ? 'script' : 'ssjs';
+    }
+
+    /**
+     * Reads the next token of server-side JavaScript. The base mode colours the JavaScript itself;
+     * this only adds styles for Marketing Cloud's own objects and functions and returns null otherwise.
+     * Strings and comments are skipped so that names inside them stay untouched.
+     *
+     * @param {object} stream CodeMirror string stream
+     * @param {object} state tokenizer state
+     * @returns {string | null} token style, or null for text that keeps its JavaScript colouring
+     */
+    function ssjsToken(stream, state) {
+        if (state.isInComment || hasConsumed(stream, '/*')) {
+            state.isInComment = !hasReachedEnd(stream, state, '*/');
+            return null;
+        }
+        if (stream.eatSpace()) {
+            return null;
+        }
+        if (hasConsumed(stream, '//')) {
+            hasReachedEnd(stream, state, '\n');
+            return null;
+        }
+        if (hasConsumed(stream, /^["']/)) {
+            // JavaScript strings end with the line at the latest
+            const pattern = stream.current() === '"' ? /^(?:[^"\\]|\\.)*"?/ : /^(?:[^'\\]|\\.)*'?/;
+            const rest = stream.string.slice(stream.pos);
+            const limit = rest.search(SCRIPT_CLOSE_AHEAD);
+            stream.pos += pattern.exec(limit === -1 ? rest : rest.slice(0, limit))[0].length;
+            return null;
+        }
+        if (!hasConsumed(stream, /^[a-z_$][\w$]*/i)) {
+            stream.next();
+            return null;
+        }
+        const name = stream.current();
+        const before = stream.string.slice(0, stream.start);
+        if (/\.\s*$/.test(before)) {
+            const isPlatformFunction =
+                /\bFunction\s*\.\s*$/.test(before) && SSJS_PLATFORM_FUNCTIONS.has(name);
+            return isPlatformFunction ? 'sfmc-ssjs-function' : null;
+        }
+        if (SSJS_OBJECTS.has(name)) {
+            return 'sfmc-ssjs-object';
+        }
+        const isCall = /^\s*\(/.test(stream.string.slice(stream.pos));
+        return isCall && SSJS_GLOBAL_FUNCTIONS.has(name) ? 'sfmc-ssjs-function' : null;
     }
 
     /**
@@ -148,12 +204,15 @@
      * @returns {string | null} token style, or null for text that keeps its HTML colouring
      */
     function ampscriptToken(stream, state) {
-        if (state.region === 'script' && stream.match(SCRIPT_CLOSE, false)) {
+        if (SCRIPT_REGIONS.has(state.region) && stream.match(SCRIPT_CLOSE, false)) {
             // like the browser, end the script here even inside a comment or string
             Object.assign(state, initialState());
         }
         if (!state.region) {
             return outsideToken(stream, state);
+        }
+        if (state.region === 'ssjs') {
+            return ssjsToken(stream, state);
         }
         if (state.isInComment) {
             return commentToken(stream, state);

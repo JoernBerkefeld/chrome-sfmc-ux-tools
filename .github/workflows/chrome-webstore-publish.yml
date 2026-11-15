@@ -1,0 +1,64 @@
+# Builds the extension zip when a GitHub Release is published, attaches it to the release
+# and uploads it to the Chrome Web Store.
+#
+# The store upload needs these repository secrets and is skipped while they are missing:
+# CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN
+# The very first version has to be submitted manually in the Chrome Web Store dashboard.
+#
+# The release tag must equal the version in src/manifest.json (an optional leading "v" is ignored).
+# Prereleases only get the zip attached; they are never uploaded to the store.
+
+name: Publish Chrome Extension on Release
+
+on:
+    release:
+        types: [published]
+
+permissions:
+    contents: write # Required for uploading release assets
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '24'
+
+            - name: Check that the release tag matches the manifest version
+              env:
+                  TAG_NAME: ${{ github.event.release.tag_name }}
+              run: |
+                  set -euo pipefail
+                  MANIFEST_VERSION="$(node -p "require('./src/manifest.json').version")"
+                  if [ "${TAG_NAME#v}" != "${MANIFEST_VERSION}" ]; then
+                    echo "::error::Release tag ${TAG_NAME} does not match src/manifest.json version ${MANIFEST_VERSION}."
+                    exit 1
+                  fi
+
+            - run: npm ci --no-workspaces
+            - run: npm run lint
+            - run: npm test
+            - run: npm run build
+
+            - name: Upload zip to GitHub Release
+              run: gh release upload "${TAG_NAME}" dist/*.zip --clobber
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  TAG_NAME: ${{ github.event.release.tag_name }}
+
+            - name: Upload to Chrome Web Store (skipped for prereleases and without credentials)
+              if: ${{ !github.event.release.prerelease }}
+              env:
+                  EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+                  CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+                  CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+                  REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+              run: |
+                  set -euo pipefail
+                  if [ -z "${EXTENSION_ID}" ] || [ -z "${CLIENT_ID}" ] || [ -z "${CLIENT_SECRET}" ] || [ -z "${REFRESH_TOKEN}" ]; then
+                    echo "::notice::Chrome Web Store secrets are not configured — skipping store upload."
+                    exit 0
+                  fi
+                  npx --yes chrome-webstore-upload-cli@3 upload --source dist/*.zip --auto-publish

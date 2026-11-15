@@ -1,0 +1,44 @@
+{
+    "name": "chrome-sfmc-ux-tools",
+    "displayName": "SFMC UX Tools",
+    "description": "Chrome extension with small usability helpers for Salesforce Marketing Cloud Engagement Setup.",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "author": "Jörn Berkefeld",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools.git"
+    },
+    "bugs": {
+        "url": "https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues"
+    },
+    "homepage": "https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools#readme",
+    "engines": {
+        "node": ">=22.15.0"
+    },
+    "scripts": {
+        "build": "node scripts/build.js",
+        "icons": "node scripts/generate-icons.js",
+        "lint": "eslint --max-warnings 0 .",
+        "lint:fix": "eslint --fix .",
+        "test": "node --test",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "prepare": "husky || true"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "eslint": "^10.15.0",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-jsdoc": "^65.4.6",
+        "eslint-plugin-prettier": "^5.5.7",
+        "eslint-plugin-unicorn": "^79.0.0",
+        "fflate": "^0.8.3",
+        "globals": "^17.14.0",
+        "husky": "^9.1.7",
+        "jsdom": "^31.0.1",
+        "prettier": "^3.10.1"
+    }
+}

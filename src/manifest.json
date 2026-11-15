@@ -1,0 +1,19 @@
+{
+    "manifest_version": 3,
+    "name": "SFMC UX Tools",
+    "version": "0.1.0",
+    "description": "Small usability helpers for Salesforce Marketing Cloud Engagement Setup, e.g. select all scopes of an installed package at once.",
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "content_scripts": [
+        {
+            "matches": ["https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx*"],
+            "js": ["content.js"],
+            "all_frames": true,
+            "run_at": "document_idle"
+        }
+    ]
+}

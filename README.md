@@ -15,7 +15,11 @@ Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. Wi
 - Works in the code view of Content Builder. Other Marketing Cloud apps with the same editor will follow once each has been checked.
 - The content itself is never changed; only the colours are.
 - A script tag is only recognised if its opening tag fits on one line.
-- Not covered yet: hovers and diagnostics.
+- Not covered yet: diagnostics.
+
+### Documentation on hover
+
+Rest the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, and a box shows what it does: its parameters with their types, what it returns, an example and links to the full documentation. You can move the mouse onto the box to scroll it or to follow a link. Nothing is shown inside browser scripts.
 
 ### Completions
 

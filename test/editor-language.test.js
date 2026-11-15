@@ -414,6 +414,95 @@ test('opens the popup while typing, but not inside strings or comments', async (
     assert.equal(code.getValue(), '%%[ set @a = Lo ]%%', 'typing alone inserts nothing');
 });
 
+const HOVER = '.sfmc-hover';
+const hoverPause = () => new Promise((resolve) => setTimeout(resolve, 450));
+
+/**
+ * Rests the mouse on a character of an editor. jsdom has no layout, so the editor is told
+ * which character that is.
+ *
+ * @param {object} context page from `page()`
+ * @param {object} editor CodeMirror instance
+ * @param {string} before text that ends right before the character
+ * @param {object} [extra] more of what CodeMirror reports for the place, like `outside`
+ */
+function rest(context, editor, before, extra = {}) {
+    const place = editor.posFromIndex(editor.getValue().indexOf(before) + before.length);
+    // the gap after the character and "left of it" is what CodeMirror reports for its right half
+    editor.coordsChar = () => ({ line: place.line, ch: place.ch + 1, xRel: -1, ...extra });
+    editor.charCoords = () => ({ left: 10, right: 20, top: 100, bottom: 115 });
+    editor
+        .getWrapperElement()
+        .dispatchEvent(new context.window.MouseEvent('mousemove', { bubbles: true }));
+}
+
+test('resting the mouse on an AMPscript function shows its documentation', async () => {
+    const context = page();
+    const editor = addEditor(context, '<p>%%[ set @a = Lookup("a", "b", "c", 1) ]%%</p>');
+    runExtension(context.window);
+    const { document } = context.window;
+    rest(context, editor, 'set @a = Look');
+    assert.equal(document.querySelector(HOVER), null, 'waits until the mouse rests');
+    await hoverPause();
+    const box = document.querySelector(HOVER);
+    assert.equal(box.parentNode, document.body);
+    assert.match(box.querySelector('pre').textContent, /^\(function\) Lookup\(dataObject: string/);
+    assert.match(box.textContent, /Returns a single field value/);
+    assert.ok([...box.querySelectorAll('code')].some((code) => code.textContent === 'dataObject'));
+    const link = box.querySelector('a');
+    assert.match(link.href, /^https:\/\//);
+    assert.equal(link.target, '_blank');
+    assert.match(link.rel, /noopener/);
+    assert.equal(box.querySelector('script'), null);
+    assert.doesNotMatch(box.textContent, /\*\*|```/, 'no Markdown marks are left');
+
+    rest(context, editor, '<');
+    await hoverPause();
+    assert.equal(document.querySelector(HOVER), null, 'gone where there is nothing to say');
+    rest(context, editor, 'set @a = Look', { outside: 1 });
+    await hoverPause();
+    assert.equal(document.querySelector(HOVER), null, 'nothing beside the text');
+});
+
+test('hover: SSJS in server-side scripts, nothing in browser scripts, gone on typing', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        '<script runat="server">\nvar a = Platform.Function.Lookup("a", "b", "c", 1);\n</script>\n' +
+            '<script>\nvar b = Platform.Function.Lookup("a");\n</script>',
+    );
+    runExtension(context.window);
+    const { document } = context.window;
+    rest(context, editor, 'var a = Platform.Function.Look');
+    await hoverPause();
+    assert.match(
+        document.querySelector(HOVER + ' pre').textContent,
+        /^\(function\) Platform\.Function\.Lookup\(deName: string/,
+    );
+    editor.replaceRange(' ', { line: 0, ch: 0 });
+    assert.equal(document.querySelector(HOVER), null);
+    rest(context, editor, 'var b = Platform.Function.Look');
+    await hoverPause();
+    assert.equal(document.querySelector(HOVER), null);
+});
+
+test('hover: the box stays while the mouse is on it and goes when it leaves', async () => {
+    const context = page();
+    const editor = addEditor(context, '%%[ set @a = Lookup("a", "b", "c", 1) ]%%');
+    runExtension(context.window);
+    const { document, MouseEvent } = context.window;
+    rest(context, editor, 'set @a = Look');
+    await hoverPause();
+    const box = document.querySelector(HOVER);
+    editor.getWrapperElement().dispatchEvent(new MouseEvent('mouseleave'));
+    box.dispatchEvent(new MouseEvent('mouseenter'));
+    await hoverPause();
+    assert.equal(document.querySelector(HOVER), box);
+    box.dispatchEvent(new MouseEvent('mouseleave'));
+    await hoverPause();
+    assert.equal(document.querySelector(HOVER), null);
+});
+
 test('sets up editors that are opened later, each one only once', async () => {
     const context = page();
     runExtension(context.window);

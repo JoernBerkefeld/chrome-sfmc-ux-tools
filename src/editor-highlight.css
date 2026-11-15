@@ -27,6 +27,7 @@
     --sfmc-widget-active-background: #e8e8e8;
     --sfmc-widget-active-foreground: #000000;
     --sfmc-error: #cd3131;
+    --sfmc-link: #005fb8;
     --sfmc-keyword: #0000ff;
     --sfmc-control: #af00db;
     --sfmc-function: #795e26;
@@ -60,6 +61,7 @@
     --sfmc-widget-active-background: #04395e;
     --sfmc-widget-active-foreground: #ffffff;
     --sfmc-error: #f44747;
+    --sfmc-link: #4daafc;
     --sfmc-keyword: #569cd6;
     --sfmc-control: #c586c0;
     --sfmc-function: #dcdcaa;
@@ -271,4 +273,57 @@ li.CodeMirror-hint-active {
     margin-left: 1.5em;
     opacity: 0.6;
     font-size: 90%;
+}
+
+/* Boxes of the language features: documentation on hover, parameter help. */
+.sfmc-tooltip {
+    position: fixed;
+    z-index: 2147483000;
+    overflow: auto;
+    box-sizing: border-box;
+    max-width: min(640px, 90vw);
+    max-height: min(320px, 60vh);
+    padding: 4px 10px;
+    border: 1px solid var(--sfmc-widget-border);
+    border-radius: 3px;
+    background: var(--sfmc-widget-background);
+    box-shadow: 2px 3px 5px rgba(0, 0, 0, 0.2);
+    color: var(--sfmc-foreground);
+    color-scheme: var(--sfmc-scheme);
+    font: 13px/1.4 system-ui, sans-serif;
+    text-align: left;
+    white-space: normal;
+}
+.sfmc-tooltip p,
+.sfmc-tooltip pre,
+.sfmc-tooltip blockquote {
+    margin: 6px 0;
+}
+.sfmc-tooltip pre,
+.sfmc-tooltip code {
+    font-family: monospace;
+    font-size: 12px;
+}
+.sfmc-tooltip pre {
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--sfmc-widget-border);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.sfmc-tooltip pre:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+.sfmc-tooltip code {
+    padding: 0 3px;
+    border-radius: 3px;
+    background: var(--sfmc-widget-active-background);
+    color: var(--sfmc-widget-active-foreground);
+}
+.sfmc-tooltip blockquote {
+    padding-left: 8px;
+    border-left: 3px solid var(--sfmc-widget-border);
+}
+.sfmc-tooltip a {
+    color: var(--sfmc-link);
 }

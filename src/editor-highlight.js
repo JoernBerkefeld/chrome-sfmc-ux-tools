@@ -3,7 +3,7 @@
  *
  * Marketing Cloud edits code with CodeMirror 5 and its own "ampScriptHtmlMixed" mode, which
  * colours the HTML but leaves AMPscript plain. This script wraps that mode so that the code in
- * %%[ ... ]%% blocks and %%= ... =%% expressions is coloured as well.
+ * %%[ ... ]%% blocks, %%= ... =%% expressions and AMPscript script tags is coloured as well.
  *
  * It has to run in the page's own script world, because the editor instance is only reachable there.
  */
@@ -16,6 +16,12 @@
     const KEYWORDS = new Set(globalThis.sfmcUxToolsAmpscriptKeywords);
     delete globalThis.sfmcUxToolsAmpscriptKeywords;
     const CLOSING = { block: ']%%', inline: '=%%' };
+    const SCRIPT_OPEN = /^<script\b[^>]*>/i;
+    const SCRIPT_CLOSE = /^<\/script/i;
+    const SCRIPT_CLOSE_AHEAD = /<\/script/i;
+    const NEXT_CANDIDATE = /%%|<script\b/i;
+    const RUNS_ON_SERVER = /\brunat\s*=\s*["']?server\b/i;
+    const AMPSCRIPT_LANGUAGE = /\blanguage\s*=\s*["']?ampscript\b/i;
     const wrappedFactories = new WeakSet();
 
     /**
@@ -32,6 +38,40 @@
     }
 
     /**
+     * Fresh tokenizer state: outside of AMPscript, with no string or comment open.
+     *
+     * @returns {object} tokenizer state
+     */
+    function initialState() {
+        return { region: null, quote: null, isInComment: false };
+    }
+
+    /**
+     * Moves behind the end marker of a comment or string. If the marker is not on this line, moves to
+     * the end of the line instead, or in a script tag to the closing tag, which always ends the script.
+     *
+     * @param {object} stream CodeMirror string stream
+     * @param {object} state tokenizer state
+     * @param {string} marker text that ends the comment or string
+     * @returns {boolean} true if the marker was found and consumed
+     */
+    function hasReachedEnd(stream, state, marker) {
+        const rest = stream.string.slice(stream.pos);
+        const end = rest.indexOf(marker);
+        const limit = state.region === 'script' ? rest.search(SCRIPT_CLOSE_AHEAD) : -1;
+        if (limit !== -1 && (end === -1 || end > limit)) {
+            stream.pos += limit;
+            return false;
+        }
+        if (end === -1) {
+            stream.skipToEnd();
+            return false;
+        }
+        stream.pos += end + marker.length;
+        return true;
+    }
+
+    /**
      * Reads a block comment up to its end or the end of the line.
      *
      * @param {object} stream CodeMirror string stream, positioned inside the comment
@@ -39,12 +79,7 @@
      * @returns {string} token style
      */
     function commentToken(stream, state) {
-        state.isInComment = !stream.skipTo('*/');
-        if (state.isInComment) {
-            stream.skipToEnd();
-        } else {
-            hasConsumed(stream, '*/');
-        }
+        state.isInComment = !hasReachedEnd(stream, state, '*/');
         return 'sfmc-comment';
     }
 
@@ -56,13 +91,21 @@
      * @returns {string} token style
      */
     function stringToken(stream, state) {
-        if (stream.skipTo(state.quote)) {
-            stream.next();
+        if (hasReachedEnd(stream, state, state.quote)) {
             state.quote = null;
-        } else {
-            stream.skipToEnd();
         }
         return 'sfmc-string';
+    }
+
+    /**
+     * Tells which language a script tag contains, as far as this script colours it.
+     * Only opening tags that fit on one line are recognised.
+     *
+     * @param {string} tag the opening tag
+     * @returns {string | null} region name, or null for scripts that run in the browser
+     */
+    function scriptRegion(tag) {
+        return RUNS_ON_SERVER.test(tag) && AMPSCRIPT_LANGUAGE.test(tag) ? 'script' : null;
     }
 
     /**
@@ -81,9 +124,17 @@
             state.region = 'inline';
             return 'sfmc-delimiter';
         }
+        if (hasConsumed(stream, SCRIPT_OPEN)) {
+            // the tag itself keeps its HTML colours; only its content is ours
+            state.region = scriptRegion(stream.current());
+            return null;
+        }
         stream.next();
-        if (!stream.skipTo('%%')) {
+        const distance = stream.string.slice(stream.pos).search(NEXT_CANDIDATE);
+        if (distance === -1) {
             stream.skipToEnd();
+        } else {
+            stream.pos += distance;
         }
         return null;
     }
@@ -97,6 +148,10 @@
      * @returns {string | null} token style, or null for text that keeps its HTML colouring
      */
     function ampscriptToken(stream, state) {
+        if (state.region === 'script' && stream.match(SCRIPT_CLOSE, false)) {
+            // like the browser, end the script here even inside a comment or string
+            Object.assign(state, initialState());
+        }
         if (!state.region) {
             return outsideToken(stream, state);
         }
@@ -106,7 +161,8 @@
         if (state.quote) {
             return stringToken(stream, state);
         }
-        if (hasConsumed(stream, CLOSING[state.region])) {
+        const closing = CLOSING[state.region];
+        if (closing && hasConsumed(stream, closing)) {
             state.region = null;
             return 'sfmc-delimiter';
         }
@@ -187,7 +243,7 @@
             startState() {
                 return {
                     base: CodeMirror.startState(base),
-                    ampscript: { region: null, quote: null, isInComment: false },
+                    ampscript: initialState(),
                     hasFailed: false,
                     basePos: 0,
                     baseStyle: null,
@@ -254,7 +310,7 @@
             blankLine(state) {
                 base.blankLine?.(state.base);
                 if (state.ampscript.region === 'inline') {
-                    state.ampscript = { region: null, quote: null, isInComment: false };
+                    state.ampscript = initialState();
                 }
             },
         };

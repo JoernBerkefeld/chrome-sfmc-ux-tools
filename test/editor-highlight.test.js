@@ -72,10 +72,21 @@ function runExtension(window) {
 function styled(editor) {
     const result = [];
     for (let line = 0; line < editor.lineCount(); line++) {
+        let previous;
         for (const token of editor.getLineTokens(line, true)) {
-            if (token.type && token.type !== 'sfmc-text') {
-                result.push(`${token.string}:${token.type}`);
+            if (!token.type || token.type === 'sfmc-text') {
+                continue;
             }
+            // the base mode may split what is one token to us; show such pieces as one
+            const isContinuation =
+                token.type.startsWith('sfmc-') &&
+                previous?.type === token.type &&
+                previous.end === token.start;
+            const text = isContinuation
+                ? result.pop().split(':sfmc-', 1)[0] + token.string
+                : token.string;
+            result.push(`${text}:${token.type}`);
+            previous = token;
         }
     }
     return result;
@@ -177,6 +188,99 @@ test('HTML colours never show through AMPscript code', () => {
     for (const type of types) {
         assert.match(String(type), /^sfmc-/);
     }
+});
+
+test('colours AMPscript inside server-side script tags', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        [
+            '<script runat="server" language="ampscript">',
+            'SET @a = Lookup("de", "f", "k", 1) /* note',
+            'more */ var @b',
+            '</script><b>',
+            "<SCRIPT Language=AMPscript RunAt='server'>set @c = 2</SCRIPT>",
+        ].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(styled(editor), [
+        '<:tag bracket',
+        'script:tag',
+        'runat:attribute',
+        '"server":string',
+        'language:attribute',
+        '"ampscript":string',
+        '>:tag bracket',
+        'SET:sfmc-keyword',
+        '@a:sfmc-variable',
+        '=:sfmc-operator',
+        'Lookup:sfmc-function',
+        '"de":sfmc-string',
+        '"f":sfmc-string',
+        '"k":sfmc-string',
+        '1:sfmc-number',
+        '/* note:sfmc-comment',
+        'more */:sfmc-comment',
+        'var:sfmc-keyword',
+        '@b:sfmc-variable',
+        '</:tag bracket',
+        'script:tag',
+        '>:tag bracket',
+        '<:tag bracket',
+        'b:tag',
+        '>:tag bracket',
+        '<:tag bracket',
+        'SCRIPT:tag',
+        'Language:attribute',
+        'AMPscript:string',
+        'RunAt:attribute',
+        "'server':string",
+        '>:tag bracket',
+        'set:sfmc-keyword',
+        '@c:sfmc-variable',
+        '=:sfmc-operator',
+        '2:sfmc-number',
+        '</:tag bracket',
+        'SCRIPT:tag',
+        '>:tag bracket',
+    ]);
+});
+
+test('a script tag ends its AMPscript even inside an open comment or string', () => {
+    const context = page();
+    const open = '<script language="ampscript" runat="server">';
+    const editor = addEditor(
+        context,
+        `${open}set @a /* open</script><i>set</i>\n${open}set @b = "open</script><i>set</i>`,
+    );
+    runExtension(context.window);
+    const afterScript = [
+        '</:tag bracket',
+        'script:tag',
+        '>:tag bracket',
+        '<:tag bracket',
+        'i:tag',
+        '>:tag bracket',
+        '</:tag bracket',
+        'i:tag',
+        '>:tag bracket',
+    ];
+    const tokens = styled(editor);
+    const firstLine = tokens.slice(0, tokens.length / 2);
+    assert.deepEqual(firstLine.slice(-10), ['/* open:sfmc-comment', ...afterScript]);
+    assert.deepEqual(tokens.slice(-10), ['"open:sfmc-string', ...afterScript]);
+});
+
+test('leaves scripts that run in the browser alone', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        '<script>var set = 1;</script>\n<script language="ampscript">var set = 2;</script>',
+    );
+    runExtension(context.window);
+    const tokens = styled(editor);
+    assert.equal(tokens.filter((token) => token.includes(':sfmc-')).length, 0);
+    assert.equal(tokens.filter((token) => token === 'var:keyword').length, 2);
 });
 
 test('leaves personalisation strings and plain text alone', () => {

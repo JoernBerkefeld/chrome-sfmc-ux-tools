@@ -4,7 +4,7 @@
 
 ### Added
 
-- **AMPscript colours in the code editor** of Content Builder and other Marketing Cloud apps that use the same editor: keywords, functions, variables, strings, numbers and comments inside `%%[ ... ]%%` blocks and `%%= ... =%%` expressions.
+- **AMPscript colours in the code editor** of Content Builder and other Marketing Cloud apps that use the same editor: keywords, functions, variables, strings, numbers and comments inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and `<script runat="server" language="ampscript">` tags.
 
 ### Changed
 

@@ -8,11 +8,12 @@ A Chrome extension with small usability helpers for Salesforce Marketing Cloud E
 
 ### AMPscript colours in the code editor
 
-Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. With the extension, the code inside `%%[ ... ]%%` blocks and `%%= ... =%%` expressions is coloured as well: keywords, functions, variables, strings, numbers and comments.
+Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. With the extension, the code inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and `<script runat="server" language="ampscript">` tags is coloured as well: keywords, functions, variables, strings, numbers and comments.
 
 - Works in the code view of Content Builder and in other Marketing Cloud apps that use the same editor.
 - The content itself is never changed; only the colours are.
-- Not covered yet: AMPscript inside `<script runat="server" language="ampscript">` tags, and completions, hovers and diagnostics.
+- A script tag is only recognised if its opening tag fits on one line.
+- Not covered yet: completions, hovers and diagnostics.
 
 ### Select all scopes of an installed package
 

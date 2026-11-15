@@ -581,6 +581,78 @@ test('parameter help closes on Escape and lets the key go on', async () => {
     assert.equal(box(), null);
 });
 
+const checkPause = () => new Promise((resolve) => setTimeout(resolve, 650));
+
+/**
+ * Lists what is underlined in an editor.
+ *
+ * @param {object} editor CodeMirror instance
+ * @returns {string[]} kind of underline and underlined text, in document order
+ */
+function underlined(editor) {
+    // copied, because an array of the page is never deep-equal to one of the test
+    return [...editor.getAllMarks()]
+        .filter((mark) => mark.className?.includes('sfmc-diagnostic'))
+        .map((mark) => {
+            const { from, to } = mark.find();
+            return `${mark.className.split('sfmc-diagnostic-', 2)[1]}: ${editor.getRange(from, to)}`;
+        })
+        .toSorted((a, b) => a.localeCompare(b));
+}
+
+test('underlines errors and warnings in AMPscript and SSJS, and not in browser scripts', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        '%%[ if @a == 1 then ]%%<p>%%=Lookupx("a")=%%</p>\n' +
+            '<script runat="server">\nlet x = 1;\n</script>\n' +
+            '<script>\nlet y = Lookupx("a");\n</script>',
+    );
+    const clean = addEditor(context, '<p>%%=Lowercase("A")=%%</p>');
+    runExtension(context.window);
+    assert.deepEqual(underlined(editor), [], 'checked after a pause');
+    await checkPause();
+    const line = '%%[ if @a == 1 then ]%%<p>%%=Lookupx("a")=%%</p>';
+    assert.deepEqual(underlined(editor), ['error: let ', 'error: Lookupx', `warning: ${line}`]);
+    assert.deepEqual(underlined(clean), []);
+
+    editor.replaceRange('Lookup("a", "b", "c", 1)', { line: 0, ch: 29 }, { line: 0, ch: 41 });
+    await checkPause();
+    assert.deepEqual(underlined(editor), [
+        'error: let ',
+        'warning: %%[ if @a == 1 then ]%%<p>%%=Lookup("a", "b", "c", 1)=%%</p>',
+    ]);
+    editor.setOption('mode', 'htmlmixed');
+    await checkPause();
+    assert.deepEqual(underlined(editor), [], 'none once the editor is used for something else');
+});
+
+test('resting the mouse on an underline says what is wrong, before the documentation', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        '%%[ set @a = Lookup("a") ]%%\n<script runat="server">let x;</script>',
+    );
+    runExtension(context.window);
+    await checkPause();
+    const { document } = context.window;
+    rest(context, editor, 'set @a = Look');
+    await hoverPause();
+    const box = document.querySelector(HOVER);
+    const problem = box.querySelector('.sfmc-problem');
+    assert.equal(box.firstChild, problem);
+    assert.ok(problem.classList.contains('sfmc-problem-error'));
+    assert.match(problem.textContent, /Lookup/);
+    assert.match(problem.querySelector('a.sfmc-problem-rule').href, /^https:\/\//);
+    assert.match(box.querySelector('pre').textContent, /^\(function\) Lookup\(/);
+
+    rest(context, editor, '<script runat="server">l');
+    await hoverPause();
+    const other = document.querySelector(HOVER);
+    assert.match(other.querySelector('.sfmc-problem').textContent, /not supported in SFMC SSJS/);
+    assert.equal(other.querySelector('pre'), null, 'a problem alone is shown too');
+});
+
 test('sets up editors that are opened later, each one only once', async () => {
     const context = page();
     runExtension(context.window);

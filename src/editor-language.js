@@ -10,6 +10,7 @@
  * so that a failure in here can never break the colouring.
  */
 import { registerCompletions } from './editor-language/completions.js';
+import { registerDiagnostics } from './editor-language/diagnostics.js';
 import { registerHover } from './editor-language/hover.js';
 import { registerSignature } from './editor-language/signature.js';
 import { isInMode, report } from './editor-language/shared.js';
@@ -17,7 +18,7 @@ import { isInMode, report } from './editor-language/shared.js';
 const EDITOR_SELECTOR = '.CodeMirror';
 const SCAN_DELAY = 50;
 // each one sets a feature up for an editor
-const FEATURES = [registerCompletions, registerHover, registerSignature];
+const FEATURES = [registerCompletions, registerHover, registerSignature, registerDiagnostics];
 // marks editors that are set up; a registered symbol, so that a second copy of this script recognises it too
 const REGISTERED = Symbol.for('sfmcUxTools.language');
 const state = { isScanPending: false };

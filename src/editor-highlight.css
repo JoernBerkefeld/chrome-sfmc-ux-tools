@@ -27,6 +27,7 @@
     --sfmc-widget-active-background: #e8e8e8;
     --sfmc-widget-active-foreground: #000000;
     --sfmc-error: #cd3131;
+    --sfmc-warning: #bf8803;
     --sfmc-link: #005fb8;
     --sfmc-keyword: #0000ff;
     --sfmc-control: #af00db;
@@ -61,6 +62,7 @@
     --sfmc-widget-active-background: #04395e;
     --sfmc-widget-active-foreground: #ffffff;
     --sfmc-error: #f44747;
+    --sfmc-warning: #cca700;
     --sfmc-link: #4daafc;
     --sfmc-keyword: #569cd6;
     --sfmc-control: #c586c0;
@@ -332,4 +334,34 @@ li.CodeMirror-hint-active {
 }
 .sfmc-tooltip a {
     color: var(--sfmc-link);
+}
+
+/* Errors and warnings of the language service: underlined in the code, explained in the hover box. */
+.CodeMirror .sfmc-diagnostic {
+    text-decoration: underline wavy;
+    text-decoration-skip-ink: none;
+    text-underline-offset: 3px;
+}
+.CodeMirror .sfmc-diagnostic-error {
+    text-decoration-color: var(--sfmc-error);
+}
+.CodeMirror .sfmc-diagnostic-warning {
+    text-decoration-color: var(--sfmc-warning);
+}
+.CodeMirror .sfmc-diagnostic-info {
+    text-decoration-color: var(--sfmc-link);
+}
+.sfmc-tooltip .sfmc-problem {
+    padding-left: 8px;
+    border-left: 3px solid var(--sfmc-link);
+}
+.sfmc-tooltip .sfmc-problem-error {
+    border-left-color: var(--sfmc-error);
+}
+.sfmc-tooltip .sfmc-problem-warning {
+    border-left-color: var(--sfmc-warning);
+}
+.sfmc-tooltip .sfmc-problem-rule {
+    opacity: 0.7;
+    font-size: 12px;
 }

@@ -9,7 +9,7 @@ export const SSJS = 'ssjs';
 export const JAVASCRIPT = 'javascript';
 // the language service has no name for a whole file; like VS Code's "sfmc" documents it is read as AMPscript
 export const DOCUMENT_URI = 'inmemory://editor';
-const BROWSER_KINDS = new Set(['browser-classic', 'browser-module']);
+export const BROWSER_KINDS = ['browser-classic', 'browser-module'];
 // an opening delimiter and what closes it; inside one, AMPscript wins over a browser script around it
 const AMPSCRIPT_DELIMITERS = [
     ['%%[', ']%%'],
@@ -62,7 +62,7 @@ export function languageAt(text, offset) {
     if (region?.kind === SSJS) {
         return SSJS;
     }
-    if (!region || !BROWSER_KINDS.has(region.kind)) {
+    if (!region || !BROWSER_KINDS.includes(region.kind)) {
         return AMPSCRIPT;
     }
     const before = text.slice(0, offset);
@@ -73,6 +73,17 @@ export function languageAt(text, offset) {
 }
 
 /**
+ * Blanks everything but the scripts of some kinds; lines and columns stay as they are.
+ *
+ * @param {string} text whole document
+ * @param {string[]} kinds kinds of scripts to keep, as the language service names them
+ * @returns {string} text of the same length that only contains those scripts
+ */
+export function scriptsOnly(text, kinds) {
+    return extractScriptBodies(text, kinds).text;
+}
+
+/**
  * Blanks everything but the server-side scripts, so that the SSJS half of the language service
  * sees the same lines and columns as the editor.
  *
@@ -80,5 +91,5 @@ export function languageAt(text, offset) {
  * @returns {string} text of the same length that only contains the SSJS
  */
 export function ssjsOnly(text) {
-    return extractScriptBodies(text, [SSJS]).text;
+    return scriptsOnly(text, [SSJS]);
 }

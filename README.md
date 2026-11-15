@@ -23,10 +23,11 @@ While you type AMPscript or server-side JavaScript (SSJS) in the code view of Co
 
 - **AMPscript**: functions, keywords, personalisation strings and the variables of the current content.
 - **SSJS**, inside `<script runat="server">`: Marketing Cloud's functions and objects (`Platform.Function.Lookup`, `Write`, `DataExtension`, `HTTP.Get`, …), the JavaScript built-ins that work in SSJS, and the functions declared in the content. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`).
+- **JavaScript for the browser**, inside any other `<script>`: the names used in the content's browser scripts, JavaScript's keywords and the usual globals (`document`, `console`, …). Marketing Cloud's server-side names are never suggested there. SSJS gets the names of its own scripts and its keywords in the same way.
 
 - AMPscript suggestions appear inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript script tags, never in plain HTML. While you type, they stay away inside strings and comments.
 - Picking a function inserts its name and the opening bracket; picking anything else inserts the plain word. Nothing is inserted unless you pick it.
-- Not covered yet in SSJS: the members of your own variables, such as the methods of a `DataExtension.Init(...)` result.
+- Not covered yet, in SSJS and in browser scripts: the members of a value, such as the methods of a `DataExtension.Init(...)` result or of `document`.
 - The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.4.0), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
 - The popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
 

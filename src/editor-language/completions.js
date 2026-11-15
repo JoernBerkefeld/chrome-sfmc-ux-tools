@@ -4,7 +4,18 @@
  * The suggestions come from sfmc-language-lsp; this file connects it to CodeMirror 5's hint popup.
  */
 import { sfmcLanguageService } from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS, isInMode, languageAt, report, ssjsOnly } from './shared.js';
+import {
+    AMPSCRIPT,
+    BROWSER_KINDS,
+    DOCUMENT_URI,
+    JAVASCRIPT,
+    SSJS,
+    isInMode,
+    languageAt,
+    report,
+    scriptsOnly,
+    ssjsOnly,
+} from './shared.js';
 
 const TRIGGER_DELAY = 100;
 const DETAIL_LENGTH = 60;
@@ -13,12 +24,104 @@ const WORD_BEFORE_CURSOR = /@{0,2}\w*$/;
 // the typed start of an SSJS name with the objects it belongs to, like "Platform.Function.Loo"
 const CHAIN_BEFORE_CURSOR = /(?:[\w$]+\.)*[\w$]*$/;
 const TRIGGER_CHARACTER = /[\w@.$]$/;
-// characters that only start a name in SSJS
-const SSJS_TRIGGER_CHARACTER = /[.$]$/;
+// the typed start of a plain JavaScript name
+const NAME_BEFORE_CURSOR = /[\w$]*$/;
 const QUIET_STYLES = new Map([
     [AMPSCRIPT, /\bsfmc-(?:string|comment)\b/],
     [SSJS, /\b(?:string|comment)\b/],
+    [JAVASCRIPT, /\b(?:string|comment)\b/],
 ]);
+// what may end the typed text for the popup to open by itself; a dot only continues a name in SSJS
+const TYPED_END = new Map([
+    [AMPSCRIPT, /[\w@]$/],
+    [SSJS, /[\w$.]$/],
+    [JAVASCRIPT, /[\w$]$/],
+]);
+// comments and strings, whose words are no names
+const JAVASCRIPT_TEXT =
+    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+// a name that is not the member of something
+const JAVASCRIPT_NAME = /(?<![\w$.])[A-Za-z_$][\w$]*/g;
+// the words every version of JavaScript has, SSJS included
+const KEYWORDS = [
+    'break',
+    'case',
+    'catch',
+    'continue',
+    'default',
+    'delete',
+    'do',
+    'else',
+    'false',
+    'finally',
+    'for',
+    'function',
+    'if',
+    'in',
+    'instanceof',
+    'new',
+    'null',
+    'return',
+    'switch',
+    'this',
+    'throw',
+    'true',
+    'try',
+    'typeof',
+    'undefined',
+    'var',
+    'void',
+    'while',
+    'with',
+];
+// what only the browser understands; SSJS rejects these
+const BROWSER_KEYWORDS = [
+    'async',
+    'await',
+    'class',
+    'const',
+    'export',
+    'extends',
+    'import',
+    'let',
+    'of',
+    'static',
+    'super',
+    'yield',
+];
+const BROWSER_GLOBALS = [
+    'Array',
+    'Boolean',
+    'Date',
+    'Error',
+    'JSON',
+    'Map',
+    'Math',
+    'Number',
+    'Object',
+    'Promise',
+    'RegExp',
+    'Set',
+    'String',
+    'Symbol',
+    'clearInterval',
+    'clearTimeout',
+    'console',
+    'decodeURIComponent',
+    'document',
+    'encodeURIComponent',
+    'fetch',
+    'isNaN',
+    'localStorage',
+    'location',
+    'navigator',
+    'parseFloat',
+    'parseInt',
+    'sessionStorage',
+    'setInterval',
+    'setTimeout',
+    'window',
+];
 // snippet syntax of the language service: $1, ${1} or ${1:name}
 const PLACEHOLDER = /\$(?:\d+|\{\d+(?::[^}]*)?\})/;
 // a named placeholder of a snippet, which is how the language service lists a function's parameters
@@ -112,6 +215,74 @@ function untilPlaceholder(item) {
 }
 
 /**
+ * Makes a hint for a plain word, which is inserted as it is.
+ *
+ * @param {string} label the word
+ * @param {string} detail what kind of word it is
+ * @returns {object} CodeMirror hint
+ */
+function wordHint(label, detail) {
+    return { text: label, displayText: label, render: (element) => render(element, label, detail) };
+}
+
+/**
+ * Collects the names used in the scripts of some kinds, without the one that is being typed.
+ *
+ * @param {string} text whole document
+ * @param {string[]} kinds kinds of scripts to read, as the language service names them
+ * @param {number} from where the typed name starts
+ * @param {number} to where the typed name ends
+ * @returns {Set.<string>} names in the order of their first use
+ */
+function namesIn(text, kinds, from, to) {
+    const others = text.slice(0, from) + ' '.repeat(to - from) + text.slice(to);
+    const code = scriptsOnly(others, kinds).replaceAll(JAVASCRIPT_TEXT, ' ');
+    return new Set(code.match(JAVASCRIPT_NAME));
+}
+
+/**
+ * Plain JavaScript suggestions for a name that is being typed: the names the scripts of the
+ * same kind use, the language's own words and, in the browser, its usual globals. Nothing is
+ * known about the members of a value, so nothing is offered after a dot.
+ *
+ * @param {object} cm CodeMirror instance
+ * @param {string} text whole document
+ * @param {string} line text of the line of the cursor
+ * @param {boolean} isBrowser true for a script of the browser, false for SSJS
+ * @returns {{list: object[], typed: string}} hints and the typed text they replace
+ */
+function javascriptHints(cm, text, line, isBrowser) {
+    const cursor = cm.getCursor();
+    const before = line.slice(0, cursor.ch);
+    const typed = NAME_BEFORE_CURSOR.exec(before)[0];
+    if (before.slice(0, before.length - typed.length).endsWith('.')) {
+        return { list: [], typed };
+    }
+    const to = cm.indexFromPos(cursor) + /^[\w$]*/.exec(line.slice(cursor.ch))[0].length;
+    const from = cm.indexFromPos(cursor) - typed.length;
+    const kinds = isBrowser ? BROWSER_KINDS : [SSJS];
+    const words = new Map();
+    for (const name of namesIn(text, kinds, from, to)) {
+        words.set(name, 'in this content');
+    }
+    const globals = isBrowser ? BROWSER_GLOBALS : [];
+    for (const name of globals) {
+        words.set(name, 'global');
+    }
+    const keywords = isBrowser ? [...KEYWORDS, ...BROWSER_KEYWORDS] : KEYWORDS;
+    for (const name of keywords) {
+        words.set(name, 'keyword');
+    }
+    const needle = typed.toLowerCase();
+    const list = words
+        .entries()
+        .filter(([name]) => name.toLowerCase().startsWith(needle))
+        .map(([name, detail]) => wordHint(name, detail))
+        .toArray();
+    return { list, typed };
+}
+
+/**
  * AMPscript suggestions at the cursor: those that start with the word typed so far. A function
  * is inserted as its name with the opening bracket.
  *
@@ -181,6 +352,35 @@ function ssjsHints(text, cursor, line) {
 }
 
 /**
+ * Collects the suggestions of a language at the cursor. In SSJS, the plain JavaScript names
+ * follow those of Marketing Cloud.
+ *
+ * @param {object} cm CodeMirror instance
+ * @param {string} language language at the cursor
+ * @param {string} text whole document
+ * @param {string} line text of the line of the cursor
+ * @returns {{list: object[], typed: string}} hints and the typed text they replace
+ */
+function hintsFor(cm, language, text, line) {
+    const cursor = cm.getCursor();
+    if (language === JAVASCRIPT) {
+        return javascriptHints(cm, text, line, true);
+    }
+    if (language !== SSJS) {
+        return ampscriptHints(text, cursor, line);
+    }
+    const found = ssjsHints(text, cursor, line);
+    if (found.typed.includes('.')) {
+        return found;
+    }
+    const known = new Set(found.list.map((entry) => entry.displayText));
+    const plain = javascriptHints(cm, text, line, false).list.filter(
+        (entry) => !known.has(entry.displayText),
+    );
+    return { list: [...found.list, ...plain], typed: found.typed };
+}
+
+/**
  * CodeMirror hint function: asks the language service what fits at the cursor.
  *
  * @param {object} cm CodeMirror instance
@@ -192,11 +392,7 @@ function hint(cm) {
         const line = cm.getLine(cursor.line);
         const text = cm.getValue();
         const language = languageAt(text, cm.indexFromPos(cursor));
-        if (language !== AMPSCRIPT && language !== SSJS) {
-            return null;
-        }
-        const found =
-            language === SSJS ? ssjsHints(text, cursor, line) : ampscriptHints(text, cursor, line);
+        const found = hintsFor(cm, language, text, line);
         // a name that is being typed is offered as itself; picking it would change nothing
         const list = found.list.filter((entry) => entry.text !== found.typed);
         // with the cursor inside a word, the rest of the word is replaced as well
@@ -259,14 +455,13 @@ function showAfterTyping(cm) {
     try {
         const cursor = cm.getCursor();
         const before = cm.getLine(cursor.line).slice(0, cursor.ch);
-        if (!TRIGGER_CHARACTER.test(before) || cm.state.completionActive) {
+        if (cm.state.completionActive) {
             return;
         }
         const language = languageAt(cm.getValue(), cm.indexFromPos(cursor));
         if (
-            !QUIET_STYLES.has(language) ||
-            QUIET_STYLES.get(language).test(cm.getTokenTypeAt(cursor) ?? '') ||
-            (language !== SSJS && SSJS_TRIGGER_CHARACTER.test(before))
+            !TYPED_END.get(language)?.test(before) ||
+            QUIET_STYLES.get(language).test(cm.getTokenTypeAt(cursor) ?? '')
         ) {
             return;
         }

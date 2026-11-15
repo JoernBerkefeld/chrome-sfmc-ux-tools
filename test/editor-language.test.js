@@ -279,6 +279,59 @@ test('SSJS: the popup opens while typing, also after a dot, but not in strings o
     assert.equal(html.state.completionActive, undefined);
 });
 
+/**
+ * Opens the popup and lists the names it offers.
+ *
+ * @param {object} context page from `page()`
+ * @param {string} content editor content; a "|" marks the cursor
+ * @returns {{editor: object, labels: string[]}} the editor and the names on offer
+ */
+function offered(context, content) {
+    const editor = addEditor(context, content);
+    runExtension(context.window);
+    pressCtrlSpace(editor);
+    return { editor, labels: hints(editor).map((hint) => hint.displayText) };
+}
+
+test('browser scripts get plain JavaScript: their own names, keywords and globals', () => {
+    const own = offered(
+        page(),
+        '<script runat="server">var counterServer = 1;</script>\n' +
+            '<script>\nvar counterTotal = 1; // counterComment "counterString"\n' +
+            'function countUp(step) { item.counterMember = step; }\ncou|\n</script>',
+    );
+    assert.deepEqual(own.labels, ['counterTotal', 'countUp']);
+
+    const words = offered(page(), '<script>\nco|\n</script>');
+    assert.deepEqual(words.labels, ['console', 'continue', 'const']);
+
+    const module = offered(page(), '<script type="module">\nconst total = 1;\nto|\n</script>');
+    assert.deepEqual(module.labels, ['total']);
+
+    const member = offered(page(), '<script>\nvar total = 1;\ndocument.to|\n</script>');
+    assert.deepEqual(member.labels, [], 'nothing is known about members');
+
+    const template = offered(
+        page(),
+        '<script type="text/x-template">\nvar total = 1;\nto|\n</script>',
+    );
+    assert.deepEqual(template.labels, [], 'not JavaScript');
+});
+
+test('SSJS also gets the names of its own scripts, after those of Marketing Cloud', () => {
+    const { labels } = offered(
+        page(),
+        '<script>var rowsBrowser = 1; let letter;</script>\n' +
+            '<script runat="server">\nvar rowsFound = 1;\nr|\n</script>',
+    );
+    assert.ok(labels.includes('rowsFound'), labels.join(' | '));
+    assert.ok(labels.includes('return'));
+    assert.ok(!labels.includes('rowsBrowser'), 'names of browser scripts stay there');
+    assert.ok(labels.indexOf('Request.GetQueryStringParameter') < labels.indexOf('rowsFound'));
+    const none = offered(page(), '<script runat="server">\nle|\n</script>');
+    assert.ok(!none.labels.includes('let'), 'no keywords that SSJS rejects');
+});
+
 test('leaves read-only editors and selections alone', () => {
     const context = page();
     const locked = addEditor(context, '%%[ set @a = Loo| ]%%');

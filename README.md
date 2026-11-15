@@ -6,6 +6,14 @@ A Chrome extension with small usability helpers for Salesforce Marketing Cloud E
 
 ## Features
 
+### AMPscript colours in the code editor
+
+Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. With the extension, the code inside `%%[ ... ]%%` blocks and `%%= ... =%%` expressions is coloured as well: keywords, functions, variables, strings, numbers and comments.
+
+- Works in the code view of Content Builder and in other Marketing Cloud apps that use the same editor.
+- The content itself is never changed; only the colours are.
+- Not covered yet: AMPscript inside `<script runat="server" language="ampscript">` tags, and completions, hovers and diagnostics.
+
 ### Select all scopes of an installed package
 
 When you add or edit an API integration under **Setup → Platform Tools → Apps → Installed Packages**, the dialog lists around a hundred scope checkboxes. The extension adds a **Select all** button to the **Scope** bar of that dialog:
@@ -33,7 +41,12 @@ This works the same way in other Chromium browsers such as Edge.
 
 ## Privacy
 
-The extension runs only on the Installed Packages page of Marketing Cloud Engagement (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`). It reads the open dialog to find the scope checkboxes and clicks them on your request. It does not collect, store or transmit any data and makes no network requests.
+The extension runs on two places of Marketing Cloud Engagement:
+
+- the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
+- the Marketing Cloud apps (`https://*.marketingcloudapps.com`), where it adds colouring rules to the code editor. The editor reads your code through these rules to colour it; this happens inside the page only.
+
+It does not collect, store or transmit any data and makes no network requests.
 
 ## Development
 
@@ -47,6 +60,7 @@ npm run build
 - `src/` is the extension itself; there is no compile step.
 - `npm run build` writes `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store.
 - `npm run icons` redraws the icons in `src/icons/`.
+- `npm run generate` rewrites `src/ampscript-keywords.js` from the `ampscript-data` package; run it after updating that dependency. A test fails if the file is out of date.
 - Keep `version` in `package.json` and `src/manifest.json` identical; a test checks this.
 
 ### Releasing

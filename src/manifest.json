@@ -1,8 +1,9 @@
 {
     "manifest_version": 3,
     "name": "SFMC UX Tools",
-    "version": "0.1.0",
-    "description": "Small usability helpers for Salesforce Marketing Cloud Engagement Setup, e.g. select all scopes of an installed package at once.",
+    "version": "0.2.0",
+    "description": "Usability helpers for Salesforce Marketing Cloud Engagement: AMPscript colours in the code editor, select-all for package scopes.",
+    "minimum_chrome_version": "111",
     "icons": {
         "16": "icons/icon16.png",
         "48": "icons/icon48.png",
@@ -12,6 +13,14 @@
         {
             "matches": ["https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx*"],
             "js": ["content.js"],
+            "all_frames": true,
+            "run_at": "document_idle"
+        },
+        {
+            "matches": ["https://*.marketingcloudapps.com/*"],
+            "js": ["ampscript-keywords.js", "editor-highlight.js"],
+            "css": ["editor-highlight.css"],
+            "world": "MAIN",
             "all_frames": true,
             "run_at": "document_idle"
         }

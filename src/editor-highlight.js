@@ -1,0 +1,341 @@
+/*
+ * SFMC UX Tools — AMPscript colouring for Marketing Cloud's code editor.
+ *
+ * Marketing Cloud edits code with CodeMirror 5 and its own "ampScriptHtmlMixed" mode, which
+ * colours the HTML but leaves AMPscript plain. This script wraps that mode so that the code in
+ * %%[ ... ]%% blocks and %%= ... =%% expressions is coloured as well.
+ *
+ * It has to run in the page's own script world, because the editor instance is only reachable there.
+ */
+(() => {
+    'use strict';
+
+    const BASE_MODE = 'ampScriptHtmlMixed';
+    const EDITOR_SELECTOR = '.CodeMirror';
+    const SCAN_DELAY = 50;
+    const KEYWORDS = new Set(globalThis.sfmcUxToolsAmpscriptKeywords);
+    delete globalThis.sfmcUxToolsAmpscriptKeywords;
+    const CLOSING = { block: ']%%', inline: '=%%' };
+    const wrappedFactories = new WeakSet();
+
+    /**
+     * Consumes the pattern if the stream continues with it.
+     *
+     * @param {object} stream CodeMirror string stream
+     * @param {RegExp | string} pattern text or pattern anchored at the current position
+     * @returns {boolean} true if something was consumed
+     */
+    function hasConsumed(stream, pattern) {
+        const start = stream.pos;
+        stream.match(pattern);
+        return stream.pos > start;
+    }
+
+    /**
+     * Reads a block comment up to its end or the end of the line.
+     *
+     * @param {object} stream CodeMirror string stream, positioned inside the comment
+     * @param {object} state tokenizer state
+     * @returns {string} token style
+     */
+    function commentToken(stream, state) {
+        state.isInComment = !stream.skipTo('*/');
+        if (state.isInComment) {
+            stream.skipToEnd();
+        } else {
+            hasConsumed(stream, '*/');
+        }
+        return 'sfmc-comment';
+    }
+
+    /**
+     * Reads a string up to its closing quote or the end of the line.
+     *
+     * @param {object} stream CodeMirror string stream, positioned inside the string
+     * @param {object} state tokenizer state
+     * @returns {string} token style
+     */
+    function stringToken(stream, state) {
+        if (stream.skipTo(state.quote)) {
+            stream.next();
+            state.quote = null;
+        } else {
+            stream.skipToEnd();
+        }
+        return 'sfmc-string';
+    }
+
+    /**
+     * Reads the next token outside of AMPscript: an opening delimiter, or the text up to the next candidate.
+     *
+     * @param {object} stream CodeMirror string stream
+     * @param {object} state tokenizer state
+     * @returns {string | null} token style, or null for text that keeps its HTML colouring
+     */
+    function outsideToken(stream, state) {
+        if (hasConsumed(stream, '%%[')) {
+            state.region = 'block';
+            return 'sfmc-delimiter';
+        }
+        if (hasConsumed(stream, '%%=')) {
+            state.region = 'inline';
+            return 'sfmc-delimiter';
+        }
+        stream.next();
+        if (!stream.skipTo('%%')) {
+            stream.skipToEnd();
+        }
+        return null;
+    }
+
+    /**
+     * Reads the next AMPscript token. Inside AMPscript every token gets a style of its own, so
+     * that the HTML colouring of the base mode never shows through the code.
+     *
+     * @param {object} stream CodeMirror string stream
+     * @param {object} state tokenizer state: region, quote, isInComment
+     * @returns {string | null} token style, or null for text that keeps its HTML colouring
+     */
+    function ampscriptToken(stream, state) {
+        if (!state.region) {
+            return outsideToken(stream, state);
+        }
+        if (state.isInComment) {
+            return commentToken(stream, state);
+        }
+        if (state.quote) {
+            return stringToken(stream, state);
+        }
+        if (hasConsumed(stream, CLOSING[state.region])) {
+            state.region = null;
+            return 'sfmc-delimiter';
+        }
+        if (state.region === 'inline' && hasConsumed(stream, '%%[')) {
+            // an inline expression that was never closed must not swallow the next block
+            state.region = 'block';
+            return 'sfmc-delimiter';
+        }
+        if (stream.eatSpace()) {
+            return 'sfmc-text';
+        }
+        if (hasConsumed(stream, '/*')) {
+            return commentToken(stream, state);
+        }
+        if (hasConsumed(stream, /^["']/)) {
+            state.quote = stream.current();
+            return stringToken(stream, state);
+        }
+        if (hasConsumed(stream, /^@@?[a-z_]\w*/i)) {
+            return 'sfmc-variable';
+        }
+        if (hasConsumed(stream, /^\d+(\.\d+)?/)) {
+            return 'sfmc-number';
+        }
+        if (hasConsumed(stream, /^[a-z_]\w*/i)) {
+            if (KEYWORDS.has(stream.current().toLowerCase())) {
+                return 'sfmc-keyword';
+            }
+            return /^\s*\(/.test(stream.string.slice(stream.pos)) ? 'sfmc-function' : 'sfmc-text';
+        }
+        if (hasConsumed(stream, /^(==|!=|<=|>=|<|>|=)/)) {
+            return 'sfmc-operator';
+        }
+        stream.next();
+        return 'sfmc-text';
+    }
+
+    /**
+     * Runs the AMPscript tokenizer for one token. If it ever throws or fails to advance, AMPscript
+     * colouring is switched off for the rest of the document so that the editor itself keeps working.
+     *
+     * @param {object} stream CodeMirror string stream
+     * @param {object} state combined mode state
+     * @returns {string | null} token style
+     */
+    function safeAmpscriptToken(stream, state) {
+        if (!state.hasFailed) {
+            try {
+                const style = ampscriptToken(stream, state.ampscript);
+                if (stream.pos > stream.start) {
+                    return style;
+                }
+            } catch {
+                // handled below
+            }
+            state.hasFailed = true;
+        }
+        stream.pos = stream.start;
+        stream.skipToEnd();
+        return null;
+    }
+
+    /**
+     * Builds a mode that colours like the base mode, except where the AMPscript tokenizer
+     * returns a style of its own.
+     *
+     * @param {object} CodeMirror the page's CodeMirror constructor
+     * @param {object} base mode object of the original "ampScriptHtmlMixed" mode
+     * @returns {object} CodeMirror mode object
+     */
+    function combinedMode(CodeMirror, base) {
+        return {
+            /**
+             * Initial state of a document.
+             *
+             * @returns {object} combined mode state
+             */
+            startState() {
+                return {
+                    base: CodeMirror.startState(base),
+                    ampscript: { region: null, quote: null, isInComment: false },
+                    hasFailed: false,
+                    basePos: 0,
+                    baseStyle: null,
+                    ampscriptPos: 0,
+                    ampscriptStyle: null,
+                    stream: null,
+                };
+            },
+            /**
+             * Copies a state so that CodeMirror can keep one per line.
+             *
+             * @param {object} state combined mode state
+             * @returns {object} independent copy
+             */
+            copyState(state) {
+                return {
+                    base: CodeMirror.copyState(base, state.base),
+                    ampscript: { ...state.ampscript },
+                    hasFailed: state.hasFailed,
+                    basePos: state.basePos,
+                    baseStyle: null,
+                    ampscriptPos: state.ampscriptPos,
+                    ampscriptStyle: null,
+                    stream: null,
+                };
+            },
+            /**
+             * Runs both tokenizers over the same text; the AMPscript style wins where it has one.
+             *
+             * @param {object} stream CodeMirror string stream
+             * @param {object} state combined mode state
+             * @returns {string | null} token style
+             */
+            token(stream, state) {
+                if (
+                    stream !== state.stream ||
+                    Math.min(state.basePos, state.ampscriptPos) < stream.start
+                ) {
+                    state.stream = stream;
+                    state.basePos = stream.start;
+                    state.ampscriptPos = stream.start;
+                }
+                if (stream.start === state.basePos) {
+                    state.baseStyle = base.token(stream, state.base);
+                    state.basePos = stream.pos;
+                }
+                if (stream.start === state.ampscriptPos) {
+                    stream.pos = stream.start;
+                    state.ampscriptStyle = safeAmpscriptToken(stream, state);
+                    state.ampscriptPos = stream.pos;
+                }
+                stream.pos = Math.min(state.basePos, state.ampscriptPos);
+                return state.ampscriptStyle ?? state.baseStyle;
+            },
+            indent: base.indent && ((state, ...rest) => base.indent(state.base, ...rest)),
+            electricChars: base.electricChars,
+            innerMode: (state) => ({ state: state.base, mode: base }),
+            /**
+             * Forwards empty lines to the base mode. An empty line also ends an inline expression
+             * that was never closed, so that it cannot colour the rest of the document.
+             *
+             * @param {object} state combined mode state
+             */
+            blankLine(state) {
+                base.blankLine?.(state.base);
+                if (state.ampscript.region === 'inline') {
+                    state.ampscript = { region: null, quote: null, isInComment: false };
+                }
+            },
+        };
+    }
+
+    /**
+     * Replaces the page's "ampScriptHtmlMixed" mode with the combined mode. The mode keeps its name,
+     * so every editor that asks for it from now on gets the AMPscript colouring automatically.
+     *
+     * @param {object} CodeMirror the page's CodeMirror constructor
+     * @param {object} original the page's own mode factory
+     */
+    function patchMode(CodeMirror, original) {
+        const wrapped = (config, parserConfig) =>
+            combinedMode(CodeMirror, original(config, parserConfig));
+        wrapped.dependencies = original.dependencies;
+        wrappedFactories.add(wrapped);
+        CodeMirror.defineMode(BASE_MODE, wrapped);
+    }
+
+    /**
+     * Makes the open editors of a CodeMirror copy pick up the patched mode.
+     *
+     * @param {object} CodeMirror the page's CodeMirror constructor
+     */
+    function refreshEditors(CodeMirror) {
+        for (const { CodeMirror: editor } of document.querySelectorAll(EDITOR_SELECTOR)) {
+            if (editor?.constructor !== CodeMirror) {
+                continue;
+            }
+            try {
+                const mode = editor.getOption('mode');
+                if ((mode?.name ?? mode) === BASE_MODE) {
+                    editor.setOption('mode', mode);
+                }
+            } catch {
+                // one odd editor must not keep the others from being refreshed
+            }
+        }
+    }
+
+    let isScanPending = false;
+
+    /**
+     * Patches the mode of every CodeMirror copy that has an editor on the page and whose mode is
+     * not patched yet. That is the case for the first editor, and again if the page registers
+     * its mode anew later on.
+     */
+    function scan() {
+        isScanPending = false;
+        for (const element of document.querySelectorAll(EDITOR_SELECTOR)) {
+            const CodeMirror = element.CodeMirror?.constructor;
+            const original = CodeMirror?.modes?.[BASE_MODE];
+            if (!(
+                typeof original === 'function' &&
+                !wrappedFactories.has(original) &&
+                typeof CodeMirror.defineMode === 'function'
+            )) {
+                continue;
+            }
+
+            patchMode(CodeMirror, original);
+            refreshEditors(CodeMirror);
+        }
+    }
+
+    /**
+     * Runs a scan shortly, however many page changes arrive until then.
+     */
+    function scheduleScan() {
+        if (isScanPending) {
+            return;
+        }
+
+        isScanPending = true;
+        setTimeout(scan, SCAN_DELAY);
+    }
+
+    new MutationObserver(scheduleScan).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+    });
+    scan();
+})();

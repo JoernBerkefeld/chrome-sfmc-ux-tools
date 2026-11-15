@@ -131,7 +131,11 @@ test('manifest and package agree on the version and reference existing files', (
     const package_ = JSON.parse(read('../package.json'));
     assert.equal(manifest.version, package_.version);
     assert.equal(manifest.manifest_version, 3);
-    const files = [...manifest.content_scripts[0].js, ...Object.values(manifest.icons)];
+    assert.ok(manifest.description.length <= 132, 'the store allows 132 characters at most');
+    const files = [
+        ...manifest.content_scripts.flatMap((entry) => [...entry.js, ...(entry.css ?? [])]),
+        ...Object.values(manifest.icons),
+    ];
     for (const file of files) {
         assert.ok(existsSync(new URL(`../src/${file}`, import.meta.url)), `${file} is missing`);
     }

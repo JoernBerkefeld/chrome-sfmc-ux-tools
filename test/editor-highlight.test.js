@@ -1,0 +1,324 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import { JSDOM } from 'jsdom';
+import { renderKeywords } from '../scripts/generate-keywords.js';
+
+const require = createRequire(import.meta.url);
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const codeMirrorSources = [
+    'codemirror/lib/codemirror.js',
+    'codemirror/mode/xml/xml.js',
+    'codemirror/mode/javascript/javascript.js',
+    'codemirror/mode/css/css.js',
+    'codemirror/mode/htmlmixed/htmlmixed.js',
+].map((id) => readFileSync(require.resolve(id), 'utf8'));
+const keywordScript = read('../src/ampscript-keywords.js');
+const highlightScript = read('../src/editor-highlight.js');
+const BASE_MODE = 'ampScriptHtmlMixed';
+
+/**
+ * Creates a page that has CodeMirror 5 the way Marketing Cloud ships it: with an
+ * "ampScriptHtmlMixed" mode (here plain HTML) and without a global `CodeMirror`.
+ *
+ * @returns {{window: object, CodeMirror: object}} the page and its CodeMirror constructor
+ */
+function page() {
+    const { window } = new JSDOM('<!doctype html><body></body>', {
+        runScripts: 'outside-only',
+        pretendToBeVisual: true,
+    });
+    // jsdom has no layout; CodeMirror only needs these to exist
+    window.Range.prototype.getBoundingClientRect = () => ({ left: 0, right: 0, top: 0, bottom: 0 });
+    window.Range.prototype.getClientRects = () => [];
+    for (const source of codeMirrorSources) {
+        window.eval(source);
+    }
+    const CodeMirror = window.CodeMirror;
+    delete window.CodeMirror;
+    CodeMirror.defineMode(BASE_MODE, (config) => CodeMirror.getMode(config, 'htmlmixed'));
+    return { window, CodeMirror };
+}
+
+/**
+ * Adds an editor to the page.
+ *
+ * @param {{window: object, CodeMirror: object}} context page from `page()`
+ * @param {string} value editor content
+ * @param {string} [mode] mode option
+ * @returns {object} CodeMirror instance
+ */
+function addEditor({ window, CodeMirror }, value, mode = BASE_MODE) {
+    return new CodeMirror(window.document.body, { value, mode });
+}
+
+/**
+ * Runs the extension's scripts in the page.
+ *
+ * @param {object} window page window
+ */
+function runExtension(window) {
+    window.eval(keywordScript);
+    window.eval(highlightScript);
+}
+
+/**
+ * Lists the styled tokens of an editor as "text:style". Plain AMPscript text (sfmc-text) is left out.
+ *
+ * @param {object} editor CodeMirror instance
+ * @returns {string[]} tokens of all lines, unstyled text left out
+ */
+function styled(editor) {
+    const result = [];
+    for (let line = 0; line < editor.lineCount(); line++) {
+        for (const token of editor.getLineTokens(line, true)) {
+            if (token.type && token.type !== 'sfmc-text') {
+                result.push(`${token.string}:${token.type}`);
+            }
+        }
+    }
+    return result;
+}
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 80));
+
+test('colours an AMPscript block inside HTML and keeps the HTML colours', () => {
+    const context = page();
+    const editor = addEditor(context, `<b>%%[ SET @name = Concat('a', 12) ]%%</b>`);
+    runExtension(context.window);
+    assert.deepEqual(styled(editor), [
+        '<:tag bracket',
+        'b:tag',
+        '>:tag bracket',
+        '%%[:sfmc-delimiter',
+        'SET:sfmc-keyword',
+        '@name:sfmc-variable',
+        '=:sfmc-operator',
+        'Concat:sfmc-function',
+        "'a':sfmc-string",
+        '12:sfmc-number',
+        ']%%:sfmc-delimiter',
+        '</:tag bracket',
+        'b:tag',
+        '>:tag bracket',
+    ]);
+});
+
+test('recognises keywords in any letter case', () => {
+    const context = page();
+    const editor = addEditor(context, '%%[ IF @a THEN Set @b = 1 EndIf ]%%');
+    runExtension(context.window);
+    const keywords = styled(editor).filter((token) => token.endsWith(':sfmc-keyword'));
+    assert.deepEqual(keywords, [
+        'IF:sfmc-keyword',
+        'THEN:sfmc-keyword',
+        'Set:sfmc-keyword',
+        'EndIf:sfmc-keyword',
+    ]);
+});
+
+test('colours inline expressions, also inside an HTML attribute', () => {
+    const context = page();
+    const editor = addEditor(context, '<a href="%%=RedirectTo(@url)=%%">x</a> %%=v(@@count)=%%');
+    runExtension(context.window);
+    const tokens = styled(editor);
+    for (const expected of [
+        '%%=:sfmc-delimiter',
+        'RedirectTo:sfmc-function',
+        '@url:sfmc-variable',
+        '=%%:sfmc-delimiter',
+        'v:sfmc-function',
+        '@@count:sfmc-variable',
+    ]) {
+        assert.ok(tokens.includes(expected), `${expected} missing in ${tokens.join(' | ')}`);
+    }
+    assert.ok(tokens.includes('a:tag'));
+});
+
+test('keeps comments, strings and blocks open across lines', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        ['%%[ /* note', 'set @x */ var @y', '', 'set @y = "two', 'lines" ]%%', 'set @z'].join('\n'),
+    );
+    runExtension(context.window);
+    assert.deepEqual(styled(editor), [
+        '%%[:sfmc-delimiter',
+        '/* note:sfmc-comment',
+        'set @x */:sfmc-comment',
+        'var:sfmc-keyword',
+        '@y:sfmc-variable',
+        'set:sfmc-keyword',
+        '@y:sfmc-variable',
+        '=:sfmc-operator',
+        '"two:sfmc-string',
+        'lines":sfmc-string',
+        ']%%:sfmc-delimiter',
+    ]);
+});
+
+test('HTML colours never show through AMPscript code', () => {
+    const context = page();
+    const inline = '%%=Concat(@a, foo)=%%';
+    const block = '%%[ if @a < @b then set @c = name endif <!-- x --> ]%%';
+    const editor = addEditor(context, `<a href="${inline}">x</a>\n${block}`);
+    runExtension(context.window);
+    const inlineStart = '<a href="'.length;
+    const types = [
+        ...editor
+            .getLineTokens(0, true)
+            .filter(
+                (token) => token.start >= inlineStart && token.end <= inlineStart + inline.length,
+            ),
+        ...editor.getLineTokens(1, true),
+    ].map((token) => token.type);
+    assert.ok(types.length > 20);
+    for (const type of types) {
+        assert.match(String(type), /^sfmc-/);
+    }
+});
+
+test('leaves personalisation strings and plain text alone', () => {
+    const context = page();
+    const editor = addEditor(context, 'Hello %%firstname%%, set 100% var');
+    runExtension(context.window);
+    assert.deepEqual(styled(editor), []);
+});
+
+test('does not change the content, the mode name or the clean state', () => {
+    const context = page();
+    const value = '<p>%%[ set @a = 1 ]%%</p>';
+    const editor = addEditor(context, value);
+    runExtension(context.window);
+    assert.equal(editor.getValue(), value);
+    assert.equal(editor.getOption('mode'), BASE_MODE);
+    assert.equal(editor.isClean(), true);
+});
+
+test('colours editors that are opened or switched to the mode later', async () => {
+    const context = page();
+    runExtension(context.window);
+    const late = addEditor(context, '%%[ set @a = 1 ]%%', 'htmlmixed');
+    await tick();
+    assert.deepEqual(styled(late), []);
+    const first = addEditor(context, '%%[ set @a = 1 ]%%');
+    await tick();
+    assert.ok(styled(first).includes('set:sfmc-keyword'));
+    late.setOption('mode', BASE_MODE);
+    assert.ok(styled(late).includes('set:sfmc-keyword'));
+    const swapped = addEditor(context, '', 'htmlmixed');
+    swapped.swapDoc(new context.CodeMirror.Doc('%%=v(@a)=%%', BASE_MODE));
+    assert.ok(styled(swapped).includes('v:sfmc-function'));
+});
+
+test('keeps colouring after the page registers its mode again', async () => {
+    const context = page();
+    const first = addEditor(context, '%%[ set @a = 1 ]%%');
+    runExtension(context.window);
+    context.CodeMirror.defineMode(BASE_MODE, (config) =>
+        context.CodeMirror.getMode(config, 'htmlmixed'),
+    );
+    const second = addEditor(context, '%%[ set @b = 2 ]%%');
+    assert.deepEqual(styled(second), []);
+    await tick();
+    assert.ok(styled(second).includes('set:sfmc-keyword'));
+    assert.ok(styled(first).includes('set:sfmc-keyword'));
+});
+
+test('re-colours correctly after an edit inside a multi-line comment', () => {
+    const context = page();
+    const editor = addEditor(context, '%%[ /* one\ntwo\nthree */ set @a = 1 ]%%');
+    runExtension(context.window);
+    editor.replaceRange(' */ var @x /* ', { line: 1, ch: 3 });
+    assert.deepEqual(styled(editor), [
+        '%%[:sfmc-delimiter',
+        '/* one:sfmc-comment',
+        'two */:sfmc-comment',
+        'var:sfmc-keyword',
+        '@x:sfmc-variable',
+        '/* :sfmc-comment',
+        'three */:sfmc-comment',
+        'set:sfmc-keyword',
+        '@a:sfmc-variable',
+        '=:sfmc-operator',
+        '1:sfmc-number',
+        ']%%:sfmc-delimiter',
+    ]);
+});
+
+test('an inline expression that is never closed ends at the next block or empty line', () => {
+    const context = page();
+    const editor = addEditor(context, '100%%= off\n%%[ set @a = 1 ]%%\n50%%= off\n\nset @b <b>');
+    runExtension(context.window);
+    assert.deepEqual(styled(editor), [
+        '%%=:sfmc-delimiter',
+        '%%[:sfmc-delimiter',
+        'set:sfmc-keyword',
+        '@a:sfmc-variable',
+        '=:sfmc-operator',
+        '1:sfmc-number',
+        ']%%:sfmc-delimiter',
+        '%%=:sfmc-delimiter',
+        '<:tag bracket',
+        'b:tag',
+        '>:tag bracket',
+    ]);
+});
+
+test('does not leave its keyword list on the page', () => {
+    const context = page();
+    runExtension(context.window);
+    assert.equal(context.window.sfmcUxToolsAmpscriptKeywords, undefined);
+});
+
+test('the manifest runs the editor scripts in the page world, keywords first', () => {
+    const manifest = JSON.parse(read('../src/manifest.json'));
+    const entry = manifest.content_scripts.find((script) =>
+        script.js.includes('editor-highlight.js'),
+    );
+    assert.equal(entry.world, 'MAIN');
+    assert.equal(entry.all_frames, true);
+    assert.deepEqual(entry.js, ['ampscript-keywords.js', 'editor-highlight.js']);
+    assert.deepEqual(entry.css, ['editor-highlight.css']);
+    assert.deepEqual(entry.matches, ['https://*.marketingcloudapps.com/*']);
+    assert.equal(manifest.minimum_chrome_version, '111');
+});
+
+test('leaves editors with other modes untouched', () => {
+    const context = page();
+    const other = addEditor(context, '%%[ set @a = 1 ]%%', 'htmlmixed');
+    addEditor(context, '');
+    runExtension(context.window);
+    assert.deepEqual(styled(other), []);
+    assert.equal(other.getOption('mode'), 'htmlmixed');
+});
+
+test('does nothing on pages without a matching editor', () => {
+    const context = page();
+    context.window.document.body.innerHTML = '<div class="CodeMirror"></div>';
+    assert.doesNotThrow(() => runExtension(context.window));
+});
+
+test('falls back to the plain base colours if the AMPscript tokenizer breaks', () => {
+    const context = page();
+    const editor = addEditor(context, '<b>%%[ set @a = 1\nset @b = 2 ]%%</b>');
+    context.window.eval(keywordScript);
+    // a keyword lookup that throws stands in for any unexpected tokenizer failure
+    context.window.eval('Set.prototype.has = () => { throw new Error("broken"); };');
+    context.window.eval(highlightScript);
+    const tokens = styled(editor);
+    assert.deepEqual(tokens, [
+        '<:tag bracket',
+        'b:tag',
+        '>:tag bracket',
+        '%%[:sfmc-delimiter',
+        '</:tag bracket',
+        'b:tag',
+        '>:tag bracket',
+    ]);
+});
+
+test('the generated keyword file is up to date with ampscript-data', () => {
+    assert.equal(keywordScript.replaceAll('\r\n', '\n'), renderKeywords());
+});

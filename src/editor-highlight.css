@@ -1,0 +1,27 @@
+/* SFMC UX Tools - AMPscript colours for Marketing Cloud's CodeMirror editor. */
+.CodeMirror .cm-sfmc-delimiter {
+    color: #0000ff;
+    font-weight: bold;
+}
+.CodeMirror .cm-sfmc-keyword {
+    color: #af00db;
+}
+.CodeMirror .cm-sfmc-function {
+    color: #795e26;
+}
+.CodeMirror .cm-sfmc-variable {
+    color: #001080;
+}
+.CodeMirror .cm-sfmc-string {
+    color: #a31515;
+}
+.CodeMirror .cm-sfmc-number {
+    color: #098658;
+}
+.CodeMirror .cm-sfmc-comment {
+    color: #008000;
+}
+.CodeMirror .cm-sfmc-text,
+.CodeMirror .cm-sfmc-operator {
+    color: #000000;
+}

@@ -1,6 +1,6 @@
 /*
- * Draws the extension icon (a checked checkbox on a blue tile) and writes it as PNG
- * in the sizes Chrome needs. Run with `npm run icons` after changing the drawing.
+ * Draws the extension icon (an orange magnifying glass with white code brackets in its lens)
+ * and writes it as PNG in the sizes Chrome needs. Run with `npm run icons` after changing the drawing.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -8,41 +8,39 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 
 const outputDirectory = fileURLToPath(new URL('../src/icons', import.meta.url));
-const BLUE = [1, 118, 211];
+const ORANGE = [221, 122, 1];
+const PEACH = [255, 186, 144];
 const WHITE = [255, 255, 255];
 const SAMPLES = 4;
-const STROKE_HALF_WIDTH = 0.05;
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
+// all coordinates are fractions of the icon's edge length
+const LENS = { x: 0.484, y: 0.469, rim: 0.344, glass: 0.281 };
+const HANDLE = [[0.7, 0.7, 0.865, 0.865]];
+const HANDLE_HALF_WIDTH = 0.075;
+const BRACKETS = [
+    [0.406, 0.359, 0.3125, 0.469],
+    [0.3125, 0.469, 0.406, 0.578],
+    [0.5625, 0.359, 0.656, 0.469],
+    [0.656, 0.469, 0.5625, 0.578],
+];
+const BRACKET_HALF_WIDTH = 0.032;
 
 /**
- * Tests whether a point lies inside a rounded square.
+ * Tests whether a point lies on the round-capped stroke of one of the line segments.
  *
  * @param {number} x point x
  * @param {number} y point y
- * @param {number} min lower bound of the square on both axes
- * @param {number} max upper bound of the square on both axes
- * @param {number} radius corner radius
- * @returns {boolean} true if inside
+ * @param {number[][]} segments list of x1, y1, x2, y2
+ * @param {number} halfWidth half of the stroke width
+ * @returns {boolean} true if on a stroke
  */
-function isInRoundedSquare(x, y, min, max, radius) {
-    const dx = Math.max(min + radius - x, 0, x - (max - radius));
-    const dy = Math.max(min + radius - y, 0, y - (max - radius));
-    return dx * dx + dy * dy <= radius * radius;
-}
-
-/**
- * Tests whether a point lies on the stroke of a line segment.
- *
- * @param {number} x point x
- * @param {number} y point y
- * @param {number[]} segment x1, y1, x2, y2
- * @returns {boolean} true if on the stroke
- */
-function isOnSegment(x, y, [x1, y1, x2, y2]) {
-    const lengthSquared = (x2 - x1) ** 2 + (y2 - y1) ** 2;
-    const projection = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / lengthSquared;
-    const t = Math.max(0, Math.min(1, projection));
-    return Math.hypot(x - (x1 + t * (x2 - x1)), y - (y1 + t * (y2 - y1))) <= STROKE_HALF_WIDTH;
+function isOnStroke(x, y, segments, halfWidth) {
+    return segments.some(([x1, y1, x2, y2]) => {
+        const lengthSquared = (x2 - x1) ** 2 + (y2 - y1) ** 2;
+        const projection = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / lengthSquared;
+        const t = Math.max(0, Math.min(1, projection));
+        return Math.hypot(x - (x1 + t * (x2 - x1)), y - (y1 + t * (y2 - y1))) <= halfWidth;
+    });
 }
 
 /**
@@ -53,15 +51,14 @@ function isOnSegment(x, y, [x1, y1, x2, y2]) {
  * @returns {number[] | undefined} rgb, or undefined for transparent
  */
 function colourAt(x, y) {
-    if (!isInRoundedSquare(x, y, 0, 1, 0.2)) {
-        return;
+    const distance = Math.hypot(x - LENS.x, y - LENS.y);
+    if (distance <= LENS.glass) {
+        return isOnStroke(x, y, BRACKETS, BRACKET_HALF_WIDTH) ? WHITE : PEACH;
     }
-    if (!isInRoundedSquare(x, y, 0.2, 0.8, 0.1)) {
-        return BLUE;
+    if (distance <= LENS.rim || isOnStroke(x, y, HANDLE, HANDLE_HALF_WIDTH)) {
+        return ORANGE;
     }
-    const isCheckMark =
-        isOnSegment(x, y, [0.33, 0.52, 0.45, 0.64]) || isOnSegment(x, y, [0.45, 0.64, 0.68, 0.37]);
-    return isCheckMark ? BLUE : WHITE;
+    return;
 }
 
 /**

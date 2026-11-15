@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>SFMC UX Tools</title>
+        <style>
+            body {
+                font:
+                    14px/1.5 system-ui,
+                    sans-serif;
+                margin: 16px;
+                min-width: 340px;
+            }
+            fieldset {
+                border: 0;
+                margin: 0;
+                padding: 0;
+            }
+            legend {
+                font-weight: 600;
+                margin-bottom: 6px;
+                padding: 0;
+            }
+            label {
+                display: block;
+                margin: 4px 0;
+            }
+            p {
+                color: #666;
+                margin: 8px 0 0;
+            }
+        </style>
+    </head>
+    <body>
+        <fieldset>
+            <legend>Right-click menu in the code editor</legend>
+            <label>
+                <input type="radio" name="editorContextMenu" value="browser" />
+                Browser's menu (copy, paste, spell check, …)
+            </label>
+            <label>
+                <input type="radio" name="editorContextMenu" value="page" />
+                Marketing Cloud's menu (source formatting, theme, word wrap, line numbers)
+            </label>
+            <p>Changes apply at once; open editors need no reload.</p>
+        </fieldset>
+        <script src="options.js"></script>
+    </body>
+</html>

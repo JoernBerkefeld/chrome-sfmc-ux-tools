@@ -25,14 +25,21 @@ function checkbox(name, attributes = '') {
  * @param {string} [options.heading] text of the heading bar
  * @param {string} [options.before] html placed before the heading
  * @param {string} [options.boxes] html of the checkboxes below the heading
+ * @param {string} [options.dialog] class of the dialog container
+ * @param {boolean} [options.hasHeading] false leaves the heading bar out
  * @returns {string} html
  */
 function modalHtml({
     heading = 'Scope',
     before = '',
     boxes = checkbox('email_read') + checkbox('email_write') + checkbox('push_send'),
+    dialog = 'mc-packages--components_creation-modal',
+    hasHeading = true,
 } = {}) {
-    return `<div class="slds-modal slds-fade-in-open"><div class="slds-modal__container mc-packages--components_creation-modal"><div class="slds-modal__content"><section>${before}<div class="css-upjinv"><div><div class="css-ozs2lt">${heading}</div></div><div class="css-1t62idy"><div class="css-670dbu">Channels</div>${boxes}</div></div></section></div></div></div>`;
+    // the real dialog has many categories; a second one keeps the common container realistic
+    const assets = boxes ? checkbox('documents_and_images_read', 'disabled') : '';
+    const bar = hasHeading ? `<div><div class="css-ozs2lt">${heading}</div></div>` : '';
+    return `<div class="slds-modal slds-fade-in-open"><div class="slds-modal__container ${dialog}"><div class="slds-modal__content"><section>${before}<div class="css-upjinv">${bar}<div class="css-1t62idy"><div class="css-1t62idy"><div class="css-670dbu">Channels</div>${boxes}</div><div class="css-1t62idy"><div class="css-670dbu">Assets</div>${assets}</div></div></div></section></div></div></div>`;
 }
 
 /**
@@ -107,7 +114,30 @@ test('label follows manual changes', () => {
     assert.equal(button.textContent, 'Select all');
 });
 
-test('leaves disabled checkboxes and checkboxes above the heading alone', () => {
+test('works whatever the language of the heading is, also in the edit dialog', () => {
+    const document = load(
+        modalHtml({ heading: 'Umfang', dialog: 'mc-packages--components_edit-modal' }),
+    );
+    const button = document.querySelector(BUTTON);
+    assert.equal(button.parentElement.className, 'css-ozs2lt');
+    assert.equal(button.parentElement.firstChild.textContent, 'Umfang');
+    button.click();
+    assert.equal(checkedNames(document).length, 3);
+});
+
+test('adds its own bar above the checkboxes when the dialog has no heading', async () => {
+    const document = load(modalHtml({ hasHeading: false }));
+    await tick();
+    const buttons = document.querySelectorAll(BUTTON);
+    assert.equal(buttons.length, 1);
+    assert.equal(buttons[0].parentElement.nextElementSibling.className, 'css-1t62idy');
+    buttons[0].click();
+    await tick();
+    assert.equal(checkedNames(document).length, 3);
+    assert.equal(document.querySelectorAll(BUTTON).length, 1);
+});
+
+test('leaves disabled checkboxes and checkboxes that are not scopes alone', () => {
     const document = load(
         modalHtml({
             before: checkbox('unrelated'),
@@ -120,8 +150,12 @@ test('leaves disabled checkboxes and checkboxes above the heading alone', () => 
     assert.equal(button.textContent, 'Deselect all');
 });
 
-test('does nothing for dialogs without a Scope heading or without checkboxes', async () => {
-    const document = load(modalHtml({ heading: 'Properties' }) + modalHtml({ boxes: '' }));
+test('does nothing for other dialogs or dialogs without scope checkboxes', async () => {
+    const document = load(
+        modalHtml({ dialog: 'some-other-modal' }) +
+            modalHtml({ boxes: '' }) +
+            modalHtml({ boxes: checkbox('agree') }),
+    );
     await tick();
     assert.equal(document.querySelector(BUTTON), null);
 });

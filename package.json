@@ -1,8 +1,8 @@
 {
     "name": "chrome-sfmc-ux-tools",
     "displayName": "SFMC UX Tools",
-    "description": "Chrome extension with usability helpers for Salesforce Marketing Cloud Engagement: AMPscript colours in the code editor, select-all for package scopes.",
-    "version": "0.2.0",
+    "description": "Chrome extension with usability helpers for Salesforce Marketing Cloud Engagement: AMPscript colours and completions in the code editor, select-all for package scopes.",
+    "version": "0.3.0",
     "private": true,
     "type": "module",
     "author": "Jörn Berkefeld",
@@ -24,6 +24,7 @@
         "icons": "node scripts/generate-icons.js",
         "lint": "eslint --max-warnings 0 .",
         "lint:fix": "eslint --fix .",
+        "pretest": "npm run build",
         "test": "node --test",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
@@ -31,8 +32,10 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "acorn": "^8.19.0",
         "ampscript-data": "^4.2.0",
         "codemirror": "^5.65.21",
+        "esbuild": "^0.28.2",
         "eslint": "^10.15.0",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-jsdoc": "^65.4.6",
@@ -43,6 +46,7 @@
         "husky": "^9.1.7",
         "jsdom": "^31.0.1",
         "prettier": "^3.10.1",
+        "sfmc-language-lsp": "^4.4.0",
         "ssjs-data": "^2.1.2"
     }
 }

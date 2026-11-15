@@ -12,10 +12,24 @@ Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. Wi
 
 - Personalisation strings such as `%%emailaddr%%` are coloured too.
 - In server-side JavaScript (`<script runat="server">`), Marketing Cloud's own objects and functions get colours of their own, for example `Platform`, `DataExtension`, `Variable`, `Write()` and the functions behind `Platform.Function.`. The JavaScript itself keeps the colours the editor already gives it.
-- Works in the code view of Content Builder and in other Marketing Cloud apps that use the same editor.
+- Works in the code view of Content Builder. Other Marketing Cloud apps with the same editor will follow once each has been checked.
 - The content itself is never changed; only the colours are.
 - A script tag is only recognised if its opening tag fits on one line.
-- Not covered yet: completions, hovers and diagnostics.
+- Not covered yet: hovers and diagnostics.
+
+### Completions
+
+While you type AMPscript in the code view of Content Builder, the extension suggests what fits: AMPscript functions, keywords, personalisation strings and the variables of the current content. Press **Ctrl+Space** to ask for suggestions at any time.
+
+- Suggestions appear inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript script tags, never in plain HTML. While you type, they stay away inside strings and comments.
+- Picking a function inserts its name and the opening bracket; picking anything else inserts the plain word. Nothing is inserted unless you pick it.
+- AMPscript only for now: there are no suggestions for server-side JavaScript yet.
+- The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.4.0), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
+- The popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
+
+### Browser context menu in the code editor
+
+A right-click in the code editor opens the browser's own context menu instead of the menu Marketing Cloud draws over the code. To get Marketing Cloud's menu back, open the extension's options (`chrome://extensions` → SFMC UX Tools → Details → Extension options) and choose it there; the change applies at once.
 
 ### Select all scopes of an installed package
 
@@ -24,9 +38,7 @@ When you add or edit an API integration under **Setup → Platform Tools → App
 - **Select all** ticks every scope, including the ones that are scrolled out of view.
 - Once everything is ticked, the button turns into **Deselect all** and clears every scope again.
 
-Nothing is saved until you press the dialog's own **Save** button.
-
-The button is attached to the bar labelled **Scope**, so it only appears when the Marketing Cloud user interface is set to English.
+Nothing is saved until you press the dialog's own **Save** button. The button works in every language of the Marketing Cloud user interface, in the dialog for adding a component and in the one for editing it.
 
 ## Installation
 
@@ -38,7 +50,8 @@ Not listed yet.
 
 1. Clone this repository.
 2. Open `chrome://extensions` and switch on **Developer mode**.
-3. Choose **Load unpacked** and pick the `src` folder.
+3. Run `npm install --no-workspaces` and `npm run build`.
+4. Choose **Load unpacked** and pick the `dist/extension` folder.
 
 This works the same way in other Chromium browsers such as Edge.
 
@@ -47,9 +60,9 @@ This works the same way in other Chromium browsers such as Edge.
 The extension runs on two places of Marketing Cloud Engagement:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
-- the Marketing Cloud apps (`https://*.marketingcloudapps.com`), where it adds colouring rules to the code editor. The editor reads your code through these rules to colour it; this happens inside the page only.
+- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colouring rules and completions to the code editor. The editor reads your code through these rules to colour it, and the built-in language service reads it to suggest completions; both happen inside the page only. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the Content Builder address.
 
-It does not collect, store or transmit any data and makes no network requests.
+It does not collect or transmit any data and makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 
 ## Development
 
@@ -60,8 +73,9 @@ npm test
 npm run build
 ```
 
-- `src/` is the extension itself; there is no compile step.
-- `npm run build` writes `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store.
+- `src/` holds the extension's sources. `npm run build` writes the loadable extension to `dist/extension` and packs that folder as `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store. For **Load unpacked**, always pick `dist/extension`, not `src`.
+- The build bundles `src/editor-completions.js` and the `sfmc-language-lsp` package (currently 4.4.0) into one classic script with esbuild, and fails if that bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
+- `npm test` runs the build first, because the completion tests run the built bundle.
 - `npm run icons` redraws the icons in `src/icons/`.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.
 - Keep `version` in `package.json` and `src/manifest.json` identical; a test checks this.

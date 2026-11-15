@@ -1,13 +1,18 @@
 {
     "manifest_version": 3,
     "name": "SFMC UX Tools",
-    "version": "0.2.0",
-    "description": "Usability helpers for Salesforce Marketing Cloud Engagement: AMPscript colours in the code editor, select-all for package scopes.",
+    "version": "0.3.0",
+    "description": "Usability helpers for Salesforce Marketing Cloud Engagement: AMPscript colours and completions, select-all for package scopes.",
     "minimum_chrome_version": "111",
     "icons": {
         "16": "icons/icon16.png",
         "48": "icons/icon48.png",
         "128": "icons/icon128.png"
+    },
+    "permissions": ["storage"],
+    "options_ui": {
+        "page": "options.html",
+        "open_in_tab": false
     },
     "content_scripts": [
         {
@@ -18,11 +23,19 @@
         },
         {
             "matches": ["https://*.marketingcloudapps.com/*"],
-            "js": ["language-data.js", "editor-highlight.js"],
+            "include_globs": ["https://content-builder.*"],
+            "js": ["language-data.js", "editor-highlight.js", "editor-completions.js"],
             "css": ["editor-highlight.css"],
             "world": "MAIN",
             "all_frames": true,
             "run_at": "document_idle"
+        },
+        {
+            "matches": ["https://*.marketingcloudapps.com/*"],
+            "include_globs": ["https://content-builder.*"],
+            "js": ["editor-context-menu.js"],
+            "all_frames": true,
+            "run_at": "document_start"
         }
     ]
 }

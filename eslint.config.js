@@ -131,6 +131,16 @@ export default [
         },
     },
     {
+        // these run in the extension's own world and use its API
+        files: ['src/editor-context-menu.js', 'src/options.js'],
+
+        languageOptions: {
+            globals: {
+                chrome: 'readonly',
+            },
+        },
+    },
+    {
         // the content script is a classic browser script, not a module
         files: ['src/**/*.js'],
 
@@ -140,6 +150,14 @@ export default [
             },
 
             sourceType: 'script',
+        },
+    },
+    {
+        // source of the completions bundle; esbuild turns it into a classic script
+        files: ['src/editor-completions.js'],
+
+        languageOptions: {
+            sourceType: 'module',
         },
     },
 ];

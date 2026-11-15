@@ -19,11 +19,14 @@ Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. Wi
 
 ### Completions
 
-While you type AMPscript in the code view of Content Builder, the extension suggests what fits: AMPscript functions, keywords, personalisation strings and the variables of the current content. Press **Ctrl+Space** to ask for suggestions at any time.
+While you type AMPscript or server-side JavaScript (SSJS) in the code view of Content Builder, the extension suggests what fits. Press **Ctrl+Space** to ask for suggestions at any time.
 
-- Suggestions appear inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript script tags, never in plain HTML. While you type, they stay away inside strings and comments.
+- **AMPscript**: functions, keywords, personalisation strings and the variables of the current content.
+- **SSJS**, inside `<script runat="server">`: Marketing Cloud's functions and objects (`Platform.Function.Lookup`, `Write`, `DataExtension`, `HTTP.Get`, …), the JavaScript built-ins that work in SSJS, and the functions declared in the content. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`).
+
+- AMPscript suggestions appear inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript script tags, never in plain HTML. While you type, they stay away inside strings and comments.
 - Picking a function inserts its name and the opening bracket; picking anything else inserts the plain word. Nothing is inserted unless you pick it.
-- AMPscript only for now: there are no suggestions for server-side JavaScript yet.
+- Not covered yet in SSJS: the members of your own variables, such as the methods of a `DataExtension.Init(...)` result.
 - The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.4.0), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
 - The popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
 
@@ -78,7 +81,7 @@ npm run build
 ```
 
 - `src/` holds the extension's sources. `npm run build` writes the loadable extension to `dist/extension` and packs that folder as `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store. For **Load unpacked**, always pick `dist/extension`, not `src`.
-- The build bundles `src/editor-completions.js` and the `sfmc-language-lsp` package (currently 4.4.0) into one classic script with esbuild, and fails if that bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
+- The build bundles `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.4.0) into one classic script with esbuild, and fails if that bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
 - `npm test` runs the build first, because the completion tests run the built bundle.
 - `npm run icons` redraws the icons in `src/icons/`.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.

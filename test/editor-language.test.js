@@ -18,7 +18,7 @@ const htmlModeSources = [
 ].map((id) => readFileSync(require.resolve(id), 'utf8'));
 const dataScript = read('../dist/extension/language-data.js');
 const highlightScript = read('../dist/extension/editor-highlight.js');
-const completionsScript = read('../dist/extension/editor-completions.js');
+const completionsScript = read('../dist/extension/editor-language.js');
 const BASE_MODE = 'ampScriptHtmlMixed';
 const POPUP = '.CodeMirror-hints';
 
@@ -157,19 +157,126 @@ test('ignores the letter case of the typed word and offers keywords and variable
     );
 });
 
-test('offers nothing in plain HTML text or in server-side JavaScript', () => {
+test('offers nothing in plain HTML text', () => {
     const context = page();
     const html = addEditor(context, '<p>Hello Loo|</p> %%[ set @a = 1 ]%%');
-    const ssjs = addEditor(context, '<script runat="server">\nvar a = Pla|\n</script>');
     runExtension(context.window);
     // the key is passed on, so that a binding of the page still runs
     assert.equal(pressCtrlSpace(html), context.CodeMirror.Pass);
-    assert.equal(pressCtrlSpace(ssjs), context.CodeMirror.Pass);
     assert.equal(html.state.completionActive, undefined);
-    assert.equal(ssjs.state.completionActive, undefined);
     assert.deepEqual(hints(html), []);
-    assert.deepEqual(hints(ssjs), []);
     assert.equal(context.window.document.querySelector(POPUP), null);
+});
+
+/**
+ * Opens the popup in a server-side script and lists what it offers.
+ *
+ * @param {object} context page from `page()`
+ * @param {string} body content of the script; a "|" marks the cursor
+ * @returns {{editor: object, labels: string[], pick: (label: string) => void}} the editor, the names on offer and a way to choose one
+ */
+function inSsjs(context, body) {
+    const editor = addEditor(
+        context,
+        `<p>%%=v(@a)=%%</p>\n<script runat="server">\n${body}\n</script>`,
+    );
+    runExtension(context.window);
+    pressCtrlSpace(editor);
+    return {
+        editor,
+        labels: hints(editor).map((hint) => hint.displayText),
+        pick: (label) => {
+            const completion = editor.state.completionActive;
+            completion.pick(
+                completion.data,
+                completion.data.list.findIndex((entry) => entry.displayText === label),
+            );
+        },
+    };
+}
+
+test('offers SSJS names in a server-side script, by their objects or by the name alone', () => {
+    const chain = inSsjs(page(), 'var a = Platform.Function.Loo|');
+    assert.ok(chain.labels.includes('Platform.Function.Lookup'), chain.labels.join(' | '));
+    for (const label of chain.labels) {
+        assert.match(label, /^Platform\.Function\.Loo/);
+    }
+    chain.pick('Platform.Function.Lookup');
+    assert.equal(chain.editor.getLine(2), 'var a = Platform.Function.Lookup(');
+
+    const word = inSsjs(page(), 'var a = looku|');
+    assert.ok(word.labels.includes('Platform.Function.Lookup'), word.labels.join(' | '));
+    assert.ok(!word.labels.includes('LookupRows'), 'no AMPscript names');
+    word.pick('Platform.Function.LookupRows');
+    assert.equal(word.editor.getLine(2), 'var a = Platform.Function.LookupRows(');
+
+    const starts = inSsjs(page(), 'Wr|');
+    assert.equal(starts.labels[0], 'Write', 'names that start with the typed text come first');
+    const entry = [
+        ...starts.editor.getWrapperElement().ownerDocument.querySelector(POPUP).children,
+    ][0];
+    assert.equal(entry.querySelector('.sfmc-hint-detail').textContent, 'global · text');
+});
+
+test('SSJS: objects, own functions, constructors and existing brackets', () => {
+    const object = inSsjs(page(), 'var de = DataEx|');
+    object.pick('DataExtension');
+    assert.equal(object.editor.getLine(2), 'var de = DataExtension');
+
+    const own = inSsjs(page(), 'function greet(name) { return name; }\ngre|');
+    assert.deepEqual(own.labels, ['greet']);
+    own.pick('greet');
+    assert.equal(own.editor.getLine(3), 'greet(');
+
+    const created = inSsjs(page(), 'var req = new Script.Util.HttpR|');
+    created.pick('Script.Util.HttpRequest');
+    assert.equal(created.editor.getLine(2), 'var req = new Script.Util.HttpRequest(');
+
+    const bracket = inSsjs(page(), 'Platform.Function.Loo|kup("a")');
+    bracket.pick('Platform.Function.LookupRows');
+    assert.equal(bracket.editor.getLine(2), 'Platform.Function.LookupRows("a")');
+});
+
+test('SSJS: nothing for members of unknown values, and AMPscript stays AMPscript', () => {
+    const context = page();
+    const member = addEditor(context, '<script runat="server">\nvar a = de.Ro|\n</script>');
+    const result = addEditor(context, '<script runat="server">\nvar a = get().Wr|\n</script>');
+    const browser = addEditor(context, '<script>\nvar a = Platform.Function.Loo|\n</script>');
+    const block = addEditor(
+        context,
+        '<script runat="server">var a = 1;</script>\n%%[ set @a = Loo| ]%%',
+    );
+    runExtension(context.window);
+    assert.equal(pressCtrlSpace(member), context.CodeMirror.Pass);
+    assert.equal(pressCtrlSpace(result), context.CodeMirror.Pass);
+    assert.equal(pressCtrlSpace(browser), context.CodeMirror.Pass, 'no SSJS in browser scripts');
+    pressCtrlSpace(block);
+    assert.ok(
+        hints(block)
+            .map((hint) => hint.displayText)
+            .includes('LookupRows'),
+    );
+});
+
+test('SSJS: the popup opens while typing, also after a dot, but not in strings or comments', async () => {
+    const context = page();
+    const open = '<script runat="server">\n';
+    const code = addEditor(context, open + 'Platform.Function|\n</script>');
+    const string = addEditor(context, open + 'var a = "Platform|";\n</script>');
+    const comment = addEditor(context, open + '// Platform|\n</script>');
+    const html = addEditor(context, '<p>Platform|</p>');
+    runExtension(context.window);
+    for (const editor of [code, string, comment, html]) {
+        type(context, editor, '.');
+    }
+    await pause();
+    assert.ok(hints(code).length > 0);
+    for (const hint of hints(code)) {
+        assert.match(hint.displayText, /^Platform\.Function\./);
+    }
+    assert.equal(string.state.completionActive, undefined);
+    assert.equal(comment.state.completionActive, undefined);
+    assert.equal(html.state.completionActive, undefined);
 });
 
 test('leaves read-only editors and selections alone', () => {
@@ -326,7 +433,7 @@ test('the built extension is complete and its manifest references only existing 
         ...manifest.content_scripts.flatMap((entry) => [...entry.js, ...(entry.css ?? [])]),
         ...Object.values(manifest.icons),
     ];
-    assert.ok(files.includes('editor-completions.js'));
+    assert.ok(files.includes('editor-language.js'));
     for (const file of files) {
         assert.ok(
             existsSync(new URL(`../dist/extension/${file}`, import.meta.url)),
@@ -334,9 +441,13 @@ test('the built extension is complete and its manifest references only existing 
         );
     }
     assert.equal(highlightScript, read('../src/editor-highlight.js'));
+    assert.ok(
+        !existsSync(new URL('../dist/extension/editor-language', import.meta.url)),
+        'the sources of the bundle are not copied',
+    );
 });
 
-test('the completions bundle is one classic script without eval or new Function', () => {
+test('the language bundle is one classic script without eval or new Function', () => {
     assert.deepEqual(findDynamicCode(completionsScript), []);
     assert.doesNotMatch(completionsScript, /^\s*(?:import|export)\s/m);
     assert.match(completionsScript, /includes sfmc-language-lsp \d+\.\d+\.\d+/);

@@ -153,8 +153,8 @@ export default [
         },
     },
     {
-        // source of the completions bundle; esbuild turns it into a classic script
-        files: ['src/editor-completions.js'],
+        // sources of the language bundle; esbuild turns them into a classic script
+        files: ['src/editor-language.js', 'src/editor-language/**/*.js'],
 
         languageOptions: {
             sourceType: 'module',

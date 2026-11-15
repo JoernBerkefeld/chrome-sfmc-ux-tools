@@ -1,7 +1,8 @@
 /*
  * Builds the extension:
  * - dist/extension is the complete extension, ready for "Load unpacked": a copy of ./src in which
- *   editor-completions.js is replaced by a bundle of that file and sfmc-language-lsp;
+ *   editor-language.js is replaced by a bundle of that file, the files in src/editor-language
+ *   and sfmc-language-lsp;
  * - dist/chrome-sfmc-ux-tools-v<version>.zip is the same folder packed for the Chrome Web Store.
  * manifest.json ends up at the root of the archive; entry paths always use forward slashes.
  */
@@ -17,7 +18,9 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const sourceDirectory = path.join(root, 'src');
 const outputDirectory = path.join(root, 'dist');
 const extensionDirectory = path.join(outputDirectory, 'extension');
-const COMPLETIONS = 'editor-completions.js';
+const LANGUAGE = 'editor-language.js';
+// sources that only exist inside the bundle
+const BUNDLED_DIRECTORY = 'editor-language/';
 
 /**
  * Collects all files below a directory.
@@ -42,17 +45,17 @@ function collect(directory, prefix = '') {
 }
 
 /**
- * Bundles the completions script and the language service into one classic script.
+ * Bundles the language script and the language service into one classic script.
  *
  * @returns {Promise.<Uint8Array>} the bundle
  */
-async function bundleCompletions() {
+async function bundleLanguage() {
     // the package does not export its package.json, so it is read by path
     const { version } = JSON.parse(
         readFileSync(path.join(root, 'node_modules/sfmc-language-lsp/package.json'), 'utf8'),
     );
     const result = await build({
-        entryPoints: [path.join(sourceDirectory, COMPLETIONS)],
+        entryPoints: [path.join(sourceDirectory, LANGUAGE)],
         bundle: true,
         format: 'iife',
         platform: 'browser',
@@ -61,21 +64,25 @@ async function bundleCompletions() {
         write: false,
         logLevel: 'warning',
         banner: {
-            js: `/* SFMC UX Tools - AMPscript completions. Built from src/${COMPLETIONS}; includes sfmc-language-lsp ${version}. */`,
+            js: `/* SFMC UX Tools - language features of the code editor. Built from src/${LANGUAGE}; includes sfmc-language-lsp ${version}. */`,
         },
     });
     const [{ contents, text }] = result.outputFiles;
     // Chrome refuses both in the scripts of an extension
     const dynamicCode = findDynamicCode(text);
     if (dynamicCode.length) {
-        throw new Error(`the bundle of ${COMPLETIONS} contains ${dynamicCode.join(', ')}`);
+        throw new Error(`the bundle of ${LANGUAGE} contains ${dynamicCode.join(', ')}`);
     }
     return contents;
 }
 
 const { version } = JSON.parse(readFileSync(path.join(sourceDirectory, 'manifest.json'), 'utf8'));
-const files = collect(sourceDirectory);
-files[COMPLETIONS] = await bundleCompletions();
+const files = Object.fromEntries(
+    Object.entries(collect(sourceDirectory)).filter(
+        ([archivePath]) => !archivePath.startsWith(BUNDLED_DIRECTORY),
+    ),
+);
+files[LANGUAGE] = await bundleLanguage();
 
 for (const [archivePath, contents] of Object.entries(files)) {
     const target = path.join(extensionDirectory, archivePath);

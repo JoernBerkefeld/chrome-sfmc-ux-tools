@@ -131,7 +131,11 @@ test('offers AMPscript functions that start with the typed word', () => {
     const popup = context.window.document.querySelector(POPUP);
     assert.equal(popup.parentNode, context.window.document.body);
     const entry = [...popup.children].find((item) => item.firstChild.textContent === 'Lookup');
-    assert.equal(entry.querySelector('.sfmc-hint-detail').textContent, '(Data Extension) Lookup');
+    // category and parameters, cut to length; the name is not repeated
+    assert.equal(
+        entry.querySelector('.sfmc-hint-detail').textContent,
+        'Data Extension · dataObject, returnColumn, searchColumn1, s…',
+    );
 });
 
 test('ignores the letter case of the typed word and offers keywords and variables too', () => {

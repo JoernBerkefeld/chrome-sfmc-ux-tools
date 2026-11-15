@@ -21,6 +21,8 @@ const TRIGGER_CHARACTER = /[\w@]$/;
 const QUIET_STYLES = /\bsfmc-(?:string|comment)\b/;
 // snippet syntax of the language service: $1, ${1} or ${1:name}
 const PLACEHOLDER = /\$(?:\d+|\{\d+(?::[^}]*)?\})/;
+// a named placeholder of a snippet, which is how the language service lists a function's parameters
+const PARAMETER = /\$\{\d+:([^}]*)\}/g;
 const KIND_FUNCTION = 3;
 const KIND_NAMES = { 3: 'function', 6: 'variable', 14: 'keyword' };
 // marks editors that are set up; a registered symbol, so that a second copy of this script recognises it too
@@ -95,13 +97,41 @@ function render(element, label, detail) {
 }
 
 /**
+ * Gives the description the language service has for an item, or the kind of the item.
+ *
+ * @param {object} item completion item of the language service
+ * @returns {string} description, may be empty
+ */
+function describe(item) {
+    return String(item.detail ?? KIND_NAMES[item.kind] ?? '');
+}
+
+/**
+ * Describes a function by its category and the names of its parameters. The language service
+ * writes the category as "(Category) Name"; the name is left out, as the entry starts with it.
+ *
+ * @param {object} item completion item of a function
+ * @returns {string} for example "Data Extension · dataObject, returnColumn"
+ */
+function signature(item) {
+    const detail = describe(item);
+    const category = detail.startsWith('(') ? detail.slice(1, detail.indexOf(')')) : detail;
+    const parameters = String(item.insertText ?? '')
+        .matchAll(PARAMETER)
+        .map((match) => match[1])
+        .toArray()
+        .join(', ');
+    return [category, parameters].filter(Boolean).join(' · ');
+}
+
+/**
  * Converts a completion item of the language service into a CodeMirror hint.
  *
  * @param {object} item completion item of the language service
  * @returns {object} CodeMirror hint
  */
 function toHint(item) {
-    const full = String(item.detail ?? KIND_NAMES[item.kind] ?? '');
+    const full = item.kind === KIND_FUNCTION ? signature(item) : describe(item);
     const detail = full.length > DETAIL_LENGTH ? full.slice(0, DETAIL_LENGTH - 1) + '…' : full;
     return {
         text: insertText(item),

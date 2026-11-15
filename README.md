@@ -21,6 +21,10 @@ Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. Wi
 
 Rest the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, and a box shows what it does: its parameters with their types, what it returns, an example and links to the full documentation. You can move the mouse onto the box to scroll it or to follow a link. Nothing is shown inside browser scripts.
 
+### Parameter help
+
+While the cursor is inside the brackets of an AMPscript function or of one of Marketing Cloud's SSJS functions, a box above the line lists the function's parameters, marks the one you are typing and says what it is for. It follows the cursor, also in calls that are already written, and **Esc** closes it.
+
 ### Completions
 
 While you type AMPscript or server-side JavaScript (SSJS) in the code view of Content Builder, the extension suggests what fits. Press **Ctrl+Space** to ask for suggestions at any time.

@@ -101,10 +101,7 @@ html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-foldgutter-folded {
     color: var(--sfmc-line-number);
 }
 html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-guttermarker,
-html[data-sfmc-ux-tools-theme]
-    .CodeMirror
-    .CodeMirror-activeline-gutter
-    .CodeMirror-linenumber {
+html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-activeline-gutter .CodeMirror-linenumber {
     color: var(--sfmc-line-number-active);
 }
 html[data-sfmc-ux-tools-theme] .CodeMirror .CodeMirror-activeline-background {
@@ -290,7 +287,9 @@ li.CodeMirror-hint-active {
     box-shadow: 2px 3px 5px rgba(0, 0, 0, 0.2);
     color: var(--sfmc-foreground);
     color-scheme: var(--sfmc-scheme);
-    font: 13px/1.4 system-ui, sans-serif;
+    font:
+        13px/1.4 system-ui,
+        sans-serif;
     text-align: left;
     white-space: normal;
 }
@@ -323,6 +322,13 @@ li.CodeMirror-hint-active {
 .sfmc-tooltip blockquote {
     padding-left: 8px;
     border-left: 3px solid var(--sfmc-widget-border);
+}
+.sfmc-tooltip pre strong {
+    color: var(--sfmc-link);
+}
+/* parameter help follows the cursor and must never be in the way of a click */
+.sfmc-signature {
+    pointer-events: none;
 }
 .sfmc-tooltip a {
     color: var(--sfmc-link);

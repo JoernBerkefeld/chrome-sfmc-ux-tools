@@ -503,6 +503,84 @@ test('hover: the box stays while the mouse is on it and goes when it leaves', as
     assert.equal(document.querySelector(HOVER), null);
 });
 
+const SIGNATURE = '.sfmc-signature';
+
+/**
+ * Adds a focused editor and lets the extension react to its cursor. jsdom has no layout and no
+ * real focus, so the editor is told both.
+ *
+ * @param {object} context page from `page()`
+ * @param {string} content editor content; a "|" marks the cursor
+ * @returns {Promise.<{editor: object, box: () => Element | null, moveTo: (before: string) => Promise.<void>}>} the editor, the box of the parameter help and a way to move the cursor behind some text
+ */
+async function withCursor(context, content) {
+    const editor = addEditor(context, content);
+    editor.hasFocus = () => true;
+    editor.cursorCoords = () => ({ left: 10, right: 10, top: 100, bottom: 115 });
+    runExtension(context.window);
+    const moveTo = async (before) => {
+        editor.setCursor(editor.posFromIndex(editor.getValue().indexOf(before) + before.length));
+        await pause();
+    };
+    // the cursor is "moved" to where it is, which tells the listeners about it
+    context.CodeMirror.signal(editor, 'cursorActivity', editor);
+    await pause();
+    return { editor, box: () => context.window.document.querySelector(SIGNATURE), moveTo };
+}
+
+test('parameter help shows the AMPscript function and marks the parameter being typed', async () => {
+    const context = page();
+    const { box, moveTo } = await withCursor(context, '%%[ set @a = Lookup("de", |"field") ]%%');
+    assert.equal(box().parentNode, context.window.document.body);
+    assert.match(
+        box().querySelector('pre').textContent,
+        /^Lookup\(dataObject: string, returnColumn/,
+    );
+    assert.equal(box().querySelector('strong').textContent, 'returnColumn: string');
+    assert.match(box().querySelector('p').textContent, /column to return/);
+    await moveTo('Lookup("');
+    assert.equal(box().querySelector('strong').textContent, 'dataObject: string');
+    await moveTo('"field")');
+    assert.equal(box(), null, 'gone outside the call');
+    await moveTo('%%[ set');
+    assert.equal(box(), null);
+});
+
+test('parameter help: SSJS by its full name only, nothing in browser scripts or unfocused', async () => {
+    const context = page();
+    const ssjs = await withCursor(
+        context,
+        '<p>(</p><script runat="server">\nvar a = Platform.Function.Lookup("de", |"f");\n' +
+            'var b = other.Lookup("de", "f");\nfunction add(first, second) {}\nadd(1, 2);\n</script>',
+    );
+    assert.match(ssjs.box().querySelector('pre').textContent, /^Platform\.Function\.Lookup\(/);
+    assert.equal(ssjs.box().querySelector('strong').textContent, 'returnField');
+    await ssjs.moveTo('other.Lookup("de", ');
+    assert.equal(ssjs.box(), null, 'a method of something else is not the Platform function');
+    await ssjs.moveTo('add(1, ');
+    assert.equal(ssjs.box().querySelector('strong').textContent, 'second');
+    context.CodeMirror.signal(ssjs.editor, 'blur', ssjs.editor);
+    assert.equal(ssjs.box(), null, 'gone when the editor loses the focus');
+
+    const other = page();
+    const browser = await withCursor(other, '<script>\nvar a = Lookup("de", |"f");\n</script>');
+    assert.equal(browser.box(), null);
+    const idle = addEditor(other, '%%[ set @a = Lookup("de", |"field") ]%%');
+    await pause();
+    other.CodeMirror.signal(idle, 'cursorActivity', idle);
+    await pause();
+    assert.equal(browser.box(), null, 'an editor without the focus shows nothing');
+});
+
+test('parameter help closes on Escape and lets the key go on', async () => {
+    const context = page();
+    const { editor, box } = await withCursor(context, '%%[ set @a = Lookup("de", |"field") ]%%');
+    assert.ok(box());
+    const keyMap = editor.state.keyMaps.find((map) => 'Esc' in map);
+    assert.equal(keyMap.Esc(editor), context.CodeMirror.Pass);
+    assert.equal(box(), null);
+});
+
 test('sets up editors that are opened later, each one only once', async () => {
     const context = page();
     runExtension(context.window);

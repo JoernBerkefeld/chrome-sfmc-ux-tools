@@ -108,3 +108,11 @@ test('the options page offers both themes, light first, and the manifest loads t
     assert.equal(entry.world, undefined);
     assert.equal(entry.run_at, 'document_start');
 });
+
+test('the toolbar icon is an action of its own and opens the options', () => {
+    const manifest = JSON.parse(read('../src/manifest.json'));
+    // without an action Chrome shows the icon greyed out
+    assert.equal(manifest.action.default_popup, manifest.options_ui.page);
+    assert.deepEqual(manifest.action.default_icon, manifest.icons);
+    assert.ok(manifest.action.default_title.startsWith(manifest.name));
+});

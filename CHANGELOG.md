@@ -5,6 +5,7 @@
 ### Changed
 
 - Chrome 122 or newer is required.
+- The toolbar icon is no longer greyed out, and a click on it opens the options.
 
 ### Added
 

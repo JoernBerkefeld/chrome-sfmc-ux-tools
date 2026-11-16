@@ -4,9 +4,6 @@
  * The suggestions come from sfmc-language-lsp; this file connects it to CodeMirror 5's hint popup.
  */
 import { sfmcLanguageService } from 'sfmc-language-lsp';
-import { colour } from './colour.js';
-import { createTooltip } from './tooltip.js';
-import { renderMarkdown } from './markdown.js';
 import {
     AMPSCRIPT,
     BROWSER_KINDS,
@@ -19,6 +16,7 @@ import {
     scriptsOnly,
     ssjsOnly,
 } from './shared.js';
+import { askTypescript } from './typescript.js';
 
 const TRIGGER_DELAY = 100;
 const DETAIL_LENGTH = 60;
@@ -133,8 +131,15 @@ const KIND_FUNCTION = 3;
 // method, function, constructor and class: described by category and parameters
 const CALLABLE_KINDS = new Set([2, KIND_FUNCTION, 4, 7]);
 const KIND_NAMES = { 3: 'function', 6: 'variable', 14: 'keyword' };
+// a member access on a dotted name, with what is typed of the member: "de.Rows.Ad"
+const RECEIVER_CHAIN = /((?:[\w$]+\s*\.\s*)*[\w$]+)\s*\.\s*[\w$]*$/;
+// a member access on any expression, with what is typed of the member
+const MEMBER_BEFORE_CURSOR = /\.([\w$]*)$/;
+// how members are described that the catalogue does not know
+const MEMBER_KIND_NAMES = { 2: 'method', 3: 'function', 5: 'field', 6: 'variable', 10: 'property' };
+// the members TypeScript found last, and the document up to their dot, which they belong to
+const lastMembers = { upToDot: undefined, items: null };
 const timers = new WeakMap();
-const boxes = new WeakMap();
 
 /**
  * Draws one entry of the popup: the name, followed by a short muted description.
@@ -357,6 +362,89 @@ function ssjsHints(text, cursor, line) {
 }
 
 /**
+ * Finds the dotted name in front of the last dot before the cursor, which is what the catalogue
+ * knows members of.
+ *
+ * @param {string} before the cursor's line up to the cursor
+ * @returns {{receiver: string, hasNew: boolean}} the name, empty if the dot follows something else, and whether `new` precedes it
+ */
+function memberReceiver(before) {
+    const match = RECEIVER_CHAIN.exec(before);
+    const start = match ? before.slice(0, match.index) : '';
+    // "a().b." and "a[0].b.": the name is a member of a value, not one the catalogue describes
+    return !match || /[.)\]]\s*$/.test(start)
+        ? { receiver: '', hasNew: false }
+        : { receiver: match[1], hasNew: /\bnew\s+$/.test(start) };
+}
+
+/**
+ * Asks TypeScript for the members of the value in front of the cursor's dot. The catalogue
+ * describes those it knows. The popup asks twice when it opens and again for every character
+ * typed of the member's name, none of which changes the members, so the last answer is kept for
+ * as long as the document up to the dot stays the same.
+ *
+ * @param {string} text whole document
+ * @param {{line: number, ch: number}} cursor where the cursor is
+ * @param {string} before the cursor's line up to the cursor
+ * @param {string} upToDot the document up to and including the dot
+ * @returns {object[] | null} completion items named by the member alone; null if TypeScript is not there or knows no members
+ */
+function typescriptMembers(text, cursor, before, upToDot) {
+    if (lastMembers.upToDot === upToDot) {
+        return lastMembers.items;
+    }
+    return askTypescript(text, (service) => {
+        const position = { line: cursor.line, character: cursor.ch };
+        const info = service.completions(position);
+        const items = service.memberCompletions({
+            typescriptItems: info.items,
+            isMemberAccess: info.isMemberCompletion,
+            catalogueItems: sfmcLanguageService.getCompletions(
+                { text: ssjsOnly(text), languageId: SSJS, uri: DOCUMENT_URI },
+                position,
+            ),
+            ...memberReceiver(before),
+        });
+        Object.assign(lastMembers, { upToDot, items });
+        return items;
+    });
+}
+
+/**
+ * SSJS suggestions after a dot, for which TypeScript knows the members of the value in front of
+ * it: those that start with what is typed of the member's name, which is all that is replaced.
+ *
+ * @param {string} text whole document
+ * @param {{line: number, ch: number}} cursor where the cursor is
+ * @param {string} line text of the line of the cursor
+ * @param {number} offset place of the cursor in the document
+ * @returns {{list: object[], typed: string} | null} hints and the typed text they replace; null where today's suggestions apply
+ */
+function memberHints(text, cursor, line, offset) {
+    const before = line.slice(0, cursor.ch);
+    const member = MEMBER_BEFORE_CURSOR.exec(before);
+    if (!member) {
+        return null;
+    }
+    const typed = member[1];
+    const items = typescriptMembers(text, cursor, before, text.slice(0, offset - typed.length));
+    if (!items) {
+        return null;
+    }
+    const needle = typed.toLowerCase();
+    const list = items
+        .filter((item) => item.label.toLowerCase().startsWith(needle))
+        .map((item) =>
+            toHint(
+                { ...item, detail: item.detail ?? MEMBER_KIND_NAMES[item.kind] },
+                untilPlaceholder(item),
+            ),
+        );
+    // no member starts like this: today's suggestions get their turn
+    return list.length ? { list, typed } : null;
+}
+
+/**
  * Collects the suggestions of a language at the cursor. In SSJS, the plain JavaScript names
  * follow those of Marketing Cloud.
  *
@@ -374,6 +462,10 @@ function hintsFor(cm, language, text, line) {
     if (language !== SSJS) {
         return ampscriptHints(text, cursor, line);
     }
+    const members = memberHints(text, cursor, line, cm.indexFromPos(cursor));
+    if (members) {
+        return members;
+    }
     const found = ssjsHints(text, cursor, line);
     if (found.typed.includes('.')) {
         return found;
@@ -383,71 +475,6 @@ function hintsFor(cm, language, text, line) {
         (entry) => !known.has(entry.displayText),
     );
     return { list: [...found.list, ...plain], typed: found.typed };
-}
-
-/**
- * Gives the box that shows the documentation of the chosen suggestion of an editor.
- *
- * @param {object} cm CodeMirror instance
- * @returns {object} box from `createTooltip`
- */
-function documentationBox(cm) {
-    if (!boxes.has(cm)) {
-        boxes.set(
-            cm,
-            createTooltip(cm.getWrapperElement().ownerDocument, 'sfmc-completion-documentation'),
-        );
-    }
-    return boxes.get(cm);
-}
-
-/**
- * Gets the documentation of a suggestion. SSJS items carry it; AMPscript items get it from the
- * language service when asked, and plain words have none.
- *
- * @param {object} [item] completion item of the language service
- * @returns {string} Markdown, or an empty string
- */
-function documentationOf(item) {
-    if (!item) {
-        return '';
-    }
-    const { documentation } = item.documentation
-        ? item
-        : sfmcLanguageService.resolveCompletion(item);
-    return String(documentation?.value ?? documentation ?? '');
-}
-
-/**
- * Shows the documentation of whichever suggestion is chosen in the popup, next to the popup.
- *
- * @param {object} cm CodeMirror instance
- * @param {object} data what the hint function hands to the hint addon, which reports to it what happens in the popup
- */
-function document(cm, data) {
-    const CodeMirror = cm.constructor;
-    const box = documentationBox(cm);
-    CodeMirror.on(data, 'select', (hint, element) => {
-        try {
-            const markdown = documentationOf(hint?.item);
-            const popup = element?.parentNode;
-            if (!markdown || !popup) {
-                box.hide();
-                return;
-            }
-            box.showBeside(
-                renderMarkdown(popup.ownerDocument, markdown, (code, language) =>
-                    colour(cm, code, language),
-                ),
-                popup.getBoundingClientRect(),
-            );
-        } catch (ex) {
-            box.hide();
-            report(ex);
-        }
-    });
-    CodeMirror.on(data, 'update', box.hide);
-    CodeMirror.on(data, 'close', box.hide);
 }
 
 /**
@@ -481,7 +508,6 @@ function hint(cm) {
             from: { line: cursor.line, ch: cursor.ch - found.typed.length },
             to: { line: cursor.line, ch: end },
         };
-        document(cm, data);
         return data;
     } catch (ex) {
         report(ex);
@@ -565,7 +591,6 @@ function onInputRead(cm, change) {
  * Sets up completions for one editor: Ctrl-Space, and the popup while typing.
  *
  * @param {object} cm CodeMirror instance
- * @returns {() => void} takes the documentation box away
  */
 export function registerCompletions(cm) {
     // the key goes on to the editor's own handling whenever there is nothing for us to do
@@ -573,8 +598,4 @@ export function registerCompletions(cm) {
         'Ctrl-Space': (editor) => (didShow(editor) ? undefined : editor.constructor.Pass),
     });
     cm.on('inputRead', onInputRead);
-    // the popup can go without telling the suggestions it showed last
-    const hide = () => documentationBox(cm).hide();
-    cm.on('endCompletion', hide);
-    return hide;
 }

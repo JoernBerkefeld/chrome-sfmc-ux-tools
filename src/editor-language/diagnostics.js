@@ -9,6 +9,7 @@ import {
     validateMixedDocumentSsjs,
 } from 'sfmc-language-lsp';
 import { AMPSCRIPT, DOCUMENT_URI, SSJS, isInMode, report } from './shared.js';
+import { READY_EVENT, askTypescript, hasTypescript } from './typescript.js';
 
 const CHECK_DELAY = 500;
 // severities of the language service, most serious first
@@ -16,6 +17,9 @@ const SEVERITY_NAMES = { 1: 'error', 2: 'warning', 3: 'info', 4: 'info' };
 const found = new WeakMap();
 // what each editor's content was when it was last checked
 const checked = new WeakMap();
+// what TypeScript found in each editor, and the content it was found in
+const typed = new WeakMap();
+const state = { isWaitingForTypescript: false };
 
 /**
  * Collects what the language service objects to in a document: its AMPscript, and the SSJS of
@@ -30,10 +34,60 @@ function check(text) {
         languageId: AMPSCRIPT,
         uri: DOCUMENT_URI,
     });
-    if (getScriptRegions(text).some((region) => region.kind === SSJS)) {
+    if (hasSsjs(text)) {
         list.push(...validateMixedDocumentSsjs(text, DEFAULT_SETTINGS));
     }
-    return list.slice(0, DEFAULT_SETTINGS.maxNumberOfProblems);
+    return list;
+}
+
+/**
+ * Tells whether a document has a server-side script.
+ *
+ * @param {string} text whole document
+ * @returns {boolean} true if there is SSJS to check
+ */
+function hasSsjs(text) {
+    return getScriptRegions(text).some((region) => region.kind === SSJS);
+}
+
+/**
+ * Names what a diagnostic says and where, to find the ones that say the same.
+ *
+ * @param {object} diagnostic diagnostic of the language service
+ * @returns {string} equal for diagnostics with the same range and message
+ */
+function key(diagnostic) {
+    const { range, message } = diagnostic;
+    return JSON.stringify([range.start, range.end, message]);
+}
+
+/**
+ * Collects what TypeScript objects to in the server-side scripts of a document, like type errors
+ * and unknown members. As in the VS Code extension, only what lies inside such a script counts.
+ *
+ * @param {object} cm CodeMirror instance
+ * @param {string} text whole document
+ * @param {object[]} known diagnostics of the language service; what repeats one of them is left out
+ * @returns {object[]} further diagnostics; empty without the TypeScript script or without SSJS
+ */
+function checkTypes(cm, text, known) {
+    if (!hasSsjs(text)) {
+        return [];
+    }
+    const seen = new Set(known.map((diagnostic) => key(diagnostic)));
+    const list =
+        askTypescript(text, (service) =>
+            service
+                .diagnostics()
+                .filter((diagnostic) =>
+                    service.isInSsjsRegion(text, cm.indexFromPos(toPlace(diagnostic.range.start))),
+                ),
+        ) ?? [];
+    return list.filter((diagnostic) => {
+        const isNew = !seen.has(key(diagnostic));
+        seen.add(key(diagnostic));
+        return isNew;
+    });
 }
 
 /**
@@ -47,24 +101,44 @@ function toPlace(position) {
 }
 
 /**
- * Checks an editor's content and underlines what was found.
+ * Checks an editor's content and underlines what was found. TypeScript's check takes long enough
+ * to be felt, so it only runs when asked for, which is once typing has paused; otherwise what it
+ * found last is kept as long as it belongs to the content as it is.
  *
  * @param {object} cm CodeMirror instance
+ * @param {boolean} isWithTypes true to ask TypeScript as well
  */
-function update(cm) {
+function update(cm, isWithTypes) {
     try {
-        // nothing to do for content that was checked already: the same document, unchanged, in the same mode
         const now = { doc: cm.getDoc(), generation: cm.changeGeneration(), isInMode: isInMode(cm) };
-        const last = checked.get(cm);
-        if (
+        const isSame = (last) =>
             last?.doc === now.doc &&
             last.generation === now.generation &&
-            last.isInMode === now.isInMode
-        ) {
+            last.isInMode === now.isInMode;
+        const types = typed.get(cm);
+        const isTypesCurrent = isSame(types) && types.hasTypescript === hasTypescript();
+        // nothing to do for content that was checked already: the same document, unchanged, in the
+        // same mode, and with or without TypeScript as before
+        if (isSame(checked.get(cm)) && (isTypesCurrent || !isWithTypes)) {
             return;
         }
         checked.set(cm, now);
-        const list = now.isInMode ? check(cm.getValue()) : [];
+        const list = [];
+        if (now.isInMode) {
+            const text = cm.getValue();
+            const known = check(text);
+            let further = isSame(types) ? types.list : [];
+            if (isWithTypes && !isTypesCurrent) {
+                further = checkTypes(cm, text, known);
+            }
+            list.push(...known, ...further);
+            list.length = Math.min(list.length, DEFAULT_SETTINGS.maxNumberOfProblems);
+            if (isWithTypes) {
+                typed.set(cm, { ...now, hasTypescript: hasTypescript(), list: further });
+            }
+        } else if (isWithTypes) {
+            typed.set(cm, { ...now, hasTypescript: hasTypescript(), list: [] });
+        }
         cm.operation(() => {
             const old = found.get(cm) ?? [];
             for (const { mark } of old) {
@@ -97,12 +171,13 @@ function update(cm) {
 
 /**
  * Checks an editor's content at once, for those who need what is found to fit the text as it
- * is now, without waiting for typing to pause.
+ * is now, without waiting for typing to pause. TypeScript is not asked: what it found is shown
+ * while it fits the content, and found again once typing has paused.
  *
  * @param {object} cm CodeMirror instance
  */
 export function checkNow(cm) {
-    update(cm);
+    update(cm, false);
 }
 
 /**
@@ -135,15 +210,46 @@ export function diagnosticsAt(cm, place) {
 }
 
 /**
+ * Checks the editors of the page again once the TypeScript script has arrived, which may be
+ * after their first check.
+ */
+function recheckWithTypescript() {
+    if (state.isWaitingForTypescript || hasTypescript()) {
+        return;
+    }
+    state.isWaitingForTypescript = true;
+    document.addEventListener(
+        READY_EVENT,
+        () => {
+            // later, not while the TypeScript script that says so is still starting
+            setTimeout(() => {
+                try {
+                    for (const { CodeMirror: cm } of document.querySelectorAll('.CodeMirror')) {
+                        // only those that were checked here before
+                        if (cm && checked.has(cm)) {
+                            update(cm, true);
+                        }
+                    }
+                } catch (ex) {
+                    report(ex);
+                }
+            }, 0);
+        },
+        { once: true },
+    );
+}
+
+/**
  * Sets up errors and warnings for one editor: checked now and whenever typing pauses.
  *
  * @param {object} cm CodeMirror instance
  */
 export function registerDiagnostics(cm) {
+    recheckWithTypescript();
     let timer;
     const schedule = () => {
         clearTimeout(timer);
-        timer = setTimeout(() => update(cm), CHECK_DELAY);
+        timer = setTimeout(() => update(cm, true), CHECK_DELAY);
     };
     cm.on('change', schedule);
     // a change of the mode may make this an editor for something else

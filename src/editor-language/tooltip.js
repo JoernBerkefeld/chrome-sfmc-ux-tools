@@ -9,7 +9,7 @@ const GAP = 4;
  *
  * @param {Document} document document of the editor
  * @param {string} className class of the box, next to "sfmc-tooltip"
- * @returns {{element: HTMLElement, show: (content: Node, anchor: object) => void, showBeside: (content: Node, beside: object) => void, hide: () => void, isShown: () => boolean}} the box
+ * @returns {{element: HTMLElement, show: (content: Node, anchor: object) => void, hide: () => void, isShown: () => boolean}} the box
  */
 export function createTooltip(document, className) {
     const element = document.createElement('div');
@@ -35,26 +35,6 @@ export function createTooltip(document, className) {
             const left = Math.max(0, Math.min(anchor.left, view.innerWidth - width - GAP));
             element.style.top = `${Math.round(top)}px`;
             element.style.left = `${Math.round(left)}px`;
-        },
-        /**
-         * Shows content next to something else on the page: to its right, or to its left where
-         * there is no room on the right.
-         *
-         * @param {Node} content what to show
-         * @param {{left: number, right: number, top: number}} beside what to stand next to, in window coordinates
-         */
-        showBeside(content, beside) {
-            element.replaceChildren(content);
-            if (!element.isConnected) {
-                document.body.append(element);
-            }
-            element.scrollTop = 0;
-            const view = document.defaultView;
-            const { width } = element.getBoundingClientRect();
-            const hasRoomRight = beside.right + GAP + width <= view.innerWidth;
-            const left = hasRoomRight ? beside.right + GAP : beside.left - GAP - width;
-            element.style.top = `${Math.round(Math.max(0, beside.top))}px`;
-            element.style.left = `${Math.round(Math.max(0, left))}px`;
         },
         /**
          * Takes the box off the page.

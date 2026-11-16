@@ -9,7 +9,11 @@
         "48": "icons/icon48.png",
         "128": "icons/icon128.png"
     },
-    "permissions": ["storage"],
+    "permissions": ["storage", "scripting"],
+    "host_permissions": ["https://*.marketingcloudapps.com/*"],
+    "background": {
+        "service_worker": "background.js"
+    },
     "action": {
         "default_title": "SFMC UX Tools: options",
         "default_icon": {
@@ -47,7 +51,12 @@
         {
             "matches": ["https://*.marketingcloudapps.com/*"],
             "include_globs": ["https://content-builder.*"],
-            "js": ["editor-context-menu.js", "editor-theme.js", "editor-format-setting.js"],
+            "js": [
+                "editor-context-menu.js",
+                "editor-theme.js",
+                "editor-format-setting.js",
+                "editor-typescript-loader.js"
+            ],
             "all_frames": true,
             "run_at": "document_start"
         }

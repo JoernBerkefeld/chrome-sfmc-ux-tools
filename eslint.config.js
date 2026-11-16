@@ -136,6 +136,8 @@ export default [
             'src/editor-context-menu.js',
             'src/editor-theme.js',
             'src/editor-format-setting.js',
+            'src/editor-typescript-loader.js',
+            'src/background.js',
             'src/options.js',
         ],
 
@@ -158,8 +160,13 @@ export default [
         },
     },
     {
-        // sources of the language bundle; esbuild turns them into a classic script
-        files: ['src/editor-language.js', 'src/editor-format.js', 'src/editor-language/**/*.js'],
+        // sources of the bundles; esbuild turns them into a classic script
+        files: [
+            'src/editor-language.js',
+            'src/editor-format.js',
+            'src/editor-typescript.js',
+            'src/editor-language/**/*.js',
+        ],
 
         languageOptions: {
             sourceType: 'module',

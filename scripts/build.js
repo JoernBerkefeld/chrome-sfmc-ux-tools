@@ -2,8 +2,9 @@
  * Builds the extension:
  * - dist/extension is the complete extension, ready for "Load unpacked": a copy of ./src in which
  *   editor-language.js is replaced by a bundle of that file, the files in src/editor-language
- *   and sfmc-language-lsp, and editor-format.js by a bundle of that file, Prettier and
- *   prettier-plugin-sfmc;
+ *   and sfmc-language-lsp, editor-format.js by a bundle of that file, Prettier and
+ *   prettier-plugin-sfmc, and editor-typescript.js by a minified bundle of that file, TypeScript,
+ *   the SSJS service of sfmc-language-lsp and the declarations of the SSJS globals of ssjs-data;
  * - dist/chrome-sfmc-ux-tools-v<version>.zip is the same folder packed for the Chrome Web Store.
  * manifest.json ends up at the root of the archive; entry paths always use forward slashes.
  */
@@ -26,6 +27,21 @@ const BUNDLES = {
         library: 'sfmc-language-lsp',
     },
     'editor-format.js': { title: 'formatting in the code editor', library: 'prettier-plugin-sfmc' },
+    // TypeScript is large, so this bundle alone is minified
+    'editor-typescript.js': {
+        title: 'TypeScript-based language features for SSJS in the code editor',
+        library: 'typescript',
+        isMinified: true,
+        // what the SSJS service reads from the disk elsewhere: the types of Marketing Cloud's names
+        define: {
+            __SFMC_GLOBALS__: JSON.stringify(
+                readFileSync(
+                    path.join(root, 'node_modules', 'ssjs-data', 'dist', 'sfmc-globals.d.ts'),
+                    'utf8',
+                ),
+            ),
+        },
+    },
 };
 // sources that only exist inside the bundle
 const BUNDLED_DIRECTORY = 'editor-language/';
@@ -73,7 +89,7 @@ const browserPrettier = {
  * @returns {Promise.<Uint8Array>} the bundle
  */
 async function bundle(file) {
-    const { title, library } = BUNDLES[file];
+    const { title, library, isMinified = false, define = {} } = BUNDLES[file];
     // the packages do not export their package.json, so it is read by path
     const { version } = JSON.parse(
         readFileSync(path.join(root, 'node_modules', library, 'package.json'), 'utf8'),
@@ -85,7 +101,8 @@ async function bundle(file) {
         format: 'iife',
         platform: 'browser',
         target: 'chrome122',
-        minify: false,
+        minify: isMinified,
+        define,
         write: false,
         logLevel: 'warning',
         banner: {

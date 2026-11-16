@@ -113,6 +113,52 @@ test('the browser menu stays the default if the setting cannot be read', async (
     assert.deepEqual(seen, []);
 });
 
+test('the gear button of the editor goes and comes with the menu', async () => {
+    const attribute = 'data-sfmc-ux-tools-context-menu';
+    const css = readFileSync(new URL('../src/editor-highlight.css', import.meta.url), 'utf8');
+    // hidden only while the browser's menu is chosen, and against the display the page sets itself
+    assert.match(
+        css,
+        /html\[data-sfmc-ux-tools-context-menu='browser'\] \.et-codemirror-footer \.settings-menu \{\s*display: none !important;/,
+    );
+    const source = readFileSync(new URL('../src/editor-context-menu.js', import.meta.url), 'utf8');
+    const run = (stored) => {
+        const { window } = new JSDOM('<!doctype html><body></body>', {
+            runScripts: 'outside-only',
+        });
+        const listeners = [];
+        window.chrome = {
+            storage: {
+                sync: { get: (defaults) => Promise.resolve({ ...defaults, ...stored }) },
+                onChanged: {
+                    addListener: (listener) => {
+                        listeners.push(listener);
+                    },
+                },
+            },
+        };
+        window.eval(source);
+        return {
+            value: () => window.document.documentElement.getAttribute(attribute),
+            change: (newValue) => {
+                for (const listener of listeners) {
+                    listener({ editorContextMenu: { newValue } }, 'sync');
+                }
+            },
+        };
+    };
+    const fresh = run({});
+    const kept = run({ editorContextMenu: 'page' });
+    assert.equal(fresh.value(), 'browser', 'at once, before the setting is read');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(fresh.value(), 'browser');
+    assert.equal(kept.value(), 'page');
+    kept.change('browser');
+    assert.equal(kept.value(), 'browser');
+    fresh.change('page');
+    assert.equal(fresh.value(), 'page');
+});
+
 test('the options page shows the saved choice and saves a new one', async () => {
     const chrome = chromeStub();
     const { window } = new JSDOM(optionsPage, { runScripts: 'outside-only' });
@@ -134,7 +180,7 @@ test('the options page shows the saved choice and saves a new one', async () => 
 
 test('the manifest declares the options page, its storage and the context menu script', () => {
     const manifest = JSON.parse(read('../src/manifest.json'));
-    assert.deepEqual(manifest.permissions, ['storage']);
+    assert.ok(manifest.permissions.includes('storage'));
     assert.equal(manifest.options_ui.page, 'options.html');
     const entry = manifest.content_scripts.find((item) =>
         item.js.includes('editor-context-menu.js'),

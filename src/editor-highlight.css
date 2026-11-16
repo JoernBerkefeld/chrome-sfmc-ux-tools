@@ -455,8 +455,12 @@ html .sfmc-tooltip a:hover {
 .sfmc-tooltip .sfmc-fix:focus {
     outline: 1px solid var(--sfmc-link);
 }
-/* The documentation of the chosen suggestion stands next to the popup and is never in the way of a click. */
-.sfmc-completion-documentation {
-    max-width: min(480px, 45vw);
-    pointer-events: none;
+
+/*
+ * The gear button below Marketing Cloud's editor opens the same menu as a right-click there.
+ * With the browser's menu chosen in the options, the button goes as well. The page sets the
+ * button's display itself, hence the priority.
+ */
+html[data-sfmc-ux-tools-context-menu='browser'] .et-codemirror-footer .settings-menu {
+    display: none !important;
 }

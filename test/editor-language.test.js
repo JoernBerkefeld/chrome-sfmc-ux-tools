@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { findDynamicCode } from '../scripts/find-dynamic-code.js';
 
@@ -20,6 +21,8 @@ const dataScript = read('../dist/extension/language-data.js');
 const highlightScript = read('../dist/extension/editor-highlight.js');
 const completionsScript = read('../dist/extension/editor-language.js');
 const formatScript = read('../dist/extension/editor-format.js');
+// not a content script: the extension loads it on demand, which `runExtension` does when asked to
+const typescriptScript = read('../dist/extension/editor-typescript.js');
 const BASE_MODE = 'ampScriptHtmlMixed';
 const POPUP = '.CodeMirror-hints';
 
@@ -73,12 +76,16 @@ function addEditor({ window, CodeMirror }, content, mode = BASE_MODE) {
  * Runs the extension's editor scripts in the page, in the order of the manifest.
  *
  * @param {object} window page window
+ * @param {{hasTypescript?: boolean}} [options] whether the TypeScript script is loaded as well
  */
-function runExtension(window) {
+function runExtension(window, { hasTypescript = false } = {}) {
     window.eval(dataScript);
     window.eval(highlightScript);
     window.eval(completionsScript);
     window.eval(formatScript);
+    if (hasTypescript) {
+        window.eval(typescriptScript);
+    }
 }
 
 /**
@@ -175,14 +182,15 @@ test('offers nothing in plain HTML text', () => {
  *
  * @param {object} context page from `page()`
  * @param {string} body content of the script; a "|" marks the cursor
+ * @param {{hasTypescript?: boolean}} [options] passed on to `runExtension`
  * @returns {{editor: object, labels: string[], pick: (label: string) => void}} the editor, the names on offer and a way to choose one
  */
-function inSsjs(context, body) {
+function inSsjs(context, body, options) {
     const editor = addEditor(
         context,
         `<p>%%=v(@a)=%%</p>\n<script runat="server">\n${body}\n</script>`,
     );
-    runExtension(context.window);
+    runExtension(context.window, options);
     pressCtrlSpace(editor);
     return {
         editor,
@@ -1202,43 +1210,16 @@ test('Ctrl-click on the name of a function of the content goes to its declaratio
     context.window.close();
 });
 
-const DOCUMENTATION = '.sfmc-completion-documentation';
-
-test('the documentation of the chosen suggestion stands next to the popup', () => {
+test('the completion popup comes alone: documentation is for hovering, not for completing', () => {
     const context = page();
     const editor = addEditor(context, '%%[ var @count\nset @a = Look| ]%%');
     runExtension(context.window);
-    const { document } = context.window;
     pressCtrlSpace(editor);
-    const box = document.querySelector(DOCUMENTATION);
-    assert.equal(box.parentNode, document.body);
-    assert.match(box.querySelector('pre').textContent, /^\(function\) Lookup\(dataObject: string/);
-    assert.match(box.textContent, /Returns a single field value/);
-    assert.ok(box.querySelector(':scope pre span[class^="cm-"]'), 'coloured like the hover box');
-
-    // another suggestion, another text
-    const completion = editor.state.completionActive;
-    completion.widget.changeActive(1);
-    assert.match(box.querySelector('pre').textContent, /^\(function\) LookupOrderedRows\(/);
-    completion.close();
-    assert.equal(document.querySelector(DOCUMENTATION), null, 'gone with the popup');
-
-    // SSJS items bring their documentation along; plain names have none
-    const ssjs = addEditor(context, '<script runat="server">\nvar total = 1;\nWrit|\n</script>');
-    context.window.eval(completionsScript);
-    pressCtrlSpace(ssjs);
-    assert.match(
-        document.querySelector(`${DOCUMENTATION} pre`).textContent,
-        /^\(function\) Write\(text: string\)/,
-    );
-    ssjs.state.completionActive.close();
-    ssjs.replaceRange('tot', { line: 2, ch: 0 }, { line: 2, ch: 4 });
-    pressCtrlSpace(ssjs);
-    assert.deepEqual(
-        hints(ssjs).map((hint) => hint.displayText),
-        ['total'],
-    );
-    assert.equal(document.querySelector(DOCUMENTATION), null);
+    assert.ok(hints(editor).length > 0);
+    const { document } = context.window;
+    assert.equal(document.querySelectorAll('.sfmc-tooltip').length, 0);
+    editor.state.completionActive.widget.changeActive(1);
+    assert.equal(document.querySelectorAll('.sfmc-tooltip').length, 0);
 });
 
 test('sets up editors that are opened later, each one only once', async () => {
@@ -1315,6 +1296,8 @@ test('the built extension is complete and its manifest references only existing 
     ];
     assert.ok(files.includes('editor-language.js'));
     assert.ok(files.includes('editor-format.js'));
+    // loaded by the extension itself, so no content script names them
+    files.push(manifest.background.service_worker, 'editor-typescript.js');
     for (const file of files) {
         assert.ok(
             existsSync(new URL(`../dist/extension/${file}`, import.meta.url)),
@@ -1335,6 +1318,9 @@ test('the language bundle is one classic script without eval or new Function', (
     assert.deepEqual(findDynamicCode(formatScript), []);
     assert.doesNotMatch(formatScript, /^\s*(?:import|export)\s/m);
     assert.match(formatScript, /includes prettier-plugin-sfmc \d+\.\d+\.\d+/);
+    assert.deepEqual(findDynamicCode(typescriptScript), []);
+    assert.doesNotMatch(typescriptScript, /^\s*(?:import|export)\s/m);
+    assert.match(typescriptScript, /includes typescript 6\.0\.3\./);
     // the check itself recognises both, and is not fooled by text that merely mentions them
     assert.deepEqual(findDynamicCode('var a = "eval(1) new Function"; // eval(2)'), []);
     assert.equal(findDynamicCode('eval("1"); var f = new Function("return 1");').length, 2);
@@ -1347,4 +1333,415 @@ test('the popup has styles of its own', () => {
     }
     assert.match(css, /\.CodeMirror-hints \{[^}]*z-index: \d{4,}/);
     assert.ok(css.includes('.sfmc-hint-detail'));
+});
+
+// --- with the TypeScript script, which the extension loads on demand ---
+
+const TYPESCRIPT = Symbol.for('sfmcUxTools.typescript');
+const WITH_TYPESCRIPT = { hasTypescript: true };
+const SSJS_OPEN = '<p>%%=v(@a)=%%</p>\n<script runat="server">\n';
+const NEED_TYPESCRIPT = 'sfmc-ux-tools:need-typescript';
+
+test('TypeScript: offers the members of a value and replaces only what is typed of the name', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        SSJS_OPEN + 'var de = DataExtension.Init("x");\nde.Rows.|\n</script>',
+    );
+    runExtension(context.window, WITH_TYPESCRIPT);
+    const service = context.window[TYPESCRIPT];
+    assert.deepEqual(Object.keys(service), [
+        'update',
+        'completions',
+        'hover',
+        'signatureHelp',
+        'definition',
+        'diagnostics',
+        'memberCompletions',
+        'isInSsjsRegion',
+    ]);
+    let asked = 0;
+    const { completions } = service;
+    service.completions = (position) => {
+        asked++;
+        return completions(position);
+    };
+    pressCtrlSpace(editor);
+    const labels = hints(editor).map((hint) => hint.displayText);
+    assert.deepEqual(labels, ['Add', 'Lookup', 'Remove', 'Retrieve', 'Update']);
+    // the key binding asks first and the popup asks again; TypeScript answers once
+    assert.equal(asked, 1);
+    editor.state.completionActive.close();
+
+    // typing more of the member's name narrows the same answer down
+    pressCtrlSpace(editor);
+    type(context, editor, 'A');
+    type(context, editor, 'd');
+    await pause();
+    assert.equal(asked, 1, 'the members are the same while the text up to the dot is');
+    const completion = editor.state.completionActive;
+    assert.deepEqual(
+        hints(editor).map((hint) => hint.displayText),
+        ['Add'],
+    );
+    completion.pick(completion.data, 0);
+    assert.equal(editor.getLine(3), 'de.Rows.Add');
+
+    // no member starts like this, so the catalogue gets its turn, which knows nothing here either
+    editor.replaceRange('de.Rows.Xyz', { line: 3, ch: 0 }, { line: 3, ch: 11 });
+    assert.equal(pressCtrlSpace(editor), context.CodeMirror.Pass);
+    assert.equal(asked, 1);
+
+    // other text in front of the dot is another question
+    editor.replaceRange('var de = DataExtension.Init("y");', { line: 2, ch: 0 }, { line: 2 });
+    editor.replaceRange('de.Rows.', { line: 3, ch: 0 }, { line: 3 });
+    editor.setCursor({ line: 3, ch: 8 });
+    pressCtrlSpace(editor);
+    assert.equal(asked, 2);
+    assert.equal(hints(editor).length, 5);
+    editor.state.completionActive.close();
+
+    // nothing is known about the members of this value, so nothing is offered, as before
+    editor.replaceRange('unknownThing.', { line: 3, ch: 0 }, { line: 3 });
+    editor.setCursor({ line: 3, ch: 13 });
+    assert.equal(pressCtrlSpace(editor), context.CodeMirror.Pass);
+    context.window.close();
+});
+
+test('TypeScript: members that the catalogue knows keep its description and brackets', () => {
+    const typed = inSsjs(page(), 'var a = Platform.Function.Loo|', WITH_TYPESCRIPT);
+    const { document } = typed.editor.getWrapperElement().ownerDocument.defaultView;
+    assert.deepEqual(typed.labels, ['Lookup', 'LookupOrderedRows', 'LookupRows']);
+    const entry = document.querySelector(POPUP).firstChild;
+    assert.match(entry.querySelector('.sfmc-hint-detail').textContent, /^deName, returnField/);
+    typed.pick('Lookup');
+    assert.equal(typed.editor.getLine(2), 'var a = Platform.Function.Lookup(');
+
+    // names that are not members stay with the catalogue
+    const top = inSsjs(page(), 'var a = looku|', WITH_TYPESCRIPT);
+    assert.ok(top.labels.includes('Platform.Function.Lookup'), top.labels.join(' | '));
+    top.pick('Platform.Function.LookupRows');
+    assert.equal(top.editor.getLine(2), 'var a = Platform.Function.LookupRows(');
+    document.defaultView.close();
+    top.editor.getWrapperElement().ownerDocument.defaultView.close();
+});
+
+test('TypeScript: a constructor is only inserted as a call where the content has "new"', () => {
+    const bare = inSsjs(page(), 'var r = Script.Util.Http|', WITH_TYPESCRIPT);
+    assert.deepEqual(bare.labels, ['HttpGet', 'HttpRequest']);
+    bare.pick('HttpRequest');
+    assert.equal(bare.editor.getLine(2), 'var r = Script.Util.HttpRequest');
+
+    const created = inSsjs(page(), 'var r = new Script.Util.Http|', WITH_TYPESCRIPT);
+    created.pick('HttpRequest');
+    assert.equal(created.editor.getLine(2), 'var r = new Script.Util.HttpRequest(');
+    bare.editor.getWrapperElement().ownerDocument.defaultView.close();
+    created.editor.getWrapperElement().ownerDocument.defaultView.close();
+});
+
+test('TypeScript: hover shows the type of what the content calls, also for its own names', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        SSJS_OPEN + 'var de = DataExtension.Init("x");\nvar rows = de.Rows;\n</script>',
+    );
+    runExtension(context.window, WITH_TYPESCRIPT);
+    rest(context, editor, 'var de = DataExtension.In');
+    await hoverPause();
+    const { document } = context.window;
+    assert.match(
+        document.querySelector(`${HOVER} pre`).textContent,
+        /DataExtension\.Init\(key: string\): DataExtensionInstance/,
+    );
+    // the catalogue knows nothing about a variable
+    rest(context, editor, 'var ro');
+    await hoverPause();
+    assert.match(document.querySelector(`${HOVER} pre`).textContent, /var rows: DataExtensionRows/);
+    context.window.close();
+});
+
+test('TypeScript: parameter help marks the parameter being typed, also of a method of a value', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        SSJS_OPEN +
+            'var a = Platform.Function.Lookup("a", |\nvar de = DataExtension.Init("x");\n' +
+            'de.Rows.Lookup(["a"], \n</script>',
+    );
+    editor.hasFocus = () => true;
+    editor.cursorCoords = () => ({ left: 10, right: 10, top: 100, bottom: 115 });
+    runExtension(context.window, WITH_TYPESCRIPT);
+    context.CodeMirror.signal(editor, 'cursorActivity', editor);
+    await pause();
+    const box = () => context.window.document.querySelector(SIGNATURE);
+    assert.match(box().querySelector('pre').textContent, /^Lookup\(deName: string, returnField/);
+    assert.equal(box().querySelector('strong').textContent, 'returnField: string');
+    // without TypeScript there is no help for a method of something that is not a global
+    editor.setCursor({ line: 4, ch: 'de.Rows.Lookup(["a"], '.length });
+    await pause();
+    const label = box().querySelector('pre').textContent;
+    const marked = box().querySelector('strong').textContent;
+    assert.ok(marked.length > 0 && label.indexOf(marked) > label.indexOf(','), label);
+    context.window.close();
+});
+
+test('TypeScript: Ctrl-click on a variable goes to where it is declared', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        '<p>total</p>\n<script runat="server">\nvar total = 1;\nfunction greet(name) { return name; }\n' +
+            'var b = total + 1;\nvar c = Stringify(greet(b));\n</script>\n' +
+            '<script>\nvar d = total;\n</script>',
+    );
+    editor.setCursor({ line: 0, ch: 0 });
+    runExtension(context.window, WITH_TYPESCRIPT);
+    const cursor = () => ({ line: editor.getCursor().line, ch: editor.getCursor().ch });
+
+    assert.equal(wasLeftToEditor(context, editor, 'var b = to', CTRL), false);
+    assert.deepEqual(cursor(), { line: 2, ch: 4 });
+    assert.equal(wasLeftToEditor(context, editor, 'Stringify(gr', CTRL), false, 'functions too');
+    assert.deepEqual(cursor(), { line: 3, ch: 9 });
+
+    editor.setCursor({ line: 0, ch: 0 });
+    assert.equal(
+        wasLeftToEditor(context, editor, 'var c = Stri', CTRL),
+        true,
+        'declared by Marketing Cloud, not in the content',
+    );
+    assert.equal(wasLeftToEditor(context, editor, 'var d = to', CTRL), true, 'a browser script');
+    assert.equal(wasLeftToEditor(context, editor, '<p>to', CTRL), true, 'plain text');
+    assert.deepEqual(cursor(), { line: 0, ch: 0 });
+    context.window.close();
+});
+
+/**
+ * Lists where an editor is underlined.
+ *
+ * @param {object} editor CodeMirror instance
+ * @returns {string[]} "line:from-to" of each underline, in document order
+ */
+function underlinedRanges(editor) {
+    return [...editor.getAllMarks()]
+        .filter((mark) => mark.className?.includes('sfmc-diagnostic'))
+        .map((mark) => mark.find())
+        .map(({ from, to }) => `${from.line}:${from.ch}-${to.ch}`)
+        .toSorted((a, b) => a.localeCompare(b));
+}
+
+test('TypeScript: type errors are underlined in SSJS, once, and not in AMPscript or browser scripts', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        '<p>Hello de.Rowz</p>\n%%[ set @text = "a"\nset @b = de.Rowz ]%%\n' +
+            '<div><script runat="server">\nPlatform.Load("core", "1.1.5");\n' +
+            '  var de = DataExtension.Init("x");\n  de.Rowz.Add({});\nlet x = 1;\n</script></div>\n' +
+            '<script>\nvar text = "a";\ntext.nothing();\nde.Rowz.Add({});\n</script>',
+    );
+    runExtension(context.window);
+    await checkPause();
+    assert.deepEqual(underlined(editor), ['error: let '], 'what is found without TypeScript');
+
+    // the script arrives after the first check: the content is checked again without a change,
+    // once the script has started
+    context.window.eval(typescriptScript);
+    const service = context.window[TYPESCRIPT];
+    let asked = 0;
+    const { diagnostics } = service;
+    service.diagnostics = () => {
+        asked++;
+        // what is reported a second time for the same place is shown once
+        return [...diagnostics(), ...diagnostics()];
+    };
+    assert.deepEqual(underlined(editor), ['error: let ']);
+    await pause();
+    assert.equal(asked, 1);
+    assert.deepEqual(underlined(editor), ['error: let ', 'error: Rowz']);
+    // "Rowz" in the server script, line 6, and "let " in line 7; nothing in lines 0 to 2 and 9 to 13
+    assert.deepEqual(underlinedRanges(editor), ['6:5-9', '7:0-4']);
+    rest(context, editor, '  de.Ro');
+    await hoverPause();
+    const { document } = context.window;
+    const problem = document.querySelector(`${HOVER} .sfmc-problem`);
+    assert.match(problem.textContent, /Property 'Rowz' does not exist on type/);
+    assert.equal(asked, 1, 'the box shows what was found, it does not ask TypeScript');
+
+    // after a change the box checks at once, but TypeScript is only asked once typing has paused
+    editor.replaceRange('  de.Rows.Add({});', { line: 6, ch: 0 }, { line: 6 });
+    rest(context, editor, 'let');
+    await hoverPause();
+    assert.match(document.querySelector(`${HOVER} .sfmc-problem`).textContent, /not supported/);
+    assert.equal(asked, 1);
+    await checkPause();
+    assert.equal(asked, 2);
+    assert.deepEqual(underlinedRanges(editor), ['7:0-4']);
+
+    // a document without a server script is not shown to TypeScript at all
+    editor.setValue('<p>%%=Lowercase("A")=%%</p>\n<script>\ntext.nothing();\n</script>');
+    await checkPause();
+    assert.equal(asked, 2);
+    assert.deepEqual(underlinedRanges(editor), []);
+    context.window.close();
+});
+
+test('TypeScript: a second copy of the script keeps the first one and says nothing', () => {
+    const { window } = page();
+    let ready = 0;
+    window.document.addEventListener('sfmc-ux-tools:typescript-ready', () => ready++);
+    window.eval(typescriptScript);
+    const service = window[TYPESCRIPT];
+    assert.equal(ready, 1);
+    window.eval(typescriptScript);
+    assert.equal(window[TYPESCRIPT], service);
+    assert.equal(ready, 1);
+});
+
+const failing = () => {
+    throw new Error('broken');
+};
+
+test('TypeScript: without the script, or with one that fails, everything works as before', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        SSJS_OPEN +
+            'var a = Platform.Function.Loo|\nvar b = Platform.Function.Lookup("a", "b", "c", 1);\n' +
+            'function greet(name) { return name; }\ngreet(b);\n</script>',
+    );
+    runExtension(context.window);
+    assert.equal(context.window[TYPESCRIPT], undefined);
+    pressCtrlSpace(editor);
+    const labels = hints(editor).map((hint) => hint.displayText);
+    assert.ok(labels.includes('Platform.Function.Lookup'), labels.join(' | '));
+    editor.state.completionActive.close();
+
+    context.window[TYPESCRIPT] = {
+        update: () => {},
+        completions: failing,
+        hover: failing,
+        signatureHelp: failing,
+        definition: failing,
+        diagnostics: failing,
+        memberCompletions: failing,
+        isInSsjsRegion: failing,
+    };
+    pressCtrlSpace(editor);
+    assert.deepEqual(
+        hints(editor).map((hint) => hint.displayText),
+        labels,
+    );
+    editor.state.completionActive.close();
+    rest(context, editor, 'var b = Platform.Function.Look');
+    await hoverPause();
+    assert.match(
+        context.window.document.querySelector(`${HOVER} pre`).textContent,
+        /^\(function\) Platform\.Function\.Lookup\(/,
+    );
+    assert.equal(wasLeftToEditor(context, editor, '\ngr', CTRL), false);
+    assert.equal(editor.getCursor().line, 4);
+    await checkPause();
+    assert.deepEqual(underlined(editor), [], 'the usual checks still ran');
+    context.window.close();
+});
+
+test('TypeScript: the frame asks for the script once, when its first editor is set up', async () => {
+    const context = page();
+    let asked = 0;
+    context.window.document.addEventListener(NEED_TYPESCRIPT, () => asked++);
+    runExtension(context.window);
+    await pause();
+    assert.equal(asked, 0, 'a frame without an editor has no use for it');
+    addEditor(context, '<p>plain</p>', 'htmlmixed');
+    await pause();
+    assert.equal(asked, 0, 'an editor for something else neither');
+    addEditor(context, '%%[ set @a = 1 ]%%');
+    await pause();
+    assert.equal(asked, 1);
+    addEditor(context, '%%[ set @b = 2 ]%%');
+    await pause();
+    assert.equal(asked, 1);
+
+    // a frame that has the script already does not ask
+    const loaded = page();
+    loaded.window.document.addEventListener(NEED_TYPESCRIPT, () => asked++);
+    addEditor(loaded, '%%[ set @a = 1 ]%%');
+    loaded.window.eval(typescriptScript);
+    runExtension(loaded.window);
+    assert.equal(asked, 1);
+});
+
+test('TypeScript: from the editor to the loaded script, through the loader and the background script', async () => {
+    const context = page();
+    const { window } = context;
+    const injections = [];
+    const listeners = [];
+    const sender = {
+        id: 'this-extension',
+        tab: { id: 7 },
+        frameId: 3,
+        documentId: 'A1',
+        url: 'https://content-builder.s50.marketingcloudapps.com/',
+    };
+    let isReachable = false;
+    const chrome = {
+        runtime: {
+            id: sender.id,
+            onMessage: {
+                addListener: (listener) => {
+                    listeners.push(listener);
+                },
+            },
+            // the loader's side: Chrome adds who sent the message and hands the answer back
+            sendMessage: (message) => {
+                const { promise, resolve } = Promise.withResolvers();
+                if (listeners.every((listener) => listener(message, sender, resolve) !== true)) {
+                    resolve();
+                }
+                return promise;
+            },
+        },
+        scripting: {
+            executeScript: (injection) => {
+                injections.push(structuredClone(injection));
+                if (!isReachable) {
+                    return Promise.reject(new Error('Frame with ID 3 is showing error page'));
+                }
+                window.eval(read(`../dist/extension/${injection.files[0]}`));
+                return Promise.resolve([]);
+            },
+        },
+    };
+    vm.runInNewContext(read('../dist/extension/background.js'), { chrome });
+    window.chrome = chrome;
+    window.eval(read('../dist/extension/editor-typescript-loader.js'));
+    runExtension(window);
+    assert.equal(window[TYPESCRIPT], undefined);
+    const editor = addEditor(
+        context,
+        SSJS_OPEN + 'var de = DataExtension.Init("x");\nde.Rows.|\n</script>',
+    );
+    await pause();
+    const injection = {
+        target: { tabId: 7, documentIds: ['A1'] },
+        files: ['editor-typescript.js'],
+        world: 'MAIN',
+    };
+    assert.deepEqual(injections, [injection]);
+    assert.equal(window[TYPESCRIPT], undefined, 'the script could not be loaded');
+    assert.equal(pressCtrlSpace(editor), context.CodeMirror.Pass, 'as without TypeScript');
+
+    // the next editor that is set up asks again
+    isReachable = true;
+    addEditor(context, '%%[ set @a = 1 ]%%');
+    await pause();
+    assert.deepEqual(injections, [injection, injection]);
+    addEditor(context, '%%[ set @b = 2 ]%%');
+    await pause();
+    assert.equal(injections.length, 2, 'not once it is there');
+    pressCtrlSpace(editor);
+    assert.ok(
+        hints(editor)
+            .map((hint) => hint.displayText)
+            .includes('Retrieve'),
+    );
+    window.close();
 });

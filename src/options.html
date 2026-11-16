@@ -35,6 +35,10 @@
         <fieldset>
             <legend>Theme of the code editor</legend>
             <label>
+                <input type="radio" name="editorTheme" value="system" />
+                Like the system: light or dark, whichever your computer uses
+            </label>
+            <label>
                 <input type="radio" name="editorTheme" value="light" />
                 Light Modern
             </label>
@@ -45,10 +49,11 @@
             <p>Replaces the themes of Marketing Cloud's own menu.</p>
         </fieldset>
         <fieldset>
-            <legend>Right-click menu in the code editor</legend>
+            <legend>Menu of the code editor (right-click and gear button)</legend>
             <label>
                 <input type="radio" name="editorContextMenu" value="browser" />
-                Browser's menu (copy, paste, spell check, …)
+                Browser's menu on right-click (copy, paste, spell check, …); the gear button below
+                the editor is hidden
             </label>
             <label>
                 <input type="radio" name="editorContextMenu" value="page" />

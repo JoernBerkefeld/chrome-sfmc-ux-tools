@@ -20,22 +20,25 @@ Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. Wi
 
 Rest the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, and a box shows what it does: its parameters with their types, what it returns, an example and links to the full documentation. The text is the one the SFMC Language Service extension for VS Code shows, and the code in it has the colours of the editor. You can move the mouse onto the box to scroll it or to follow a link. Nothing is shown inside browser scripts.
 
+In server-side JavaScript the box also knows your own code: rest the mouse on a variable, a function of the content or a method of a value, such as `Rows.Add` of a `DataExtension.Init(...)` result, and it shows the type and, where there is one, the description. This comes from TypeScript, which reads the SSJS with the type declarations of Marketing Cloud's objects.
+
 ### Errors and warnings
 
 The extension checks your AMPscript and SSJS while you type and underlines what will not work: red for errors, yellow for warnings. Rest the mouse on an underline to read why, with a link to the rule behind it.
 
 - AMPscript: unknown functions, a wrong number of arguments, blocks and `IF` statements that are never closed, and more.
 - SSJS: syntax that Marketing Cloud's engine rejects (`let`, arrow functions, template literals, …), JavaScript methods the engine does not have, Core library calls without `Platform.Load`, and more.
+- SSJS, with TypeScript: mistakes in the use of Marketing Cloud's objects and of your own code, such as a method that a value does not have (`de.Rowz`) or an argument of the wrong type.
 - **Quick fixes**: where the language service knows a remedy, the box offers it as a button, for example adding the polyfill for a JavaScript method that SSJS lacks. **Ctrl+.** (**Cmd+.** on a Mac) opens the fixes for the problem at the cursor; Enter applies the first one, Esc closes the box. A fix is one step for **Ctrl+Z**.
 - The checks are those of the language service; browser scripts are not checked. There is no list of all problems yet.
 
 ### Go to definition
 
-Hold **Ctrl** (**Cmd** on a Mac) and click the name of a function that the server-side JavaScript of the content declares; the cursor jumps to the declaration. It covers functions declared with `function name(...)` in the same content, not variables and not AMPscript.
+Hold **Ctrl** (**Cmd** on a Mac) and click a name that the server-side JavaScript of the content declares; the cursor jumps to the declaration. It covers functions, variables, parameters and the members of your own objects in the same content, not Marketing Cloud's own names and not AMPscript.
 
 ### Parameter help
 
-While the cursor is inside the brackets of an AMPscript function or of one of Marketing Cloud's SSJS functions, a box above the line lists the function's parameters, marks the one you are typing and says what it is for. It follows the cursor, also in calls that are already written, and **Esc** closes it.
+While the cursor is inside the brackets of an AMPscript function or of one of Marketing Cloud's SSJS functions, a box above the line lists the function's parameters, marks the one you are typing and says what it is for. It follows the cursor, also in calls that are already written, and **Esc** closes it. In SSJS this also works for the functions of the content and for the methods of a value, such as `de.Rows.Lookup(`.
 
 ### Formatting
 
@@ -57,13 +60,14 @@ While you type AMPscript or server-side JavaScript (SSJS) in the code view of Co
 
 - **AMPscript**: functions, keywords, personalisation strings and the variables of the current content.
 - **SSJS**, inside `<script runat="server">`: Marketing Cloud's functions and objects (`Platform.Function.Lookup`, `Write`, `DataExtension`, `HTTP.Get`, …), the JavaScript built-ins that work in SSJS, and the functions declared in the content. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`).
+- **Members of a value in SSJS**: after a dot, the suggestions are the members of what stands in front of it, whatever that is: `Platform.Function.`, a variable that holds a `DataExtension.Init(...)` result, its `Rows`, a string, an array or one of your own objects. The popup lists the members by their short names (`Lookup`, not `Platform.Function.Lookup`); Marketing Cloud's own members keep their description, documentation and brackets.
 - **JavaScript for the browser**, inside any other `<script>`: the names used in the content's browser scripts, JavaScript's keywords and the usual globals (`document`, `console`, …). Marketing Cloud's server-side names are never suggested there. SSJS gets the names of its own scripts and its keywords in the same way.
 
-- Next to the popup, a box shows the documentation of the suggestion that is currently chosen: parameters, return value and an example.
 - AMPscript suggestions appear inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript script tags, never in plain HTML. While you type, they stay away inside strings and comments.
 - Picking a function inserts its name and the opening bracket; picking anything else inserts the plain word. Nothing is inserted unless you pick it.
-- Not covered yet, in SSJS and in browser scripts: the members of a value, such as the methods of a `DataExtension.Init(...)` result or of `document`.
-- The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.4.1), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
+- Not covered yet, in browser scripts: the members of a value, such as the methods of `document`.
+- What the extension knows about your own SSJS (members, types, declarations) comes from [TypeScript](https://www.typescriptlang.org/), with the type declarations of the `ssjs-data` package, as in the VS Code extension. This part is large, so it is only loaded into a page once that page shows a code editor. Until it is there, and if it cannot be loaded, the editor works with Marketing Cloud's own names alone.
+- The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.5.0), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
 - The popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
 
 ### Options
@@ -72,9 +76,13 @@ Click the extension's icon in Chrome's toolbar to open the options: editor theme
 
 ### Editor themes
 
+Until you choose a theme, the editor follows your system: Dark Modern if your computer is in dark mode, Light Modern otherwise, and it switches along when the system does.
+
 The code editor of Content Builder is shown in the colours of Visual Studio Code's **Light Modern** theme. To switch to **Dark Modern**, open the extension's options (`chrome://extensions` → SFMC UX Tools → Details → Extension options); the change applies at once. The theme covers the whole editor, not only AMPscript and SSJS, and replaces the themes that Marketing Cloud's own menu offers.
 
 ### Browser context menu in the code editor
+
+The gear button below the editor opens the same Marketing Cloud menu as a right-click. While the browser's menu is chosen (the default), that button is hidden; choosing Marketing Cloud's menu in the options brings back both.
 
 A right-click in the code editor opens the browser's own context menu instead of the menu Marketing Cloud draws over the code. To get Marketing Cloud's menu back, open the extension's options (`chrome://extensions` → SFMC UX Tools → Details → Extension options) and choose it there; the change applies at once.
 
@@ -120,7 +128,7 @@ This works the same way in other Chromium browsers such as Edge.
 The extension runs on two places of Marketing Cloud Engagement:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
-- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the Content Builder address.
+- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the Content Builder address.
 
 It does not collect or transmit any data and makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 
@@ -134,7 +142,9 @@ npm run build
 ```
 
 - `src/` holds the extension's sources. `npm run build` writes the loadable extension to `dist/extension` and packs that folder as `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store. For **Load unpacked**, always pick `dist/extension`, not `src`.
-- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.4.1) into one classic script with esbuild, and fails if that bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
+- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.5.0) into one classic script each with esbuild. A third bundle, `src/editor-typescript.js`, holds TypeScript (6.0.3, the exact version the service is built for), the SSJS service of `sfmc-language-lsp/typescript` and the text of `ssjs-data`'s `sfmc-globals.d.ts`; it alone is minified. The build fails if a bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
+- The TypeScript bundle is about 4 MB, so it is not a content script. When the language script sets up its first editor in a frame, it dispatches `sfmc-ux-tools:need-typescript` on the document; `src/editor-typescript-loader.js` (extension world) passes that on, and the service worker `src/background.js` injects `editor-typescript.js` into the page world of the document that asked with `chrome.scripting.executeScript` and answers whether that worked; after a failure the next editor that is set up asks again. TypeScript's diagnostics only run in the check after typing has paused. The language script looks the TypeScript API up at every use and falls back to the catalogue without it.
+- `node scripts/measure-typescript.mjs` (after a build) prints the size of the TypeScript bundle and how long it takes to start and to answer for a 1,500-line document.
 - `npm test` runs the build first, because the completion tests run the built bundle.
 - `npm run icons` redraws the icons in `src/icons/`.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.

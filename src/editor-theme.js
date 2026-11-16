@@ -1,24 +1,36 @@
 /*
  * SFMC UX Tools — content script for the theme of the code editor.
  *
- * Writes the theme chosen on the extension's options page to an attribute of the html element.
- * The colours themselves are in editor-highlight.css.
+ * Writes the theme to an attribute of the html element: the one chosen on the extension's
+ * options page, or, until something is chosen there, the one that fits the light or dark mode
+ * of the system. The colours themselves are in editor-highlight.css.
  */
 (() => {
     'use strict';
 
     const SETTING = 'editorTheme';
     const ATTRIBUTE = 'data-sfmc-ux-tools-theme';
-    const DEFAULT_THEME = 'light';
-    const THEMES = new Set([DEFAULT_THEME, 'dark']);
+    const SYSTEM = 'system';
+    const THEMES = new Set(['light', 'dark']);
+    const darkMode = matchMedia('(prefers-color-scheme: dark)');
+    let chosen = SYSTEM;
 
     /**
-     * Switches the page to a theme; anything unknown gives the default.
-     *
-     * @param {string} [theme] name of the theme
+     * Switches the page to the chosen theme; anything but a theme follows the system.
      */
-    function apply(theme) {
-        document.documentElement.setAttribute(ATTRIBUTE, THEMES.has(theme) ? theme : DEFAULT_THEME);
+    function apply() {
+        const theme = THEMES.has(chosen) ? chosen : darkMode.matches ? 'dark' : 'light';
+        document.documentElement.setAttribute(ATTRIBUTE, theme);
+    }
+
+    /**
+     * Takes note of the user's choice.
+     *
+     * @param {string} [value] the setting
+     */
+    function choose(value) {
+        chosen = value;
+        apply();
     }
 
     /**
@@ -26,17 +38,19 @@
      */
     async function readSetting() {
         try {
-            const values = await chrome.storage.sync.get({ [SETTING]: DEFAULT_THEME });
-            apply(values[SETTING]);
+            const values = await chrome.storage.sync.get({ [SETTING]: SYSTEM });
+            choose(values[SETTING]);
         } catch {
-            // without the setting the default stays in place
+            // without the setting the system decides
         }
     }
 
-    apply(DEFAULT_THEME);
+    apply();
+    // the system can change its mode while the page is open, for example at nightfall
+    darkMode.addEventListener('change', apply);
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'sync' && Object.hasOwn(changes, SETTING)) {
-            apply(changes[SETTING].newValue);
+            choose(changes[SETTING].newValue);
         }
     });
     readSetting();

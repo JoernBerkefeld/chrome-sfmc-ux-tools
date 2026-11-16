@@ -83,7 +83,10 @@ test('what ships is a dependency, tools are devDependencies, and the editor vers
         'prettier-plugin-sfmc',
         'sfmc-language-lsp',
         'ssjs-data',
+        'typescript',
     ]);
+    // the version the SSJS service was built for; the build inlines it
+    assert.match(dependencies.typescript, /^\d+\.\d+\.\d+$/);
     for (const tool of ['esbuild', 'eslint', 'jsdom', 'codemirror']) {
         assert.ok(Object.hasOwn(devDependencies, tool), tool);
     }

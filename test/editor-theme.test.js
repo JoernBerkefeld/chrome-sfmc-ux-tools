@@ -15,11 +15,30 @@ const byName = (a, b) => a.localeCompare(b);
  *
  * @param {Object.<string, string>} [stored] saved settings
  * @param {boolean} [isBroken] true makes the read fail
- * @returns {{theme: () => string, change: (value: string) => void}} the page's theme and a way to change the setting
+ * @param {boolean} [isSystemDark] true if the system is in dark mode
+ * @returns {{theme: () => string, change: (value: string) => void, setSystemDark: (isDark: boolean) => void}} the page's theme and ways to change the setting and the system's mode
  */
-function page(stored = {}, isBroken = false) {
+function page(stored = {}, isBroken = false, isSystemDark = false) {
     const { window } = new JSDOM('<!doctype html><body></body>', { runScripts: 'outside-only' });
     const listeners = [];
+    const system = { matches: isSystemDark, listeners: [] };
+    // jsdom has no matchMedia
+    window.matchMedia = (query) => {
+        assert.equal(query, '(prefers-color-scheme: dark)');
+        return {
+            /**
+             * The system's mode at the moment it is asked for.
+             *
+             * @returns {boolean} true in dark mode
+             */
+            get matches() {
+                return system.matches;
+            },
+            addEventListener: (type, listener) => {
+                system.listeners.push(listener);
+            },
+        };
+    };
     window.chrome = {
         storage: {
             sync: {
@@ -43,6 +62,12 @@ function page(stored = {}, isBroken = false) {
                 listener({ editorTheme: { newValue } }, 'sync');
             }
         },
+        setSystemDark: (isDark) => {
+            system.matches = isDark;
+            for (const listener of system.listeners) {
+                listener({ matches: isDark });
+            }
+        },
     };
 }
 
@@ -63,11 +88,31 @@ function definedIn(selector) {
         .toSorted(byName);
 }
 
-test('the light theme is the default, at once and after the setting was read', async () => {
-    const { theme } = page();
-    assert.equal(theme(), 'light');
+test('until a theme is chosen the system decides, at once and after the setting was read', async () => {
+    const light = page();
+    const dark = page({}, false, true);
+    assert.equal(light.theme(), 'light');
+    assert.equal(dark.theme(), 'dark');
+    await tick();
+    assert.equal(light.theme(), 'light');
+    assert.equal(dark.theme(), 'dark');
+    // the system changing its mode while the page is open is followed
+    dark.setSystemDark(false);
+    assert.equal(dark.theme(), 'light');
+    light.setSystemDark(true);
+    assert.equal(light.theme(), 'dark');
+});
+
+test('a chosen theme wins over the system, and "like the system" hands it back', async () => {
+    const { theme, change, setSystemDark } = page({ editorTheme: 'light' }, false, true);
+    assert.equal(theme(), 'dark', 'before the setting is read the system decides');
     await tick();
     assert.equal(theme(), 'light');
+    setSystemDark(false);
+    setSystemDark(true);
+    assert.equal(theme(), 'light');
+    change('system');
+    assert.equal(theme(), 'dark');
 });
 
 test('uses the saved theme and follows a change without a reload', async () => {
@@ -80,12 +125,12 @@ test('uses the saved theme and follows a change without a reload', async () => {
     assert.equal(theme(), 'dark');
 });
 
-test('falls back to the light theme for unknown values and unreadable settings', async () => {
+test('unknown values and unreadable settings follow the system', async () => {
     const unknown = page({ editorTheme: 'neon' });
-    const broken = page({}, true);
+    const broken = page({}, true, true);
     await tick();
     assert.equal(unknown.theme(), 'light');
-    assert.equal(broken.theme(), 'light');
+    assert.equal(broken.theme(), 'dark');
 });
 
 test('both themes define the same colours and every colour in use is defined', () => {
@@ -97,11 +142,11 @@ test('both themes define the same colours and every colour in use is defined', (
     assert.deepEqual([...used].toSorted(byName), light);
 });
 
-test('the options page offers both themes, light first, and the manifest loads the script', () => {
+test('the options page offers the system and both themes, the system first, and the manifest loads the script', () => {
     const { document } = new JSDOM(read('../src/options.html')).window;
     assert.deepEqual(
         [...document.querySelectorAll('input[name="editorTheme"]')].map((input) => input.value),
-        ['light', 'dark'],
+        ['system', 'light', 'dark'],
     );
     const manifest = JSON.parse(read('../src/manifest.json'));
     const entry = manifest.content_scripts.find((item) => item.js.includes('editor-theme.js'));

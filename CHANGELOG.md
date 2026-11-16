@@ -6,10 +6,13 @@
 
 - Chrome 122 or newer is required.
 - The toolbar icon is no longer greyed out, and a click on it opens the options.
+- The editor theme follows the system's light or dark mode until a theme is chosen in the options; "Like the system" is the new default there.
+- The gear button below the code editor, which opens Marketing Cloud's own editor menu, is hidden while the browser's context menu is chosen (the default), and comes back with the option "Marketing Cloud's menu".
 
 ### Added
 
-- **SSJS completions in the code editor**: inside `<script runat="server">`, Marketing Cloud's functions and objects, the JavaScript built-ins that work in SSJS and the functions declared in the content are suggested while you type and on **Ctrl+Space**. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`). The members of your own variables are not suggested yet.
+- **SSJS completions in the code editor**: inside `<script runat="server">`, Marketing Cloud's functions and objects, the JavaScript built-ins that work in SSJS and the functions declared in the content are suggested while you type and on **Ctrl+Space**. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`).
+- **TypeScript for SSJS**: the extension now understands the types of server-side JavaScript, as the SFMC Language Service extension for VS Code does. After a dot, the completions are the members of the value in front of it, also for your own variables (`var de = DataExtension.Init("x"); de.Rows.` offers `Add`, `Retrieve`, …). Hover and parameter help work for your own functions, variables and the methods of a value. Type errors, such as a method that a value does not have, are underlined. **Ctrl+click** / **Cmd+click** also goes to the declaration of a variable. This part is loaded into a Content Builder page only once it shows a code editor, for which the extension needs Chrome's `scripting` permission; it still makes no network requests.
 - **Documentation on hover**: resting the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, shows its parameters, return value, an example and links to the documentation. The box looks like the hover of VS Code, with the same colours for function names, parameters and types.
 - **Parameter help**: inside the brackets of an AMPscript function or of one of Marketing Cloud's SSJS functions, a box lists the parameters, marks the one that is being typed and says what it is for.
 - **Errors and warnings**: AMPscript and SSJS are checked while you type. What will not work is underlined, red for errors and yellow for warnings, and resting the mouse on it says why.
@@ -18,7 +21,6 @@
 - **Save with Ctrl+S / Cmd+S** in the code editor, which does what Marketing Cloud's Save button does.
 - **Quick fixes**: the box of an error or warning offers the fixes the language service knows, as buttons; **Ctrl+.** / **Cmd+.** opens them at the cursor.
 - **Go to definition**: **Ctrl+click** / **Cmd+click** on the name of a function declared in the content's SSJS jumps to its declaration.
-- **Documentation next to the completion popup** for the suggestion that is currently chosen.
 - **JavaScript completions in browser scripts**: inside a `<script>` that runs in the browser, the names used in the content's browser scripts, JavaScript's keywords and the usual globals are suggested. Marketing Cloud's server-side names stay out of browser scripts, and SSJS gets the names of its own scripts and its keywords in the same way.
 
 ## [0.3.0]

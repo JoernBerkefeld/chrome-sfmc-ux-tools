@@ -31,11 +31,17 @@
         "format:check": "prettier --check .",
         "prepare": "husky || true"
     },
+    "dependencies": {
+        "ampscript-data": "^4.2.0",
+        "prettier": "^3.10.1",
+        "prettier-plugin-sfmc": "^2.2.1",
+        "sfmc-language-lsp": "^4.4.1",
+        "ssjs-data": "^2.1.2"
+    },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
         "acorn": "^8.19.0",
-        "ampscript-data": "^4.2.0",
-        "codemirror": "^5.65.21",
+        "codemirror": "5.65.21",
         "esbuild": "^0.28.2",
         "eslint": "^10.15.0",
         "eslint-config-prettier": "^10.1.8",
@@ -45,10 +51,6 @@
         "fflate": "^0.8.3",
         "globals": "^17.14.0",
         "husky": "^9.1.7",
-        "jsdom": "^31.0.1",
-        "prettier": "^3.10.1",
-        "prettier-plugin-sfmc": "^2.2.1",
-        "sfmc-language-lsp": "^4.4.1",
-        "ssjs-data": "^2.1.2"
+        "jsdom": "^31.0.1"
     }
 }

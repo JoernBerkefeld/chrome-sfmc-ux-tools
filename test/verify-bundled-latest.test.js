@@ -74,3 +74,19 @@ test('the check covers what the extension bundles and runs before a release is b
     );
     assert.notEqual(workflow.indexOf('npm run verify:bundled-latest'), -1);
 });
+
+test('what ships is a dependency, tools are devDependencies, and the editor version is exact', () => {
+    const { dependencies, devDependencies } = JSON.parse(read('../package.json'));
+    assert.deepEqual(Object.keys(dependencies), [
+        'ampscript-data',
+        'prettier',
+        'prettier-plugin-sfmc',
+        'sfmc-language-lsp',
+        'ssjs-data',
+    ]);
+    for (const tool of ['esbuild', 'eslint', 'jsdom', 'codemirror']) {
+        assert.ok(Object.hasOwn(devDependencies, tool), tool);
+    }
+    // the version Content Builder ships; a range would let the tests drift away from it
+    assert.match(devDependencies.codemirror, /^\d+\.\d+\.\d+$/);
+});

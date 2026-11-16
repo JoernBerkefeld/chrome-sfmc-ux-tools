@@ -508,6 +508,53 @@ test('boxes go away with their editor', async () => {
     assert.equal(document.querySelector(HOVER), null);
 });
 
+/**
+ * Lists the coloured names of a code block of a box.
+ *
+ * @param {Element} block the code block
+ * @returns {Object.<string, string>} class of each coloured piece by its text; the last one wins
+ */
+function coloured(block) {
+    return Object.fromEntries(
+        [...block.querySelectorAll('span')].map((piece) => [piece.textContent, piece.className]),
+    );
+}
+
+test('hover: code has the colours VS Code gives it: function names, types, and no frame', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        '<script runat="server">\nPlatform.Response.Write("x");\n</script>',
+    );
+    runExtension(context.window);
+    rest(context, editor, 'Platform.Response.Wri');
+    await hoverPause();
+    const [signature, example] = context.window.document.querySelectorAll(`${HOVER} pre`);
+    // ... function ... Platform.Response.Write(content: string): void
+    const declared = coloured(signature);
+    assert.match(signature.textContent, /Platform\.Response\.Write\(content: string\): void$/);
+    assert.equal(declared.function, 'cm-keyword');
+    // in a declaration the whole dotted name is the function's name, dots included
+    assert.equal(declared.Platform, 'cm-sfmc-function');
+    assert.equal(declared.Response, 'cm-sfmc-function');
+    assert.equal(declared.Write, 'cm-sfmc-function');
+    assert.equal(declared['.'], 'cm-sfmc-function');
+    assert.match(declared.content, /^cm-(?:variable|def)/);
+    assert.equal(declared.string, 'cm-type');
+    assert.equal(declared.void, 'cm-type');
+    // in the example only what is called is a function; the objects in front of it are not
+    const called = coloured(example);
+    assert.equal(called.Write, 'cm-sfmc-function');
+    assert.equal(called.Stringify, 'cm-sfmc-function');
+    assert.notEqual(called.Platform, 'cm-sfmc-function');
+    assert.equal(called.var, 'cm-keyword');
+    assert.match(called['"Jane"'], /cm-string/);
+
+    const css = read('../dist/extension/editor-highlight.css');
+    assert.match(css, /html \.sfmc-tooltip pre \{[^}]*border: 0;[^}]*background: none;/);
+    assert.match(css, /html \.sfmc-tooltip code \{[^}]*background: var\(--sfmc-code-background\)/);
+});
+
 test('hover: the box stays while the mouse is on it and goes when it leaves', async () => {
     const context = page();
     const editor = addEditor(context, '%%[ set @a = Lookup("a", "b", "c", 1) ]%%');

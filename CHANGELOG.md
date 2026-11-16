@@ -10,7 +10,7 @@
 ### Added
 
 - **SSJS completions in the code editor**: inside `<script runat="server">`, Marketing Cloud's functions and objects, the JavaScript built-ins that work in SSJS and the functions declared in the content are suggested while you type and on **Ctrl+Space**. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`). The members of your own variables are not suggested yet.
-- **Documentation on hover**: resting the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, shows its parameters, return value, an example and links to the documentation.
+- **Documentation on hover**: resting the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, shows its parameters, return value, an example and links to the documentation. The box looks like the hover of VS Code, with the same colours for function names, parameters and types.
 - **Parameter help**: inside the brackets of an AMPscript function or of one of Marketing Cloud's SSJS functions, a box lists the parameters, marks the one that is being typed and says what it is for.
 - **Errors and warnings**: AMPscript and SSJS are checked while you type. What will not work is underlined, red for errors and yellow for warnings, and resting the mouse on it says why.
 - **Formatting**: the **{ }** button in the editor's toolbar and **Shift+Alt+F** format the whole content of the code editor, AMPscript, SSJS, HTML, CSS and browser JavaScript, with the bundled `prettier-plugin-sfmc` and the settings of the SFMC Language Service extension for VS Code.

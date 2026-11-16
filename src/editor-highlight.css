@@ -27,6 +27,10 @@
     --sfmc-widget-active-background: #e8e8e8;
     --sfmc-widget-active-foreground: #000000;
     --sfmc-error: #cd3131;
+    --sfmc-error-underline: #e51400;
+    --sfmc-info-underline: #0063d3;
+    --sfmc-hover-border: #3b3b3b33;
+    --sfmc-code-background: #f8f8f8;
     --sfmc-warning: #bf8803;
     --sfmc-link: #005fb8;
     --sfmc-keyword: #0000ff;
@@ -62,6 +66,10 @@
     --sfmc-widget-active-background: #04395e;
     --sfmc-widget-active-foreground: #ffffff;
     --sfmc-error: #f44747;
+    --sfmc-error-underline: #f14c4c;
+    --sfmc-info-underline: #59a4f9;
+    --sfmc-hover-border: #cccccc33;
+    --sfmc-code-background: #2b2b2b;
     --sfmc-warning: #cca700;
     --sfmc-link: #4daafc;
     --sfmc-keyword: #569cd6;
@@ -274,66 +282,95 @@ li.CodeMirror-hint-active {
     font-size: 90%;
 }
 
-/* Boxes of the language features: documentation on hover, parameter help. */
+/*
+ * Boxes of the language features: documentation on hover, parameter help, documentation of a
+ * suggestion. They look like the hover of VS Code: its colours, spacing and fonts. The boxes
+ * stand in Marketing Cloud's page, whose own rules for code and text would otherwise apply, so
+ * everything those rules set is set here as well.
+ */
 .sfmc-tooltip {
     position: fixed;
     z-index: 2147483000;
     overflow: auto;
     box-sizing: border-box;
-    max-width: min(640px, 90vw);
+    max-width: min(500px, 90vw);
     max-height: min(320px, 60vh);
-    padding: 4px 10px;
-    border: 1px solid var(--sfmc-widget-border);
-    border-radius: 3px;
+    padding: 4px 8px;
+    border: 1px solid var(--sfmc-hover-border);
+    border-radius: 8px;
     background: var(--sfmc-widget-background);
-    box-shadow: 2px 3px 5px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 0 12px rgba(0, 0, 0, 0.14);
     color: var(--sfmc-foreground);
     color-scheme: var(--sfmc-scheme);
     font:
-        13px/1.4 system-ui,
+        14px/1.36 'Segoe WPC',
+        'Segoe UI',
+        system-ui,
         sans-serif;
     text-align: left;
     white-space: normal;
 }
-.sfmc-tooltip p,
-.sfmc-tooltip pre,
-.sfmc-tooltip blockquote {
-    margin: 6px 0;
+html .sfmc-tooltip p,
+html .sfmc-tooltip pre,
+html .sfmc-tooltip blockquote {
+    margin: 8px 0;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
 }
-.sfmc-tooltip pre,
-.sfmc-tooltip code {
-    font-family: monospace;
-    font-size: 12px;
+html .sfmc-tooltip > :first-child {
+    margin-top: 4px;
 }
-.sfmc-tooltip pre {
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--sfmc-widget-border);
+html .sfmc-tooltip > :last-child {
+    margin-bottom: 4px;
+}
+html .sfmc-tooltip pre,
+html .sfmc-tooltip code {
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: inherit;
+    color: inherit;
+}
+/* code blocks stand on the box itself: no frame, no tint */
+html .sfmc-tooltip pre {
+    display: block;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: none;
     white-space: pre-wrap;
+    word-break: normal;
     overflow-wrap: anywhere;
 }
-.sfmc-tooltip pre:last-child {
-    padding-bottom: 0;
-    border-bottom: 0;
-}
-.sfmc-tooltip code {
-    padding: 0 3px;
+html .sfmc-tooltip code {
+    padding: 0 0.4em;
+    border: 0;
     border-radius: 3px;
-    background: var(--sfmc-widget-active-background);
-    color: var(--sfmc-widget-active-foreground);
+    background: var(--sfmc-code-background);
+    white-space: normal;
 }
-.sfmc-tooltip blockquote {
+html .sfmc-tooltip blockquote {
     padding-left: 8px;
-    border-left: 3px solid var(--sfmc-widget-border);
+    border: 0;
+    border-left: 3px solid var(--sfmc-hover-border);
 }
-.sfmc-tooltip pre strong {
+html .sfmc-tooltip strong,
+html .sfmc-tooltip em {
+    color: inherit;
+}
+html .sfmc-tooltip pre strong {
     color: var(--sfmc-link);
 }
 /* parameter help follows the cursor and must never be in the way of a click */
 .sfmc-signature {
     pointer-events: none;
 }
-.sfmc-tooltip a {
+html .sfmc-tooltip a {
     color: var(--sfmc-link);
+    text-decoration: none;
+}
+html .sfmc-tooltip a:hover {
+    text-decoration: underline;
 }
 
 /* Errors and warnings of the language service: underlined in the code, explained in the hover box. */
@@ -343,13 +380,13 @@ li.CodeMirror-hint-active {
     text-underline-offset: 3px;
 }
 .CodeMirror .sfmc-diagnostic-error {
-    text-decoration-color: var(--sfmc-error);
+    text-decoration-color: var(--sfmc-error-underline);
 }
 .CodeMirror .sfmc-diagnostic-warning {
     text-decoration-color: var(--sfmc-warning);
 }
 .CodeMirror .sfmc-diagnostic-info {
-    text-decoration-color: var(--sfmc-link);
+    text-decoration-color: var(--sfmc-info-underline);
 }
 .sfmc-tooltip .sfmc-problem {
     padding-left: 8px;

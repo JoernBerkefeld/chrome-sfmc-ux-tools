@@ -139,6 +139,7 @@ npm run build
 - `npm run icons` redraws the icons in `src/icons/`.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.
 - Keep `version` in `package.json` and `src/manifest.json` identical; a test checks this.
+- `npm run verify:bundled-latest` compares the SFMC packages in `package-lock.json` (`sfmc-language-lsp`, `prettier-plugin-sfmc`, the data packages and what they bring along) with the newest versions on npm and fails if one is behind. The release workflow runs it before building, because the build inlines these packages. Update them with `npm install <package>@latest --no-workspaces`.
 
 ### Releasing
 

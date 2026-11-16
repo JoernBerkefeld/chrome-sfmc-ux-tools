@@ -41,6 +41,8 @@ jobs:
                   fi
 
             - run: npm ci --no-workspaces
+            # the build inlines our own packages; a release must never ship a stale one
+            - run: npm run verify:bundled-latest
             - run: npm run lint
             - run: npm test
             - run: npm run build

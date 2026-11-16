@@ -3,7 +3,16 @@
  * and its documentation. It opens where the mouse rests, and at the cursor on Ctrl-. (Cmd-.).
  */
 import { sfmcLanguageService } from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS, isInMode, languageAt, report, ssjsOnly } from './shared.js';
+import {
+    AMPSCRIPT,
+    DOCUMENT_URI,
+    SSJS,
+    askTypescript,
+    isInMode,
+    languageAt,
+    report,
+    ssjsOnly,
+} from './shared.js';
 import { applyFix, fixesFor } from './quickfix.js';
 import { checkNow, diagnosticsAt } from './diagnostics.js';
 import { colour } from './colour.js';
@@ -26,6 +35,16 @@ function hoverAt(cm, place) {
     const language = languageAt(text, cm.indexFromPos(place));
     if (language !== AMPSCRIPT && language !== SSJS) {
         return null;
+    }
+    // SPIKE: TypeScript knows the types of the user's own code; the catalogue is the fallback
+    const typed =
+        language === SSJS
+            ? askTypescript(text, (service) =>
+                  service.hover({ line: place.line, character: place.ch }),
+              )
+            : null;
+    if (typed?.contents?.value) {
+        return typed;
     }
     return sfmcLanguageService.getHover(
         {

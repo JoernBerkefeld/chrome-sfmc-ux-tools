@@ -3,7 +3,16 @@
  * shows the function's parameters and marks the one that is being typed.
  */
 import { sfmcLanguageService } from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS, isInMode, languageAt, report, ssjsOnly } from './shared.js';
+import {
+    AMPSCRIPT,
+    DOCUMENT_URI,
+    SSJS,
+    askTypescript,
+    isInMode,
+    languageAt,
+    report,
+    ssjsOnly,
+} from './shared.js';
 import { renderMarkdown } from './markdown.js';
 import { createTooltip } from './tooltip.js';
 
@@ -59,6 +68,17 @@ function helpAt(cm) {
     const language = languageAt(text, offset);
     if (language !== AMPSCRIPT && language !== SSJS) {
         return null;
+    }
+    if (language === SSJS) {
+        // SPIKE: TypeScript resolves what is called, so its answer needs no check of the name
+        const cursor = cm.getCursor();
+        const typed = askTypescript(text, (service) =>
+            service.signatureHelp({ line: cursor.line, character: cursor.ch }),
+        );
+        const called = typed?.signatures?.[typed.activeSignature ?? 0];
+        if (called) {
+            return { signature: called, active: typed.activeParameter ?? 0 };
+        }
     }
     const source = language === SSJS ? ssjsOnly(text) : text;
     const before = source.slice(0, offset);

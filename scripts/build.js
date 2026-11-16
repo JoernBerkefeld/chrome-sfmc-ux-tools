@@ -3,7 +3,8 @@
  * - dist/extension is the complete extension, ready for "Load unpacked": a copy of ./src in which
  *   editor-language.js is replaced by a bundle of that file, the files in src/editor-language
  *   and sfmc-language-lsp, and editor-format.js by a bundle of that file, Prettier and
- *   prettier-plugin-sfmc;
+ *   prettier-plugin-sfmc, and editor-typescript.js (a spike) by a minified bundle of that file,
+ *   src/editor-typescript and TypeScript;
  * - dist/chrome-sfmc-ux-tools-v<version>.zip is the same folder packed for the Chrome Web Store.
  * manifest.json ends up at the root of the archive; entry paths always use forward slashes.
  */
@@ -26,9 +27,20 @@ const BUNDLES = {
         library: 'sfmc-language-lsp',
     },
     'editor-format.js': { title: 'formatting in the code editor', library: 'prettier-plugin-sfmc' },
+    // SPIKE: TypeScript is large, so this bundle alone is minified
+    'editor-typescript.js': {
+        title: 'TypeScript-based SSJS language service (spike)',
+        library: 'typescript',
+        isMinified: true,
+    },
 };
-// sources that only exist inside the bundle
-const BUNDLED_DIRECTORY = 'editor-language/';
+// sources that only exist inside the bundles
+const BUNDLED_DIRECTORIES = ['editor-language/', 'editor-typescript/'];
+// SPIKE: what the language service of the VS Code extension reads from the disk
+const SFMC_GLOBALS = readFileSync(
+    path.join(root, 'node_modules', 'ssjs-data', 'dist', 'sfmc-globals.d.ts'),
+    'utf8',
+);
 
 /**
  * Collects all files below a directory.
@@ -73,7 +85,7 @@ const browserPrettier = {
  * @returns {Promise.<Uint8Array>} the bundle
  */
 async function bundle(file) {
-    const { title, library } = BUNDLES[file];
+    const { title, library, isMinified = false } = BUNDLES[file];
     // the packages do not export their package.json, so it is read by path
     const { version } = JSON.parse(
         readFileSync(path.join(root, 'node_modules', library, 'package.json'), 'utf8'),
@@ -85,7 +97,8 @@ async function bundle(file) {
         format: 'iife',
         platform: 'browser',
         target: 'chrome122',
-        minify: false,
+        minify: isMinified,
+        define: { __SFMC_GLOBALS__: JSON.stringify(SFMC_GLOBALS) },
         write: false,
         logLevel: 'warning',
         banner: {
@@ -103,8 +116,8 @@ async function bundle(file) {
 
 const { version } = JSON.parse(readFileSync(path.join(sourceDirectory, 'manifest.json'), 'utf8'));
 const files = Object.fromEntries(
-    Object.entries(collect(sourceDirectory)).filter(
-        ([archivePath]) => !archivePath.startsWith(BUNDLED_DIRECTORY),
+    Object.entries(collect(sourceDirectory)).filter(([archivePath]) =>
+        BUNDLED_DIRECTORIES.every((directory) => !archivePath.startsWith(directory)),
     ),
 );
 for (const file of Object.keys(BUNDLES)) {

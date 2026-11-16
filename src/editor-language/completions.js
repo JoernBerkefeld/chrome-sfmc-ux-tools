@@ -13,6 +13,7 @@ import {
     DOCUMENT_URI,
     JAVASCRIPT,
     SSJS,
+    askTypescript,
     isInMode,
     languageAt,
     report,
@@ -133,6 +134,13 @@ const KIND_FUNCTION = 3;
 // method, function, constructor and class: described by category and parameters
 const CALLABLE_KINDS = new Set([2, KIND_FUNCTION, 4, 7]);
 const KIND_NAMES = { 3: 'function', 6: 'variable', 14: 'keyword' };
+// SPIKE: a member access on any expression, with the start of the member's name
+const MEMBER_BEFORE_CURSOR = /\.([\w$]*)$/;
+// more members than this are left to the catalogue, which describes them better
+const MEMBER_LIMIT = 50;
+const MEMBER_KIND_NAMES = { 2: 'method', 3: 'function', 5: 'field', 6: 'variable', 10: 'property' };
+// what TypeScript offers in a script when it does not know the type: every name of the file
+const KIND_TEXT = 1;
 const timers = new WeakMap();
 const boxes = new WeakMap();
 
@@ -357,6 +365,36 @@ function ssjsHints(text, cursor, line) {
 }
 
 /**
+ * SPIKE: the members TypeScript knows for the expression in front of the cursor.
+ *
+ * @param {string} text whole document
+ * @param {{line: number, ch: number}} cursor where the cursor is
+ * @param {string} line text of the line of the cursor
+ * @returns {{list: object[], typed: string} | null} hints and the typed text they replace; null where today's suggestions apply
+ */
+function memberHints(text, cursor, line) {
+    const member = MEMBER_BEFORE_CURSOR.exec(line.slice(0, cursor.ch));
+    if (!member) {
+        return null;
+    }
+    const found = askTypescript(text, (service) =>
+        service.completions({ line: cursor.line, character: cursor.ch }),
+    );
+    const items = (found?.isMemberCompletion ? found.items : []).filter(
+        (item) => item.kind !== KIND_TEXT,
+    );
+    if (!items.length || items.length > MEMBER_LIMIT) {
+        return null;
+    }
+    const typed = member[1];
+    const needle = typed.toLowerCase();
+    const list = items
+        .filter((item) => item.label.toLowerCase().startsWith(needle))
+        .map((item) => wordHint(item.label, MEMBER_KIND_NAMES[item.kind] ?? ''));
+    return { list, typed };
+}
+
+/**
  * Collects the suggestions of a language at the cursor. In SSJS, the plain JavaScript names
  * follow those of Marketing Cloud.
  *
@@ -373,6 +411,10 @@ function hintsFor(cm, language, text, line) {
     }
     if (language !== SSJS) {
         return ampscriptHints(text, cursor, line);
+    }
+    const members = memberHints(text, cursor, line);
+    if (members) {
+        return members;
     }
     const found = ssjsHints(text, cursor, line);
     if (found.typed.includes('.')) {

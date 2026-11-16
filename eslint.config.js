@@ -6,7 +6,14 @@ import js from '@eslint/js';
 
 export default [
     {
-        ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**'],
+        ignores: [
+            '**/node_modules/**',
+            '**/dist/**',
+            '**/coverage/**',
+            // SPIKE: a verbatim copy of the VS Code extension's TypeScript service; it follows that
+            // repository's config, and this one has no TypeScript parser
+            'src/editor-typescript/ts-service.ts',
+        ],
     },
     js.configs.recommended,
     eslintPluginPrettierRecommended,
@@ -159,7 +166,13 @@ export default [
     },
     {
         // sources of the language bundle; esbuild turns them into a classic script
-        files: ['src/editor-language.js', 'src/editor-format.js', 'src/editor-language/**/*.js'],
+        files: [
+            'src/editor-language.js',
+            'src/editor-format.js',
+            'src/editor-language/**/*.js',
+            'src/editor-typescript.js',
+            'src/editor-typescript/**/*.js',
+        ],
 
         languageOptions: {
             sourceType: 'module',

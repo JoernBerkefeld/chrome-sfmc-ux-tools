@@ -68,3 +68,29 @@ export function scriptsOnly(text, kinds) {
 export function ssjsOnly(text) {
     return scriptsOnly(text, [SSJS]);
 }
+
+// SPIKE: where editor-typescript.js publishes the TypeScript-based language service
+const TYPESCRIPT = Symbol.for('sfmcUxTools.typescript');
+
+/**
+ * SPIKE: asks the TypeScript-based language service about the SSJS of a document. The service is
+ * looked up each time, so that it may load later, fail to load or be left out.
+ *
+ * @template T
+ * @param {string} text whole document
+ * @param {(service: object) => T} ask what to ask the service, once it knows the document
+ * @returns {T | null} the answer; null without the service, or if it failed
+ */
+export function askTypescript(text, ask) {
+    try {
+        const service = globalThis[TYPESCRIPT];
+        if (!service) {
+            return null;
+        }
+        service.update(ssjsOnly(text));
+        return ask(service) ?? null;
+    } catch {
+        // today's behaviour takes over
+        return null;
+    }
+}

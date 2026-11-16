@@ -1,4 +1,5 @@
 node_modules
 dist
 coverage
+src/editor-typescript/ts-service.ts
 package-lock.json

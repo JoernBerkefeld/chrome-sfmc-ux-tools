@@ -616,6 +616,8 @@ test('the manifest runs the editor scripts in the page world, language data firs
         'editor-highlight.js',
         'editor-language.js',
         'editor-format.js',
+        // SPIKE: the TypeScript-based language service, last so that the others never wait for it
+        'editor-typescript.js',
     ]);
     assert.deepEqual(entry.css, ['editor-highlight.css']);
     assert.deepEqual(entry.matches, ['https://*.marketingcloudapps.com/*']);

@@ -20,6 +20,9 @@ const dataScript = read('../dist/extension/language-data.js');
 const highlightScript = read('../dist/extension/editor-highlight.js');
 const completionsScript = read('../dist/extension/editor-language.js');
 const formatScript = read('../dist/extension/editor-format.js');
+// SPIKE: the TypeScript-based SSJS language service; SFMC_UX_TYPESCRIPT=1 loads it in every test
+const typescriptScript = read('../dist/extension/editor-typescript.js');
+const isTypescriptEverywhere = process.env.SFMC_UX_TYPESCRIPT === '1';
 const BASE_MODE = 'ampScriptHtmlMixed';
 const POPUP = '.CodeMirror-hints';
 
@@ -73,12 +76,20 @@ function addEditor({ window, CodeMirror }, content, mode = BASE_MODE) {
  * Runs the extension's editor scripts in the page, in the order of the manifest.
  *
  * @param {object} window page window
+ * @param {{hasTypescript?: boolean}} [options] whether the TypeScript bundle of the spike runs too
  */
-function runExtension(window) {
+function runExtension(window, { hasTypescript = isTypescriptEverywhere } = {}) {
     window.eval(dataScript);
     window.eval(highlightScript);
     window.eval(completionsScript);
     window.eval(formatScript);
+    if (!hasTypescript) {
+        return;
+    }
+
+    // its one line of timings would only clutter the test output
+    window.console.debug = () => {};
+    window.eval(typescriptScript);
 }
 
 /**
@@ -175,14 +186,15 @@ test('offers nothing in plain HTML text', () => {
  *
  * @param {object} context page from `page()`
  * @param {string} body content of the script; a "|" marks the cursor
+ * @param {{hasTypescript?: boolean}} [options] passed on to `runExtension`
  * @returns {{editor: object, labels: string[], pick: (label: string) => void}} the editor, the names on offer and a way to choose one
  */
-function inSsjs(context, body) {
+function inSsjs(context, body, options) {
     const editor = addEditor(
         context,
         `<p>%%=v(@a)=%%</p>\n<script runat="server">\n${body}\n</script>`,
     );
-    runExtension(context.window);
+    runExtension(context.window, options);
     pressCtrlSpace(editor);
     return {
         editor,
@@ -1268,6 +1280,7 @@ test('the built extension is complete and its manifest references only existing 
     ];
     assert.ok(files.includes('editor-language.js'));
     assert.ok(files.includes('editor-format.js'));
+    assert.equal(manifest.content_scripts[1].js.at(-1), 'editor-typescript.js');
     for (const file of files) {
         assert.ok(
             existsSync(new URL(`../dist/extension/${file}`, import.meta.url)),
@@ -1275,10 +1288,12 @@ test('the built extension is complete and its manifest references only existing 
         );
     }
     assert.equal(highlightScript, read('../src/editor-highlight.js'));
-    assert.ok(
-        !existsSync(new URL('../dist/extension/editor-language', import.meta.url)),
-        'the sources of the bundle are not copied',
-    );
+    for (const directory of ['editor-language', 'editor-typescript']) {
+        assert.ok(
+            !existsSync(new URL(`../dist/extension/${directory}`, import.meta.url)),
+            'the sources of the bundles are not copied',
+        );
+    }
 });
 
 test('the language bundle is one classic script without eval or new Function', () => {
@@ -1288,6 +1303,8 @@ test('the language bundle is one classic script without eval or new Function', (
     assert.deepEqual(findDynamicCode(formatScript), []);
     assert.doesNotMatch(formatScript, /^\s*(?:import|export)\s/m);
     assert.match(formatScript, /includes prettier-plugin-sfmc \d+\.\d+\.\d+/);
+    assert.deepEqual(findDynamicCode(typescriptScript), []);
+    assert.match(typescriptScript, /includes typescript 6\.0\.3/);
     // the check itself recognises both, and is not fooled by text that merely mentions them
     assert.deepEqual(findDynamicCode('var a = "eval(1) new Function"; // eval(2)'), []);
     assert.equal(findDynamicCode('eval("1"); var f = new Function("return 1");').length, 2);
@@ -1300,4 +1317,118 @@ test('the popup has styles of its own', () => {
     }
     assert.match(css, /\.CodeMirror-hints \{[^}]*z-index: \d{4,}/);
     assert.ok(css.includes('.sfmc-hint-detail'));
+});
+
+const TYPESCRIPT = Symbol.for('sfmcUxTools.typescript');
+const SSJS_OPEN = '<p>%%=v(@a)=%%</p>\n<script runat="server">\n';
+
+test('spike: TypeScript offers the members of a value, replacing only the typed part of the name', () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        SSJS_OPEN + 'var de = DataExtension.Init("x");\nde.Rows.|\n</script>',
+    );
+    runExtension(context.window, { hasTypescript: true });
+    pressCtrlSpace(editor);
+    const labels = hints(editor).map((hint) => hint.displayText);
+    assert.ok(labels.includes('Add'), labels.join(' | '));
+    assert.ok(labels.length <= 50, String(labels.length));
+    editor.state.completionActive.close();
+
+    editor.replaceSelection('Ad');
+    pressCtrlSpace(editor);
+    const completion = editor.state.completionActive;
+    assert.deepEqual(
+        hints(editor).map((hint) => hint.displayText),
+        ['Add'],
+    );
+    completion.pick(completion.data, 0);
+    assert.equal(editor.getLine(3), 'de.Rows.Add');
+
+    const { timings } = context.window[TYPESCRIPT];
+    assert.equal(typeof timings.scriptsToReady, 'number');
+    assert.equal(typeof timings.bundleEval, 'number');
+    const summary = timings.summary();
+    // the hint addon asks again for what the key binding asked before
+    assert.ok(summary.completions.count >= 2, String(summary.completions.count));
+    assert.deepEqual(Object.keys(summary.update), ['count', 'first', 'median', 'max']);
+    context.window.close();
+});
+
+test('spike: members come from TypeScript, top-level names stay with the catalogue', () => {
+    // Platform.Function has exactly 50 members, the most that are taken from TypeScript
+    const typed = inSsjs(page(), 'var a = Platform.Function.Loo|', { hasTypescript: true });
+    assert.deepEqual(typed.labels, ['Lookup', 'LookupOrderedRows', 'LookupRows']);
+    typed.pick('LookupRows');
+    assert.equal(typed.editor.getLine(2), 'var a = Platform.Function.LookupRows');
+    const top = inSsjs(page(), 'var a = looku|', { hasTypescript: true });
+    assert.ok(top.labels.includes('Platform.Function.Lookup'), top.labels.join(' | '));
+    typed.editor.getWrapperElement().ownerDocument.defaultView.close();
+    top.editor.getWrapperElement().ownerDocument.defaultView.close();
+});
+
+test('spike: hover shows what TypeScript knows', async () => {
+    const context = page();
+    const editor = addEditor(context, SSJS_OPEN + 'var de = DataExtension.Init("x");\n</script>');
+    runExtension(context.window, { hasTypescript: true });
+    rest(context, editor, 'var de = DataExtension.In');
+    await hoverPause();
+    const box = context.window.document.querySelector(HOVER);
+    assert.match(box.querySelector('pre').textContent, /Init\(/);
+    assert.equal(context.window[TYPESCRIPT].timings.summary().hover.count, 1);
+    context.window.close();
+});
+
+test('spike: parameter help comes from TypeScript and marks the parameter being typed', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        SSJS_OPEN + 'var a = Platform.Function.Lookup("a", |\n</script>',
+    );
+    editor.hasFocus = () => true;
+    editor.cursorCoords = () => ({ left: 10, right: 10, top: 100, bottom: 115 });
+    runExtension(context.window, { hasTypescript: true });
+    context.CodeMirror.signal(editor, 'cursorActivity', editor);
+    await pause();
+    const box = context.window.document.querySelector(SIGNATURE);
+    const label = box.querySelector('pre').textContent;
+    const marked = box.querySelector('strong').textContent;
+    assert.match(label, /Lookup\(/);
+    // the second parameter: what is marked stands between the first and the second comma
+    const comma = label.indexOf(',');
+    assert.ok(marked.length > 0 && label.indexOf(marked) > comma, label + ' | ' + marked);
+    assert.ok(label.indexOf(marked) < label.indexOf(',', comma + 1), label + ' | ' + marked);
+    assert.ok(context.window[TYPESCRIPT].timings.summary().signatureHelp.count >= 1);
+    context.window.close();
+});
+
+test('spike: the language features work without the TypeScript service, and when it throws', async () => {
+    const context = page();
+    const editor = addEditor(
+        context,
+        SSJS_OPEN +
+            'var a = Platform.Function.Loo|\nvar b = Platform.Function.Lookup("a", "b", "c", 1);\n</script>',
+    );
+    runExtension(context.window, { hasTypescript: false });
+    assert.equal(context.window[TYPESCRIPT], undefined);
+    pressCtrlSpace(editor);
+    const labels = hints(editor).map((hint) => hint.displayText);
+    assert.ok(labels.includes('Platform.Function.Lookup'), labels.join(' | '));
+    editor.state.completionActive.close();
+
+    context.window.eval(
+        "globalThis[Symbol.for('sfmcUxTools.typescript')] = { update: () => { throw new Error('broken'); } };",
+    );
+    pressCtrlSpace(editor);
+    assert.deepEqual(
+        hints(editor).map((hint) => hint.displayText),
+        labels,
+    );
+    rest(context, editor, 'var b = Platform.Function.Look');
+    await hoverPause();
+    assert.match(
+        context.window.document.querySelector(HOVER + ' pre').textContent,
+        /^\(function\) Platform\.Function\.Lookup\(/,
+    );
+    context.window.close();
 });

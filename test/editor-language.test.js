@@ -704,6 +704,21 @@ test('underlines errors and warnings in AMPscript and SSJS, and not in browser s
     assert.deepEqual(underlined(editor), [], 'none once the editor is used for something else');
 });
 
+test('many problems in the AMPscript do not hide those in the SSJS', async () => {
+    const context = page();
+    // more unknown functions than the AMPscript check reports at most
+    const calls = Array.from({ length: 150 }, (unused, index) => `set @a = Unknown${index}("x")`);
+    const editor = addEditor(
+        context,
+        `<script runat="server">var a = [1].map(String);</script>\n%%[\n${calls.join('\n')}\n]%%`,
+    );
+    runExtension(context.window);
+    await checkPause();
+    const marks = underlined(editor);
+    assert.ok(marks.filter((mark) => mark.startsWith('error: Unknown')).length >= 100);
+    assert.ok(marks.includes('error: map'), 'the SSJS finding is still underlined');
+});
+
 test('resting the mouse on an underline says what is wrong, before the documentation', async () => {
     const context = page();
     const editor = addEditor(

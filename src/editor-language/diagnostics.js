@@ -51,14 +51,14 @@ function hasSsjs(text) {
 }
 
 /**
- * Names what a diagnostic says and where, to find the ones that say the same.
+ * Names the place of a diagnostic, to find the ones that are about the same piece of code.
  *
  * @param {object} diagnostic diagnostic of the language service
- * @returns {string} equal for diagnostics with the same range and message
+ * @returns {string} equal for diagnostics with the same range
  */
 function key(diagnostic) {
-    const { range, message } = diagnostic;
-    return JSON.stringify([range.start, range.end, message]);
+    const { range } = diagnostic;
+    return JSON.stringify([range.start, range.end]);
 }
 
 /**
@@ -67,7 +67,7 @@ function key(diagnostic) {
  *
  * @param {object} cm CodeMirror instance
  * @param {string} text whole document
- * @param {object[]} known diagnostics of the language service; what repeats one of them is left out
+ * @param {object[]} known diagnostics of the language service; what TypeScript says about the same piece of code is left out, as the language service says it with a remedy
  * @returns {object[]} further diagnostics; empty without the TypeScript script or without SSJS
  */
 function checkTypes(cm, text, known) {
@@ -131,8 +131,9 @@ function update(cm, isWithTypes) {
             if (isWithTypes && !isTypesCurrent) {
                 further = checkTypes(cm, text, known);
             }
+            // each check limits what it reports by itself; a limit over all of them together
+            // would let the many findings of one language hide those of the other
             list.push(...known, ...further);
-            list.length = Math.min(list.length, DEFAULT_SETTINGS.maxNumberOfProblems);
             if (isWithTypes) {
                 typed.set(cm, { ...now, hasTypescript: hasTypescript(), list: further });
             }

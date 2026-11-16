@@ -41,7 +41,7 @@
     "devDependencies": {
         "@eslint/js": "^10.0.1",
         "acorn": "^8.19.0",
-        "codemirror": "5.65.21",
+        "codemirror": "6.0.2",
         "esbuild": "^0.28.2",
         "eslint": "^10.15.0",
         "eslint-config-prettier": "^10.1.8",

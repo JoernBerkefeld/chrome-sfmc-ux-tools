@@ -12,6 +12,7 @@ import * as postcss from 'prettier/plugins/postcss';
 import * as sfmc from 'prettier-plugin-sfmc';
 import { format } from 'prettier/standalone';
 import { isInMode, report, watchEditors } from './editor-language/editors.js';
+import { watchAceFormat } from './editor-language/ace/format.js';
 
 // the settings the SFMC Language Service extension for VS Code formats with
 const OPTIONS = {
@@ -48,11 +49,10 @@ const state = { isSaving: false, isPending: false };
  * Tells the user why the content was not formatted, in a box at the top of the editor that
  * goes away by itself.
  *
- * @param {object} cm CodeMirror instance
+ * @param {Element} wrapper the editor's element
  * @param {unknown} ex what Prettier objected to
  */
-function notify(cm, ex) {
-    const wrapper = cm.getWrapperElement();
+function notify(wrapper, ex) {
     const notice = wrapper.ownerDocument.createElement('div');
     notice.className = 'sfmc-tooltip sfmc-notice';
     // the first line says what is wrong and where; the rest repeats the code
@@ -65,14 +65,13 @@ function notify(cm, ex) {
 }
 
 /**
- * Replaces the content of an editor in one step that can be undone, touching only the part
- * that differs, so that the cursor and the view stay where they are.
+ * Finds the part in which two texts differ.
  *
- * @param {object} cm CodeMirror instance
  * @param {string} before current content
  * @param {string} after new content
+ * @returns {{from: number, to: number, text: string}} the part of the current content to replace, by its offsets, and what to put there
  */
-function replace(cm, before, after) {
+function changedPart(before, after) {
     let start = 0;
     while (start < before.length && before[start] === after[start]) {
         start++;
@@ -85,46 +84,70 @@ function replace(cm, before, after) {
     ) {
         end++;
     }
+    return { from: start, to: before.length - end, text: after.slice(start, after.length - end) };
+}
+
+/**
+ * Replaces a part of an editor's content in one step that can be undone; the cursor and the
+ * view stay where they are.
+ *
+ * @param {object} cm CodeMirror instance
+ * @param {{from: number, to: number, text: string}} change the part to replace and what to put there
+ */
+function replace(cm, { from, to, text }) {
     const cursor = cm.getCursor();
     const { left, top } = cm.getScrollInfo();
     cm.operation(() => {
-        cm.replaceRange(
-            after.slice(start, after.length - end),
-            cm.posFromIndex(start),
-            cm.posFromIndex(before.length - end),
-            '+format',
-        );
+        cm.replaceRange(text, cm.posFromIndex(from), cm.posFromIndex(to), '+format');
         cm.setCursor(cursor);
         cm.scrollTo(left, top);
     });
 }
 
 /**
- * Formats the content of an editor.
+ * Formats the content of an editor of any kind, touching only the part that differs.
  *
- * @param {object} cm CodeMirror instance
+ * @param {object} key the editor; while it is being formatted, it is not formatted again
+ * @param {Element} element the editor's element, where the user is told about a failure
+ * @param {() => string} read gives the editor's content
+ * @param {(change: {from: number, to: number, text: string}, before: string) => void} write replaces a part of the content that was read
  */
-async function formatEditor(cm) {
-    if (busy.has(cm)) {
+async function formatContent(key, element, read, write) {
+    if (busy.has(key)) {
         return;
     }
-    busy.add(cm);
-    const before = cm.getValue();
+    busy.add(key);
     try {
+        const before = read();
         const after = await format(before, OPTIONS);
         // what was typed in the meantime is never overwritten
-        if (after !== before && cm.getValue() === before) {
-            replace(cm, before, after);
+        if (after !== before && read() === before) {
+            write(changedPart(before, after), before);
         }
     } catch (ex) {
         try {
-            notify(cm, ex);
+            notify(element, ex);
         } catch (ex_) {
             report(ex_);
         }
     } finally {
-        busy.delete(cm);
+        busy.delete(key);
     }
+}
+
+/**
+ * Formats the content of an editor.
+ *
+ * @param {object} cm CodeMirror instance
+ * @returns {Promise.<void>} settled when the editor has its formatted content, or was told why not
+ */
+function formatEditor(cm) {
+    return formatContent(
+        cm,
+        cm.getWrapperElement(),
+        () => cm.getValue(),
+        (change) => replace(cm, change),
+    );
 }
 
 /**
@@ -138,6 +161,24 @@ function canFormat(cm) {
 }
 
 /**
+ * Creates a "format code" button.
+ *
+ * @param {Document} document document of the editor
+ * @param {() => void} onClick what a click does
+ * @returns {HTMLButtonElement} the button, not yet on the page
+ */
+function createButton(document, onClick) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'sfmc-format-button';
+    button.textContent = '{ }';
+    button.title = `Format code (${SHORTCUT})`;
+    button.setAttribute('aria-label', button.title);
+    button.addEventListener('click', onClick);
+    return button;
+}
+
+/**
  * Adds the "format code" button for an editor: next to Marketing Cloud's own editor buttons
  * where there are any, in the corner of the editor otherwise.
  *
@@ -146,13 +187,7 @@ function canFormat(cm) {
 function addButton(cm) {
     const wrapper = cm.getWrapperElement();
     const document = wrapper.ownerDocument;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'sfmc-format-button';
-    button.textContent = '{ }';
-    button.title = `Format code (${SHORTCUT})`;
-    button.setAttribute('aria-label', button.title);
-    button.addEventListener('click', () => {
+    const button = createButton(document, () => {
         if (canFormat(cm)) {
             formatEditor(cm);
         }
@@ -303,3 +338,5 @@ function registerFormat(cm) {
 // in the capture phase, so that the page has not acted on the click yet
 document.addEventListener('click', onClick, { capture: true });
 watchEditors('format', [registerFormat]);
+// Automation Studio's script activity has another editor, Ace, which is formatted in the same way
+watchAceFormat({ formatContent, createButton });

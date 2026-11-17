@@ -3,6 +3,20 @@
  */
 import { report } from '../editors.js';
 
+// marks the editors whose colours are ours; editor-highlight.css themes those
+export const TAKEN_CLASS = 'sfmc-ux-tools-ace';
+// the dialog of an activity of type 423, "script": #ActivityModal/423/new or #ActivityModal/423/<id>
+const ROUTE = /^#ActivityModal\/423\//i;
+
+/**
+ * Tells whether the page shows the dialog of a script activity.
+ *
+ * @returns {boolean} true while the address names that dialog
+ */
+export function isScriptRoute() {
+    return ROUTE.test(location.hash);
+}
+
 /**
  * The content of an editor as the language service wants it: its lines, joined by line feeds,
  * whatever line endings the document was loaded with.

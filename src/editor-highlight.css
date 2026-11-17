@@ -592,6 +592,11 @@ html .sfmc-tooltip a:hover {
 .sfmc-format-floating:hover {
     opacity: 1;
 }
+/* In Automation Studio's script activity it stands next to "Validate Syntax" and looks like that button. */
+.sfmc-format-beside {
+    margin-right: 8px;
+    font-family: monospace;
+}
 
 /* Quick fixes in the box of a problem. */
 .sfmc-tooltip .sfmc-fix {

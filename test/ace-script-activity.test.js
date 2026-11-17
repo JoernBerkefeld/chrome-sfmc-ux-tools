@@ -498,6 +498,31 @@ test('Ace editors of other activities are left untouched, also once a script act
     assert.ok(!editor.container.classList.contains(TAKEN_CLASS));
 });
 
+test('a plain-text editor is only taken over if it is one of the two of the dialog', async (t) => {
+    const window = page();
+    t.after(() => window.close());
+    const add = (id) => {
+        const element = window.document.createElement('div');
+        element.id = id;
+        window.document.body.append(element);
+        return window.ace.edit(element, { mode: 'ace/mode/text' });
+    };
+    const elsewhere = add('notes');
+    const script = add('scriptEditor');
+    const summary = add('summaryQueryEditor');
+    const mode = elsewhere.session.getMode();
+    runExtension(window);
+    await pause();
+    assert.equal(elsewhere.session.getMode(), mode);
+    assert.equal(elsewhere.container.className.includes('sfmc'), false);
+    assert.equal(script.session.getMode().$id, OUR_MODE);
+    assert.equal(summary.session.getMode().$id, OUR_MODE);
+    // an editor elsewhere that the page later gives the script's language is taken over then
+    elsewhere.session.setUseWorker(false);
+    elsewhere.session.setMode(PAGE_MODE);
+    assert.equal(elsewhere.session.getMode().$id, OUR_MODE);
+});
+
 test('the mode comes back when the page sets its own again or swaps the session, without looping', (t) => {
     const window = page();
     t.after(() => window.close());

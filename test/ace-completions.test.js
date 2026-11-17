@@ -187,6 +187,24 @@ test('ace completions: AMPscript inside a block, and a click on an entry', (t) =
     assert.equal(editor.getValue(), 'Hello\n%%[ set @a = LookupRows( ]%%');
 });
 
+test('ace completions: a choice does nothing once the content is no longer the one the list was made for', (t) => {
+    const { window, editor, reports } = setup(
+        t,
+        '<script runat="server">\n  var rows = Platform.Function.Loo|\n</script>',
+    );
+    didPress(editor, 'Space', CTRL);
+    assert.equal(labels(window)[0], 'Platform.Function.Lookup');
+    // the page gives the editor other content without a key being pressed
+    const other = 'line one of other content\nlong enough here to hold the old place\n';
+    editor.session.setValue(other);
+    const entry = window.document.querySelector(POPUP).firstElementChild;
+    entry.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    entry.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    assert.equal(editor.getValue(), other);
+    assert.equal(labels(window), null);
+    assert.deepEqual(reports, []);
+});
+
 test('ace completions: with nothing to offer, Ctrl-Space does nothing', (t) => {
     const { window, editor, reports } = setup(t, '%%[ set @a = Zzzzqq| ]%%');
     assert.equal(didPress(editor, 'Space', CTRL), false);

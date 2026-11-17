@@ -72,8 +72,9 @@ function styleAt(editor, row, column) {
  * @returns {() => void} closes the editor's popup, if it has one
  */
 export function registerAceCompletions(editor, isOurs) {
-    // popup: the open popup; found: what it shows; row: the line it was opened on; session: the one whose scrolling closes it
-    const state = { popup: null, found: null, row: -1, session: null, timer: undefined };
+    // popup: the open popup; found: what it shows; text: the content that was worked out for;
+    // row: the line it was opened on; session: the one whose scrolling closes it
+    const state = { popup: null, found: null, text: '', row: -1, session: null, timer: undefined };
 
     const close = () => {
         try {
@@ -112,7 +113,14 @@ export function registerAceCompletions(editor, isOurs) {
 
     const choose = (item) => {
         try {
-            if (!state.found || !isOurs() || editor.getReadOnly()) {
+            // a pick only fits the content its list was worked out for: the page or the formatter
+            // may have changed the content without a key being pressed
+            if (
+                !state.found ||
+                !isOurs() ||
+                editor.getReadOnly() ||
+                textOf(editor) !== state.text
+            ) {
                 return;
             }
             const { from, to } = state.found;
@@ -142,17 +150,19 @@ export function registerAceCompletions(editor, isOurs) {
     const didShow = () => {
         try {
             const { row, column } = editor.getCursorPosition();
+            const text = textOf(editor);
             const found =
                 isOurs() &&
                 !editor.getReadOnly() &&
                 editor.selection.isEmpty() &&
                 (!state.popup || row === state.row) &&
-                completionsAt(textOf(editor), { line: row, character: column });
+                completionsAt(text, { line: row, character: column });
             if (!found) {
                 close();
                 return false;
             }
             state.found = found;
+            state.text = text;
             const { renderer } = editor;
             const start = renderer.textToScreenCoordinates(found.from.line, found.from.character);
             const place = {

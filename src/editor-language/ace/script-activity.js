@@ -17,15 +17,16 @@ import { registerAceDiagnostics } from './diagnostics.js';
 import { registerAceHover } from './hover.js';
 import { registerAceSignature } from './signature.js';
 import { createHighlightRules, takeLanguageData } from './highlight-rules.js';
+import { TAKEN_CLASS, isScriptRoute } from './shared.js';
 
 const EDITOR_SELECTOR = '.ace_editor';
-// the dialog of an activity of type 423, "script": #ActivityModal/423/new or #ActivityModal/423/<id>
-const ROUTE = /^#ActivityModal\/423\//i;
 const MODE_ID = 'sfmc-ux-tools/mode/script-activity';
-// what the page uses for the script, and what an editor has before the page chose
-const REPLACED_MODES = new Set(['ace/mode/javascript', 'ace/mode/text']);
-// marks the editors whose colours are ours; editor-highlight.css themes those
-const TAKEN_CLASS = 'sfmc-ux-tools-ace';
+// what the page uses for the script
+const SCRIPT_MODE = 'ace/mode/javascript';
+// what an editor has before the page chose; only the dialog's own two editors are taken over
+// that early, so that no other plain-text editor of the page is ever touched
+const UNSET_MODE = 'ace/mode/text';
+const DIALOG_EDITORS = '#scriptEditor, #summaryQueryEditor';
 const marker = Symbol.for('sfmcUxTools.aceColours');
 // by Ace object: its mode, or null if it could not be built
 const modes = new WeakMap();
@@ -132,7 +133,10 @@ function takeOver(element, editor, mode) {
         }
         isApplying = true;
         try {
-            if (ROUTE.test(location.hash) && REPLACED_MODES.has(session.getMode()?.$id)) {
+            const id = session.getMode()?.$id;
+            const isReplaced =
+                id === SCRIPT_MODE || (id === UNSET_MODE && element.matches(DIALOG_EDITORS));
+            if (isReplaced && isScriptRoute()) {
                 session.setMode(mode);
             }
             element.classList.toggle(TAKEN_CLASS, session.getMode() === mode);
@@ -166,7 +170,8 @@ function takeOver(element, editor, mode) {
  * @returns {{element: Element, isClosed: boolean, close: () => void, resume: () => void}} what takes the boxes, the popup and the underlines of the editor away, and what has its content checked again
  */
 function addFeatures(element, editor) {
-    const isOurs = () => ROUTE.test(location.hash) && element.classList.contains(TAKEN_CLASS);
+    const isOurs = () =>
+        isScriptRoute() && element.isConnected && element.classList.contains(TAKEN_CLASS);
     const closers = [];
     let resume = null;
     const setups = [
@@ -209,7 +214,7 @@ function addFeatures(element, editor) {
  * Takes over the Ace editors of the script activity's dialog that are new on the page.
  */
 function scan() {
-    const isRoute = ROUTE.test(location.hash);
+    const isRoute = isScriptRoute();
     // nothing must stay behind when an editor left the page or the dialog shows something else
     for (let index = features.length - 1; index >= 0; index--) {
         const entry = features[index];
@@ -236,12 +241,17 @@ function scan() {
     }
     for (const element of document.querySelectorAll(EDITOR_SELECTOR)) {
         const editor = element.env?.editor;
-        if (
-            !editor ||
-            editor[marker] === true ||
-            typeof editor.getSession !== 'function' ||
-            typeof editor.on !== 'function'
-        ) {
+        if (!editor || typeof editor.getSession !== 'function' || typeof editor.on !== 'function') {
+            continue;
+        }
+        const known = editor[marker];
+        if (known) {
+            // an editor that left the page and is back on it has its features again
+            if (typeof known === 'object' && !features.includes(known)) {
+                known.isClosed = false;
+                features.push(known);
+                known.resume();
+            }
             continue;
         }
         const mode = pageMode();
@@ -252,7 +262,10 @@ function scan() {
         editor[marker] = true;
         try {
             takeOver(element, editor, mode);
-            features.push(addFeatures(element, editor));
+            const entry = addFeatures(element, editor);
+            features.push(entry);
+            // kept with the editor, to find it again should the editor come back to the page
+            editor[marker] = entry;
         } catch (ex) {
             report(ex);
         }

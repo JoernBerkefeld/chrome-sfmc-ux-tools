@@ -724,6 +724,31 @@ test('ace language: boxes and underlines go when the dialog shows another activi
     assert.deepEqual(underlined(editor), ['error 0:14 Lookupx']);
 });
 
+test('ace language: an editor that leaves the page and comes back is checked again and still cleaned up after', async (t) => {
+    const page = setup(t, '%%[ set @a = Lookupx("de", "field") ]%%');
+    const { window, document, editor, reports } = page;
+    await checkPause();
+    assert.deepEqual(underlined(editor), ['error 0:13 Lookupx']);
+    const { container } = editor;
+    container.remove();
+    await pause();
+    assert.deepEqual(markers(editor), []);
+    document.body.append(container);
+    await pause();
+    await checkPause();
+    assert.deepEqual(underlined(editor), ['error 0:13 Lookupx']);
+    assert.deepEqual(notes(editor), ['error 0:13']);
+    rest(page, 'set @a = Look');
+    await hoverPause();
+    assert.ok(document.querySelector(HOVER));
+    window.location.hash = OTHER_ROUTE;
+    await pause();
+    assert.equal(document.querySelector(BOX), null);
+    assert.deepEqual(markers(editor), []);
+    assert.deepEqual(notes(editor), []);
+    assert.deepEqual(reports, []);
+});
+
 test('ace language: an editor of another activity gets none of it', async (t) => {
     const page = setup(t, '%%[ set @a = Lookupx("de", |"field") ]%%', { route: OTHER_ROUTE });
     const { document, editor } = page;

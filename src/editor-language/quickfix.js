@@ -3,41 +3,7 @@
  */
 import { getScriptRegions, sfmcLanguageService } from 'sfmc-language-lsp';
 import { AMPSCRIPT, DOCUMENT_URI, SSJS } from './shared.js';
-
-/**
- * Converts a place in a text into its offset. Lines end with a line feed, as in CodeMirror.
- * A place after the last line, where a fix may want to add a line, is the end of the text, and
- * a place after the end of a line is the end of that line.
- *
- * @param {string} text the text
- * @param {{line: number, character: number}} position place of the language service
- * @returns {number} offset of the place
- */
-function offsetAt(text, position) {
-    let offset = 0;
-    for (let line = 0; line < position.line; line++) {
-        const next = text.indexOf('\n', offset);
-        if (next === -1) {
-            return text.length;
-        }
-        offset = next + 1;
-    }
-    const lineEnd = text.indexOf('\n', offset);
-    return Math.min(offset + position.character, lineEnd === -1 ? text.length : lineEnd);
-}
-
-/**
- * Converts an offset in a text into a place of the language service.
- *
- * @param {string} text the text
- * @param {number} offset offset in the text
- * @returns {{line: number, character: number}} the place
- */
-function positionAt(text, offset) {
-    const before = text.slice(0, offset);
-    const lineStart = before.lastIndexOf('\n') + 1;
-    return { line: before.split('\n').length - 1, character: offset - lineStart };
-}
+import { offsetAt, positionAt } from './core/text.js';
 
 /**
  * Converts a range of a text into a range of another text that starts later in the same content.

@@ -1,11 +1,14 @@
 /*
- * SFMC UX Tools — finds Marketing Cloud's code editors on the page and sets features up for them.
+ * SFMC UX Tools — watches the page, finds Marketing Cloud's code editors on it and sets features
+ * up for them.
  */
 
 const BASE_MODE = 'ampScriptHtmlMixed';
 const EDITOR_SELECTOR = '.CodeMirror';
 const SCAN_DELAY = 50;
-const state = { hasReported: false };
+const state = { hasReported: false, isScanPending: false };
+// what looks at the page whenever it changes
+const scans = [];
 
 /**
  * Notes the first failure in the console and stays silent afterwards.
@@ -19,6 +22,54 @@ export function report(ex) {
     state.hasReported = true;
     // eslint-disable-next-line no-console -- the only trace of a failure that is otherwise swallowed
     console.debug('SFMC UX Tools: a language feature failed', ex);
+}
+
+/**
+ * Runs every scan; one that fails does not keep the others away.
+ */
+function runScans() {
+    state.isScanPending = false;
+    for (const scan of scans) {
+        try {
+            scan();
+        } catch (ex) {
+            report(ex);
+        }
+    }
+}
+
+/**
+ * Runs the scans shortly: once, however many page changes arrive until then.
+ */
+function scheduleScans() {
+    if (state.isScanPending) {
+        return;
+    }
+
+    state.isScanPending = true;
+    setTimeout(runScans, SCAN_DELAY);
+}
+
+/**
+ * Calls a function now and whenever the page changes: its elements or the route in its address.
+ * All callers share one observer.
+ *
+ * @param {() => void} scan looks at the page; called often, so it has to be cheap
+ */
+export function watchPage(scan) {
+    if (scans.length === 0) {
+        new MutationObserver(scheduleScans).observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+        });
+        addEventListener('hashchange', scheduleScans);
+    }
+    scans.push(scan);
+    try {
+        scan();
+    } catch (ex) {
+        report(ex);
+    }
 }
 
 /**
@@ -44,10 +95,8 @@ export function isInMode(cm) {
 export function watchEditors(name, features) {
     const marker = Symbol.for(`sfmcUxTools.${name}`);
     const cleanups = [];
-    let isScanPending = false;
 
     const scan = () => {
-        isScanPending = false;
         for (const { wrapper, cleanup } of cleanups) {
             try {
                 if (!wrapper.isConnected) {
@@ -86,18 +135,5 @@ export function watchEditors(name, features) {
         }
     };
 
-    new MutationObserver(() => {
-        // one scan, however many page changes arrive until then
-        if (isScanPending) {
-            return;
-        }
-
-        isScanPending = true;
-        setTimeout(scan, SCAN_DELAY);
-    }).observe(document.documentElement, { childList: true, subtree: true });
-    try {
-        scan();
-    } catch (ex) {
-        report(ex);
-    }
+    watchPage(scan);
 }

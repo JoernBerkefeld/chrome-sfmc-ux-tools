@@ -2,93 +2,19 @@
  * SFMC UX Tools — errors and warnings: what the language service objects to is underlined in
  * the code editor, and resting the mouse on it says why.
  */
-import {
-    DEFAULT_SETTINGS,
-    getScriptRegions,
-    sfmcLanguageService,
-    validateMixedDocumentSsjs,
-} from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS, isInMode, report } from './shared.js';
-import { READY_EVENT, askTypescript, hasTypescript } from './typescript.js';
+import { isInMode, report } from './shared.js';
+import { check, checkTypes } from './core/diagnostics.js';
+import { READY_EVENT, hasTypescript } from './typescript.js';
 
-const CHECK_DELAY = 500;
+export const CHECK_DELAY = 500;
 // severities of the language service, most serious first
-const SEVERITY_NAMES = { 1: 'error', 2: 'warning', 3: 'info', 4: 'info' };
+export const SEVERITY_NAMES = { 1: 'error', 2: 'warning', 3: 'info', 4: 'info' };
 const found = new WeakMap();
 // what each editor's content was when it was last checked
 const checked = new WeakMap();
 // what TypeScript found in each editor, and the content it was found in
 const typed = new WeakMap();
 const state = { isWaitingForTypescript: false };
-
-/**
- * Collects what the language service objects to in a document: its AMPscript, and the SSJS of
- * its server-side scripts. Browser scripts are not looked at.
- *
- * @param {string} text whole document
- * @returns {object[]} diagnostics of the language service
- */
-function check(text) {
-    const list = sfmcLanguageService.validate({
-        text,
-        languageId: AMPSCRIPT,
-        uri: DOCUMENT_URI,
-    });
-    if (hasSsjs(text)) {
-        list.push(...validateMixedDocumentSsjs(text, DEFAULT_SETTINGS));
-    }
-    return list;
-}
-
-/**
- * Tells whether a document has a server-side script.
- *
- * @param {string} text whole document
- * @returns {boolean} true if there is SSJS to check
- */
-function hasSsjs(text) {
-    return getScriptRegions(text).some((region) => region.kind === SSJS);
-}
-
-/**
- * Names the place of a diagnostic, to find the ones that are about the same piece of code.
- *
- * @param {object} diagnostic diagnostic of the language service
- * @returns {string} equal for diagnostics with the same range
- */
-function key(diagnostic) {
-    const { range } = diagnostic;
-    return JSON.stringify([range.start, range.end]);
-}
-
-/**
- * Collects what TypeScript objects to in the server-side scripts of a document, like type errors
- * and unknown members. As in the VS Code extension, only what lies inside such a script counts.
- *
- * @param {object} cm CodeMirror instance
- * @param {string} text whole document
- * @param {object[]} known diagnostics of the language service; what TypeScript says about the same piece of code is left out, as the language service says it with a remedy
- * @returns {object[]} further diagnostics; empty without the TypeScript script or without SSJS
- */
-function checkTypes(cm, text, known) {
-    if (!hasSsjs(text)) {
-        return [];
-    }
-    const seen = new Set(known.map((diagnostic) => key(diagnostic)));
-    const list =
-        askTypescript(text, (service) =>
-            service
-                .diagnostics()
-                .filter((diagnostic) =>
-                    service.isInSsjsRegion(text, cm.indexFromPos(toPlace(diagnostic.range.start))),
-                ),
-        ) ?? [];
-    return list.filter((diagnostic) => {
-        const isNew = !seen.has(key(diagnostic));
-        seen.add(key(diagnostic));
-        return isNew;
-    });
-}
 
 /**
  * Converts a place of the language service into one of CodeMirror.
@@ -129,7 +55,7 @@ function update(cm, isWithTypes) {
             const known = check(text);
             let further = isSame(types) ? types.list : [];
             if (isWithTypes && !isTypesCurrent) {
-                further = checkTypes(cm, text, known);
+                further = checkTypes(text, known);
             }
             // each check limits what it reports by itself; a limit over all of them together
             // would let the many findings of one language hide those of the other

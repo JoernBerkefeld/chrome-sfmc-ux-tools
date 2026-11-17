@@ -13,6 +13,7 @@ Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. Wi
 - Personalisation strings such as `%%emailaddr%%` are coloured too.
 - In server-side JavaScript (`<script runat="server">`), Marketing Cloud's own objects and functions get colours of their own, for example `Platform`, `DataExtension`, `Variable`, `Write()` and the functions behind `Platform.Function.`. The JavaScript itself keeps the colours the editor already gives it.
 - Works in the code view of Content Builder. Other Marketing Cloud apps with the same editor will follow once each has been checked.
+- The code editor of Automation Studio's **script activity** is covered as well, with the same colours and both themes, also on the wizard's summary step. That editor also has [completions](#completions), hovers, parameter help, error and warning underlines with notes next to the line numbers, quick fixes (**Ctrl+.** / **Cmd+.**) and go to definition (**Ctrl+click** / **Cmd+click**), as described below for Content Builder; the read-only editor on the summary step explains and underlines but offers no fixes. Formatting is not there yet. Its own check of the script, which marked the `<script runat="server">` tag as a JavaScript error, is switched off; **Validate Syntax** still asks Marketing Cloud.
 - The content itself is never changed; only the colours are.
 - A script tag is only recognised if its opening tag fits on one line.
 
@@ -56,7 +57,7 @@ Click the **{ }** button in the toolbar of the code view, or press **Shift+Alt+F
 
 ### Completions
 
-While you type AMPscript or server-side JavaScript (SSJS) in the code view of Content Builder, the extension suggests what fits. Press **Ctrl+Space** to ask for suggestions at any time.
+While you type AMPscript or server-side JavaScript (SSJS) in the code view of Content Builder or in Automation Studio's script activity, the extension suggests what fits. Press **Ctrl+Space** to ask for suggestions at any time.
 
 - **AMPscript**: functions, keywords, personalisation strings and the variables of the current content.
 - **SSJS**, inside `<script runat="server">`: Marketing Cloud's functions and objects (`Platform.Function.Lookup`, `Write`, `DataExtension`, `HTTP.Get`, …), the JavaScript built-ins that work in SSJS, and the functions declared in the content. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`).
@@ -68,7 +69,8 @@ While you type AMPscript or server-side JavaScript (SSJS) in the code view of Co
 - Not covered yet, in browser scripts: the members of a value, such as the methods of `document`.
 - What the extension knows about your own SSJS (members, types, declarations) comes from [TypeScript](https://www.typescriptlang.org/), with the type declarations of the `ssjs-data` package, as in the VS Code extension. This part is large, so it is only loaded into a page once that page shows a code editor. Until it is there, and if it cannot be loaded, the editor works with Marketing Cloud's own names alone.
 - The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.5.1), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
-- The popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
+- In Content Builder the popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
+- **Automation Studio's script activity**: the editor of that dialog has the same completions, while you type and on **Ctrl+Space**, in a popup of the extension's own, as that editor has none. The arrow keys, **Page Up**/**Page Down**, **Home** and **End** move through the list, **Enter**, **Tab** or a click picks an entry, and **Esc**, a click elsewhere or scrolling closes it. A pick is one step for **Ctrl+Z**. The read-only editor on the summary step has no completions.
 
 ### Options
 
@@ -125,10 +127,11 @@ This works the same way in other Chromium browsers such as Edge.
 
 ## Privacy
 
-The extension runs on two places of Marketing Cloud Engagement:
+The extension runs on three places of Marketing Cloud Engagement:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
-- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the Content Builder address.
+- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the addresses listed here.
+- Automation Studio (`https://mc.<stack>.marketingcloudapps.com/AutomationStudioFuel3/`), where it adds colours, completions, hovers, parameter help, error underlines and quick fixes to the code editor of the script activity and applies the editor theme. The editor reads your script through the colouring rules and the built-in language service reads it to do the rest, inside the page only; the large TypeScript part is added to such a page in the same way as on Content Builder. The same files as on Content Builder are loaded there, but the code editors of other activities, such as SQL queries, are left as they are.
 
 It does not collect or transmit any data and makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 
@@ -143,6 +146,7 @@ npm run build
 
 - `src/` holds the extension's sources. `npm run build` writes the loadable extension to `dist/extension` and packs that folder as `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store. For **Load unpacked**, always pick `dist/extension`, not `src`.
 - The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.5.1) into one classic script each with esbuild. A third bundle, `src/editor-typescript.js`, holds TypeScript (6.0.3, the exact version the service is built for), the SSJS service of `sfmc-language-lsp/typescript` and the text of `ssjs-data`'s `sfmc-globals.d.ts`; it alone is minified. The build fails if a bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
+- `src/editor-language/core` holds the editor-independent logic (text and a position in, plain data out), and the files next to it bind it to CodeMirror.
 - The TypeScript bundle is about 4 MB, so it is not a content script. When the language script sets up its first editor in a frame, it dispatches `sfmc-ux-tools:need-typescript` on the document; `src/editor-typescript-loader.js` (extension world) passes that on, and the service worker `src/background.js` injects `editor-typescript.js` into the page world of the document that asked with `chrome.scripting.executeScript` and answers whether that worked; after a failure the next editor that is set up asks again. TypeScript's diagnostics only run in the check after typing has paused. The language script looks the TypeScript API up at every use and falls back to the catalogue without it.
 - `node scripts/measure-typescript.mjs` (after a build) prints the size of the TypeScript bundle and how long it takes to start and to answer for a 1,500-line document.
 - `npm test` runs the build first, because the completion tests run the built bundle.
@@ -150,6 +154,7 @@ npm run build
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.
 - In `package.json`, `dependencies` are the packages whose code or data ends up in the shipped extension; `devDependencies` are tools for building, linting and testing. The package is never installed from npm, so the split is for clarity only.
 - `codemirror` is fixed to the exact version Content Builder ships (5.65.21), so that the tests run against the editor the extension meets in the page. Change it only when Marketing Cloud updates its editor.
+- `ace-builds` is fixed to the exact version of the Ace editor in Automation Studio's script activity (1.4.12), for the same reason. It is only used by the tests: `src/editor-language/ace` builds its mode at run time from the Ace of the page and bundles no copy of it.
 - Keep `version` in `package.json` and `src/manifest.json` identical; a test checks this.
 - `npm run verify:bundled-latest` compares the SFMC packages in `package-lock.json` (`sfmc-language-lsp`, `prettier-plugin-sfmc`, the data packages and what they bring along) with the newest versions on npm and fails if one is behind. The release workflow runs it before building, because the build inlines these packages. Update them with `npm install <package>@latest --no-workspaces`.
 

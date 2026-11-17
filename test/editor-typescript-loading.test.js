@@ -18,6 +18,7 @@ const EDITOR_FRAME = {
     documentId: 'A1',
     url: 'https://content-builder.s50.marketingcloudapps.com/index.html',
 };
+const AUTOMATION_STUDIO = 'https://mc.s7.marketingcloudapps.com/AutomationStudioFuel3/';
 const INJECTION = {
     target: { tabId: 7, documentIds: ['A1'] },
     files: ['editor-typescript.js'],
@@ -52,7 +53,8 @@ function background(state) {
             },
         },
     };
-    vm.runInNewContext(backgroundScript, { chrome });
+    // a new context has the language's own globals only; a service worker also has URL
+    vm.runInNewContext(backgroundScript, { chrome, URL });
     assert.equal(listeners.length, 1);
     const send = (message, sender) => {
         const { promise, resolve } = Promise.withResolvers();
@@ -78,6 +80,70 @@ test('the background script injects the TypeScript script into the document that
     await send({ type: NEED }, { ...EDITOR_FRAME, documentId: 'C3' });
     assert.deepEqual(injections[2].target, { tabId: 7, documentIds: ['C3'] });
     assert.equal(injections.length, 3);
+});
+
+test('the background script also injects into the documents of Automation Studio, on any stack', async () => {
+    const { send, injections } = background();
+    const addresses = [
+        AUTOMATION_STUDIO,
+        `${AUTOMATION_STUDIO}?hub=1#ActivityModal/423/new`,
+        `${AUTOMATION_STUDIO}index.html`,
+        'https://mc.s50.marketingcloudapps.com/AutomationStudioFuel3/#Overview',
+        'https://automation.marketingcloudapps.com/AutomationStudioFuel3/',
+    ];
+    for (const [index, url] of addresses.entries()) {
+        const sender = { ...EDITOR_FRAME, url, documentId: `D${index}` };
+        assert.deepEqual(await send({ type: NEED }, sender), { isLoaded: true }, url);
+        // the same injection as for Content Builder: this document only, nothing from the message
+        assert.deepEqual(
+            injections[index],
+            { ...INJECTION, target: { tabId: 7, documentIds: [`D${index}`] } },
+            url,
+        );
+    }
+    assert.equal(injections.length, addresses.length);
+    // the other safeguards hold there as well
+    for (const other of [{ id: 'another-extension' }, { tab: undefined }, { documentId: 5 }]) {
+        const sender = { ...EDITOR_FRAME, url: AUTOMATION_STUDIO, ...other };
+        assert.equal(send({ type: NEED }, sender), false);
+    }
+    assert.equal(injections.length, addresses.length);
+});
+
+test('the background script refuses addresses that only look like Automation Studio', () => {
+    const { send, injections } = background();
+    const lookalikes = [
+        'https://marketingcloudapps.com.evil.example/AutomationStudioFuel3/',
+        'https://mc.s7.marketingcloudapps.com.evil.example/AutomationStudioFuel3/',
+        'https://evilmarketingcloudapps.com/AutomationStudioFuel3/',
+        'https://marketingcloudapps.com/AutomationStudioFuel3/',
+        'https://mc.s7.marketingcloudapps.com@evil.example/AutomationStudioFuel3/',
+        'https://evil.example/AutomationStudioFuel3/?x=.marketingcloudapps.com/AutomationStudioFuel3/',
+        'https://evil.example/https://mc.s7.marketingcloudapps.com/AutomationStudioFuel3/',
+        'https://evil.example/#https://mc.s7.marketingcloudapps.com/AutomationStudioFuel3/',
+        // not secure
+        // eslint-disable-next-line unicorn/prefer-https -- an address without encryption is what is refused here
+        'http://mc.s7.marketingcloudapps.com/AutomationStudioFuel3/',
+        'ftp://mc.s7.marketingcloudapps.com/AutomationStudioFuel3/',
+        // other apps on the right host
+        'https://mc.s7.marketingcloudapps.com/',
+        'https://mc.s7.marketingcloudapps.com/AutomationStudioFuel3',
+        'https://mc.s7.marketingcloudapps.com/AutomationStudioFuel3x/',
+        'https://mc.s7.marketingcloudapps.com/automationstudiofuel3/',
+        'https://mc.s7.marketingcloudapps.com/other/AutomationStudioFuel3/',
+        'https://mc.s7.marketingcloudapps.com/other/../JourneyBuilder/AutomationStudioFuel3/',
+        'https://mc.s7.marketingcloudapps.com/?/AutomationStudioFuel3/',
+        'https://mc.s7.marketingcloudapps.com/#/AutomationStudioFuel3/',
+        // no address at all
+        'AutomationStudioFuel3',
+        '',
+        7,
+        null,
+    ];
+    for (const url of lookalikes) {
+        assert.equal(send({ type: NEED }, { ...EDITOR_FRAME, url }), false, String(url));
+    }
+    assert.deepEqual(injections, []);
 });
 
 test('the background script ignores other messages, other senders and other frames', () => {
@@ -185,6 +251,22 @@ test('the manifest loads the TypeScript script on demand only, and may inject it
     assert.deepEqual(manifest.host_permissions, editor.matches);
     for (const glob of editor.include_globs) {
         assert.ok(backgroundScript.includes(`'${glob.replace(/\*$/, '')}'`), glob);
+    }
+
+    // Automation Studio has the editor scripts on all its documents, and the loader with them
+    const automation = manifest.content_scripts.filter((entry) =>
+        entry.matches.some((match) => match.includes('/AutomationStudioFuel3/')),
+    );
+    assert.deepEqual(
+        automation.map((entry) => entry.matches),
+        Array.from({ length: 2 }, () => [
+            'https://*.marketingcloudapps.com/AutomationStudioFuel3/*',
+        ]),
+    );
+    assert.ok(automation[0].js.includes('editor-language.js'));
+    assert.ok(automation[1].js.includes('editor-typescript-loader.js'));
+    for (const part of ["'https:'", "'.marketingcloudapps.com'", "'/AutomationStudioFuel3/'"]) {
+        assert.ok(backgroundScript.includes(part), part);
     }
 
     // the loader runs in the extension's own world, in the same frames, before the editor scripts

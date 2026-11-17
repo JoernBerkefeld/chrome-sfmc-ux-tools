@@ -17,6 +17,7 @@ import { watchEditors } from './editor-language/editors.js';
 import { registerHover } from './editor-language/hover.js';
 import { registerSignature } from './editor-language/signature.js';
 import { requestTypescript } from './editor-language/typescript.js';
+import { watchAceEditors } from './editor-language/ace/script-activity.js';
 
 watchEditors('language', [
     // a frame with an editor has use for the TypeScript script, which is loaded on demand
@@ -27,3 +28,5 @@ watchEditors('language', [
     registerDiagnostics,
     registerDefinition,
 ]);
+// Automation Studio's script activity has another editor, Ace; it gets its colours and the same features here
+watchAceEditors();

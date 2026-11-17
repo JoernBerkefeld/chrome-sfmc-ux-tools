@@ -41,6 +41,7 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "ace-builds": "1.4.12",
         "acorn": "^8.19.0",
         "codemirror": "5.65.21",
         "esbuild": "^0.28.2",

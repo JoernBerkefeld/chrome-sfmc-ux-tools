@@ -2,51 +2,12 @@
  * SFMC UX Tools — parameter help: while the cursor is inside the brackets of a call, a box
  * shows the function's parameters and marks the one that is being typed.
  */
-import { sfmcLanguageService } from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS, isInMode, languageAt, report, ssjsOnly } from './shared.js';
-import { askTypescript } from './typescript.js';
+import { isInMode, report } from './shared.js';
+import { helpAt as findHelp } from './core/lookup.js';
 import { renderMarkdown } from './markdown.js';
 import { createTooltip } from './tooltip.js';
 
-const UPDATE_DELAY = 120;
-// the name in front of a call's bracket, with the objects it belongs to
-const CALLED_NAME = /(?:[\w$]+\.)*[\w$]+$/;
-
-/**
- * Finds the opening bracket of the call the text ends in.
- *
- * @param {string} text document up to the cursor
- * @returns {number} place of the bracket, or -1 outside a call
- */
-function openBracket(text) {
-    let depth = 0;
-    for (let index = text.length - 1; index >= 0; index--) {
-        if (text[index] === ')') {
-            depth++;
-        } else if (text[index] === '(' && depth-- === 0) {
-            return index;
-        }
-    }
-    return -1;
-}
-
-/**
- * Tells whether a signature belongs to what is called. The SSJS half of the language service
- * goes by the last name alone, so "anything.Get(" would get the help of "HTTP.Get(".
- *
- * @param {string} label signature, like "Platform.Function.Lookup(deName, ...)"
- * @param {string} text document up to the cursor
- * @returns {boolean} true if the name in front of the bracket is that of the signature
- */
-function isCalled(label, text) {
-    const name = label.slice(0, label.indexOf('(')).toLowerCase();
-    const called = CALLED_NAME.exec(text.slice(0, openBracket(text)).trimEnd())?.[0].toLowerCase();
-    // the full name, or a shortened one that still names its object, like "Variable.SetValue"
-    return (
-        Boolean(called) &&
-        (called === name || (called.includes('.') && name.endsWith('.' + called)))
-    );
-}
+export const UPDATE_DELAY = 120;
 
 /**
  * Asks the language service for the call the cursor is in.
@@ -55,33 +16,8 @@ function isCalled(label, text) {
  * @returns {{signature: object, active: number} | null} the signature and the number of the parameter that is being typed
  */
 function helpAt(cm) {
-    const text = cm.getValue();
-    const offset = cm.indexFromPos(cm.getCursor());
-    const language = languageAt(text, offset);
-    if (language !== AMPSCRIPT && language !== SSJS) {
-        return null;
-    }
-    if (language === SSJS) {
-        // TypeScript resolves what is called, so its answer needs no check of the name
-        const cursor = cm.getCursor();
-        const typed = askTypescript(text, (service) =>
-            service.signatureHelp({ line: cursor.line, character: cursor.ch }),
-        );
-        const called = typed?.signatures?.[typed.activeSignature ?? 0];
-        if (called) {
-            return { signature: called, active: typed.activeParameter ?? 0 };
-        }
-    }
-    const source = language === SSJS ? ssjsOnly(text) : text;
-    const before = source.slice(0, offset);
-    const help = sfmcLanguageService.getSignatureHelp(
-        { text: source, languageId: language, uri: DOCUMENT_URI },
-        before,
-    );
-    const signature = help?.signatures?.[help.activeSignature ?? 0];
-    return !signature || (language === SSJS && !isCalled(signature.label, before))
-        ? null
-        : { signature, active: help.activeParameter ?? 0 };
+    const cursor = cm.getCursor();
+    return findHelp(cm.getValue(), { line: cursor.line, character: cursor.ch });
 }
 
 /**
@@ -117,7 +53,7 @@ function parameterRange(signature, number) {
  * @param {number} active number of the parameter that is being typed
  * @returns {DocumentFragment} the signature with that parameter marked, and what the parameter is for
  */
-function render(document, signature, active) {
+export function renderSignature(document, signature, active) {
     const result = document.createDocumentFragment();
     const [start, end] = parameterRange(signature, active);
     const label = document.createElement('pre');
@@ -159,7 +95,7 @@ export function registerSignature(cm) {
                     : null;
             if (help) {
                 tooltip.show(
-                    render(document, help.signature, help.active),
+                    renderSignature(document, help.signature, help.active),
                     cm.cursorCoords(true, 'window'),
                 );
             } else {

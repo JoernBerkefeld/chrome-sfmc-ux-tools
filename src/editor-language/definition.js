@@ -3,12 +3,11 @@
  * server-side JavaScript of the content declares moves the cursor to the declaration: any name
  * with the TypeScript script, functions without it.
  */
-import { sfmcLanguageService } from 'sfmc-language-lsp';
-import { DOCUMENT_URI, SSJS, isInMode, languageAt, report, ssjsOnly } from './shared.js';
-import { askTypescript } from './typescript.js';
+import { isInMode, report } from './shared.js';
+import { definitionAt as findDefinition } from './core/lookup.js';
 import { characterAt } from './hover.js';
 
-const IS_MAC = /mac/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? '');
+export const IS_MAC = /mac/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? '');
 // room left around the declaration when it is scrolled into view
 const SCROLL_MARGIN = 80;
 
@@ -20,31 +19,8 @@ const SCROLL_MARGIN = 80;
  * @returns {{line: number, ch: number} | null} start of the declaration, or null if the language service knows none
  */
 export function definitionAt(cm, place) {
-    const text = cm.getValue();
-    if (languageAt(text, cm.indexFromPos(place)) !== SSJS) {
-        return null;
-    }
-    // TypeScript also finds variables, parameters and the members of the content's own objects
-    const typed = askTypescript(text, (service) =>
-        service.definition({ line: place.line, character: place.ch }),
-    );
-    const found = typed?.[0]?.range?.start;
-    if (found) {
-        return { line: found.line, ch: found.character };
-    }
-    const line = cm.getLine(place.line);
-    const before = /[\w$]*$/.exec(line.slice(0, place.ch))[0];
-    const word = before + /^[\w$]*/.exec(line.slice(place.ch))[0];
-    // the member of a value is not the function of the same name
-    if (!word || line[place.ch - before.length - 1] === '.') {
-        return null;
-    }
-    const location = sfmcLanguageService.getDefinition(
-        { text: ssjsOnly(text), languageId: SSJS, uri: DOCUMENT_URI },
-        word,
-    );
-    const start = location?.range?.start;
-    return start ? { line: start.line, ch: start.character } : null;
+    const found = findDefinition(cm.getValue(), { line: place.line, character: place.ch });
+    return found ? { line: found.line, ch: found.character } : null;
 }
 
 /**

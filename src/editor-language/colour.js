@@ -29,7 +29,7 @@ function isName(piece) {
  * @param {{text: string, style: string}[]} pieces pieces of one line, changed in place
  * @param {boolean} isSignature true for TypeScript, which the language service uses for signatures
  */
-function refine(pieces, isSignature) {
+export function refine(pieces, isSignature) {
     const next = (index) => pieces.slice(index + 1).find((piece) => piece.text.trim() !== '');
     for (const [index, piece] of pieces.entries()) {
         if (isName(piece) && piece.style !== 'keyword' && next(index)?.text.startsWith('(')) {

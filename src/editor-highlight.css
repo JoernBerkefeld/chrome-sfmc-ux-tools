@@ -246,6 +246,138 @@ html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-ssjs-object {
     color: var(--sfmc-type);
 }
 
+/*
+ * Automation Studio's script activity edits with Ace instead of CodeMirror. The language script
+ * gives the editors it colours the class sfmc-ux-tools-ace; only those are themed, so every other
+ * Ace editor of that app keeps its look. The token classes are those of Ace's JavaScript rules
+ * and of src/editor-language/ace/highlight-rules.js; the same kind of token has the same colour
+ * as in CodeMirror. The delimiters are not bold here: Ace places the cursor by the width of the
+ * regular font.
+ */
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace {
+    background: var(--sfmc-background);
+    color: var(--sfmc-foreground);
+    color-scheme: var(--sfmc-scheme);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_gutter {
+    background: var(--sfmc-background);
+    border-right: 1px solid var(--sfmc-gutter-border);
+    color: var(--sfmc-line-number);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_gutter-active-line {
+    background: var(--sfmc-background);
+    color: var(--sfmc-line-number-active);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_scroller,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_scrollbar {
+    background: var(--sfmc-background);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_print-margin {
+    display: none;
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_cursor {
+    color: var(--sfmc-cursor);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_marker-layer .ace_active-line {
+    background: var(--sfmc-active-line);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_marker-layer .ace_selection {
+    background: var(--sfmc-selection-inactive);
+}
+html[data-sfmc-ux-tools-theme]
+    .ace_editor.sfmc-ux-tools-ace.ace_focus
+    .ace_marker-layer
+    .ace_selection {
+    background: var(--sfmc-selection);
+}
+html[data-sfmc-ux-tools-theme]
+    .ace_editor.sfmc-ux-tools-ace.ace_multiselect
+    .ace_selection.ace_start {
+    box-shadow: 0 0 3px 0 var(--sfmc-background);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_marker-layer .ace_bracket {
+    margin: 0;
+    border: 0;
+    outline: 1px solid var(--sfmc-bracket-match);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_marker-layer .ace_selected-word {
+    background: transparent;
+    border: 1px solid var(--sfmc-bracket-match);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_marker-layer .ace_step,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_marker-layer .ace_stack {
+    background: var(--sfmc-search-match);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_fold {
+    background: var(--sfmc-line-number);
+    border-color: var(--sfmc-foreground);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_invisible {
+    color: var(--sfmc-line-number);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_indent-guide {
+    background: none;
+    box-shadow: inset -1px 0 var(--sfmc-active-line);
+}
+
+/* Tokens in the Ace editor; a rule with more classes wins over one with fewer. */
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_keyword,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_storage,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_constant,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_meta.ace_delimiter {
+    color: var(--sfmc-keyword);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_keyword.ace_control {
+    color: var(--sfmc-control);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_keyword.ace_operator,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_punctuation,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_paren,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_text.ace_ampscript {
+    color: var(--sfmc-operator);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_support.ace_function,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_entity.ace_name.ace_function {
+    color: var(--sfmc-function);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_variable,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_identifier,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_support.ace_constant {
+    color: var(--sfmc-variable);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_variable.ace_language,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_support.ace_class,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_support.ace_type {
+    color: var(--sfmc-type);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_string,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_constant.ace_language.ace_escape {
+    color: var(--sfmc-string);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_string.ace_regexp,
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_regexp.ace_keyword.ace_operator {
+    color: var(--sfmc-regexp);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_constant.ace_numeric {
+    color: var(--sfmc-number);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_comment {
+    color: var(--sfmc-comment);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_meta.ace_tag {
+    color: var(--sfmc-tag);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_meta.ace_tag.ace_punctuation {
+    color: var(--sfmc-tag-bracket);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_entity.ace_other {
+    color: var(--sfmc-attribute);
+}
+html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_invalid {
+    background: transparent;
+    color: var(--sfmc-error);
+}
+
 /* Completions popup. It is added to the page body, outside of the editor. */
 .CodeMirror-hints {
     position: absolute;
@@ -387,6 +519,29 @@ html .sfmc-tooltip a:hover {
 }
 .CodeMirror .sfmc-diagnostic-info {
     text-decoration-color: var(--sfmc-info-underline);
+}
+/*
+ * In Ace an underline is a marker: a box behind the text, as wide as the code and as high as its
+ * line, that Ace places by its inline style. The wavy line along its bottom edge is a background
+ * of two rows of slanted strokes, one leaning each way and half a wave apart, in the box's text
+ * colour, which is the colour of the underline: the box has no text.
+ */
+.sfmc-ux-tools-ace .ace_marker-layer .sfmc-diagnostic {
+    position: absolute;
+    box-sizing: border-box;
+    border-radius: 0;
+    color: var(--sfmc-error-underline);
+    background:
+        linear-gradient(45deg, transparent 42%, currentColor 42% 58%, transparent 58%) 0 100% / 6px
+            3px repeat-x,
+        linear-gradient(135deg, transparent 42%, currentColor 42% 58%, transparent 58%) 3px 100% /
+            6px 3px repeat-x;
+}
+.sfmc-ux-tools-ace .ace_marker-layer .sfmc-diagnostic-warning {
+    color: var(--sfmc-warning);
+}
+.sfmc-ux-tools-ace .ace_marker-layer .sfmc-diagnostic-info {
+    color: var(--sfmc-info-underline);
 }
 .sfmc-tooltip .sfmc-problem {
     padding-left: 8px;

@@ -2,18 +2,17 @@
  * SFMC UX Tools — the box for a place in the code editor: what is wrong there, how to fix it,
  * and its documentation. It opens where the mouse rests, and at the cursor on Ctrl-. (Cmd-.).
  */
-import { sfmcLanguageService } from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS, isInMode, languageAt, report, ssjsOnly } from './shared.js';
+import { isInMode, report } from './shared.js';
 import { applyFix, fixesFor } from './quickfix.js';
-import { askTypescript } from './typescript.js';
 import { checkNow, diagnosticsAt } from './diagnostics.js';
 import { colour } from './colour.js';
 import { createTooltip } from './tooltip.js';
+import { hoverAt as findHover } from './core/lookup.js';
 import { renderMarkdown } from './markdown.js';
 
-const SHOW_DELAY = 350;
+export const SHOW_DELAY = 350;
 // time to move the mouse from the code onto the box
-const HIDE_DELAY = 250;
+export const HIDE_DELAY = 250;
 
 /**
  * Asks the language service what it knows about a place in the document.
@@ -23,30 +22,7 @@ const HIDE_DELAY = 250;
  * @returns {object | null} hover of the language service, or null if it has nothing to say
  */
 function hoverAt(cm, place) {
-    const text = cm.getValue();
-    const language = languageAt(text, cm.indexFromPos(place));
-    if (language !== AMPSCRIPT && language !== SSJS) {
-        return null;
-    }
-    // TypeScript knows the types of the content's own code; the catalogue is the fallback
-    const typed =
-        language === SSJS
-            ? askTypescript(text, (service) =>
-                  service.hover({ line: place.line, character: place.ch }),
-              )
-            : null;
-    if (typed?.contents?.value) {
-        return typed;
-    }
-    return sfmcLanguageService.getHover(
-        {
-            text: language === SSJS ? ssjsOnly(text) : text,
-            languageId: language,
-            uri: DOCUMENT_URI,
-        },
-        cm.getLine(place.line),
-        { line: place.line, character: place.ch },
-    );
+    return findHover(cm.getValue(), { line: place.line, character: place.ch });
 }
 
 /**
@@ -93,14 +69,14 @@ function problemsAt(cm, place) {
  * Builds the content of the box: first what is wrong at the place and how to fix it, then the
  * documentation of the place.
  *
- * @param {object} cm CodeMirror instance
- * @param {object[]} problems errors and warnings at the place, from `problemsAt`
+ * @param {Document} document document of the editor
+ * @param {object[]} problems errors and warnings at the place, each with its `fixes`
  * @param {string | undefined} markdown documentation of the language service
  * @param {(fix: object) => void} onFix called with the fix the user chose
+ * @param {(code: string, language: string) => Node | null} colourCode colours a code block of the documentation the way the editor does
  * @returns {DocumentFragment} what to show
  */
-function render(cm, problems, markdown, onFix) {
-    const document = cm.getWrapperElement().ownerDocument;
+export function renderBox(document, problems, markdown, onFix, colourCode) {
     const result = document.createDocumentFragment();
     for (const { severity, message, code, address, fixes } of problems) {
         const element = document.createElement('p');
@@ -128,9 +104,7 @@ function render(cm, problems, markdown, onFix) {
         result.append(element);
     }
     if (markdown) {
-        result.append(
-            renderMarkdown(document, markdown, (code, language) => colour(cm, code, language)),
-        );
+        result.append(renderMarkdown(document, markdown, colourCode));
     }
     return result;
 }
@@ -197,7 +171,12 @@ export function registerHover(cm) {
         if (key !== shown || !tooltip.isShown()) {
             shown = key;
             fixedText = cm.getValue();
-            tooltip.show(render(cm, problems, markdown, fix), cm.charCoords(anchor, 'window'));
+            tooltip.show(
+                renderBox(wrapper.ownerDocument, problems, markdown, fix, (code, language) =>
+                    colour(cm, code, language),
+                ),
+                cm.charCoords(anchor, 'window'),
+            );
         }
         return true;
     };

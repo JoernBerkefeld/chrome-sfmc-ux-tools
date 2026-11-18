@@ -7,6 +7,8 @@
 - Chrome 122 or newer is required.
 - Email Studio and CloudPages are named as covered: both open Content Builder's code view, where the extension already works.
 - The toolbar icon is no longer greyed out, and a click on it opens the options.
+- The options are twice as wide and show their settings in two columns, so that they fit the popup without scrolling.
+- The options end with a copyright note and a link to the issues on GitHub for questions and problems.
 - The editor theme follows the system's light or dark mode until a theme is chosen in the options; "Like the system" is the new default there.
 - The gear button below the code editor, which opens Marketing Cloud's own editor menu, is hidden while the browser's context menu is chosen (the default), and comes back with the option "Marketing Cloud's menu".
 

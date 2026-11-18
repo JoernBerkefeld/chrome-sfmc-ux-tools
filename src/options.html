@@ -6,14 +6,20 @@
         <style>
             body {
                 font:
-                    14px/1.5 system-ui,
+                    13px/1.5 system-ui,
                     sans-serif;
-                margin: 16px;
-                min-width: 340px;
+                margin: 12px;
+                /* a popup of Chrome is at most 800px wide and 600px high */
+                min-width: 776px;
+            }
+            main {
+                column-gap: 32px;
+                columns: 2;
             }
             fieldset {
                 border: 0;
-                margin: 0 0 20px;
+                break-inside: avoid;
+                margin: 0 0 12px;
                 padding: 0;
             }
             legend {
@@ -29,105 +35,117 @@
                 color: #666;
                 margin: 8px 0 0;
             }
+            footer {
+                border-top: 1px solid #ddd;
+                display: flex;
+                gap: 32px;
+                justify-content: space-between;
+            }
+            footer p:last-child {
+                flex: none;
+            }
         </style>
     </head>
     <body>
-        <fieldset>
-            <legend>Theme of the code editor</legend>
-            <label>
-                <input type="radio" name="editorTheme" value="system" />
-                Like the system: light or dark, whichever your computer uses
-            </label>
-            <label>
-                <input type="radio" name="editorTheme" value="light" />
-                Light Modern
-            </label>
-            <label>
-                <input type="radio" name="editorTheme" value="dark" />
-                Dark Modern
-            </label>
-            <p>Replaces the themes of Marketing Cloud's own menu.</p>
-        </fieldset>
-        <fieldset>
-            <legend>Menu of the code editor (right-click and gear button)</legend>
-            <label>
-                <input type="radio" name="editorContextMenu" value="browser" />
-                Browser's menu on right-click (copy, paste, spell check, …); the gear button below
-                the editor is hidden
-            </label>
-            <label>
-                <input type="radio" name="editorContextMenu" value="page" />
-                Marketing Cloud's menu (source formatting, word wrap, line numbers)
-            </label>
-            <p>Changes apply at once; open editors need no reload.</p>
-        </fieldset>
-        <fieldset>
-            <legend>Format on save</legend>
-            <label>
-                <input type="radio" name="editorFormatOnSave" value="off" />
-                Off
-            </label>
-            <label>
-                <input type="radio" name="editorFormatOnSave" value="on" />
-                On: format the code before Marketing Cloud saves it
-            </label>
-            <p>
-                Applies to the Save and Save and Exit buttons and to Ctrl+S / Cmd+S in the code
-                editor. Format at any time with Shift+Alt+F or the { } button of the editor.
-            </p>
-        </fieldset>
-        <fieldset>
-            <legend>Readable keys</legend>
-            <label>
-                <input type="radio" name="readableKeys" value="on" />
-                On: fill the external key from the name while you type it
-            </label>
-            <label>
-                <input type="radio" name="readableKeys" value="off" />
-                Off: leave the key to Marketing Cloud, which uses a random one
-            </label>
-            <p>
-                Applies to new automations and to the dialogs that create an SQL query, script,
-                filter, import, data extract or file transfer activity in Automation Studio, and to
-                new data extensions in Contact Builder and Email Studio, to new journeys and API
-                events in Journey Builder, and to new sender profiles, send classifications,
-                delivery profiles, file locations, roles and users in Setup. Spaces become
-                underscores, special characters are left out. A key you type yourself is kept.
-            </p>
-        </fieldset>
-        <fieldset>
-            <legend>Journey names</legend>
-            <label>
-                <input type="radio" name="journeyNameCheck" value="on" />
-                On: ask for a name before a journey is saved as "New Journey" with date and time
-            </label>
-            <label>
-                <input type="radio" name="journeyNameCheck" value="off" />
-                Off
-            </label>
-            <p>
-                Journey Builder gives every new journey that name, and hands it on to the journey's
-                API event.
-            </p>
-        </fieldset>
-        <fieldset>
-            <legend>Saved logins on Setup's user pages</legend>
-            <label>
-                <input type="radio" name="userAutofill" value="blocked" />
-                Keep them out: your browser does not fill a saved login into a new or existing user
-            </label>
-            <label>
-                <input type="radio" name="userAutofill" value="allowed" />
-                Leave it to the browser
-            </label>
-            <p>
-                Without this, a browser's password manager takes the page for a login form and
-                fills a saved username and password into the user you are creating or editing, and
-                into its external key.
-            </p>
-        </fieldset>
-        <fieldset>
-            <legend>Related tools</legend>
+        <main>
+            <fieldset>
+                <legend>Theme of the code editor</legend>
+                <label>
+                    <input type="radio" name="editorTheme" value="system" />
+                    Like the system: light or dark, whichever your computer uses
+                </label>
+                <label>
+                    <input type="radio" name="editorTheme" value="light" />
+                    Light Modern
+                </label>
+                <label>
+                    <input type="radio" name="editorTheme" value="dark" />
+                    Dark Modern
+                </label>
+                <p>Replaces the themes of Marketing Cloud's own menu.</p>
+            </fieldset>
+            <fieldset>
+                <legend>Menu of the code editor (right-click and gear button)</legend>
+                <label>
+                    <input type="radio" name="editorContextMenu" value="browser" />
+                    Browser's menu on right-click (copy, paste, spell check, …); the gear button
+                    below the editor is hidden
+                </label>
+                <label>
+                    <input type="radio" name="editorContextMenu" value="page" />
+                    Marketing Cloud's menu (source formatting, word wrap, line numbers)
+                </label>
+                <p>Changes apply at once; open editors need no reload.</p>
+            </fieldset>
+            <fieldset>
+                <legend>Format on save</legend>
+                <label>
+                    <input type="radio" name="editorFormatOnSave" value="off" />
+                    Off
+                </label>
+                <label>
+                    <input type="radio" name="editorFormatOnSave" value="on" />
+                    On: format the code before Marketing Cloud saves it
+                </label>
+                <p>
+                    Applies to the Save and Save and Exit buttons and to Ctrl+S / Cmd+S in the code
+                    editor. Format at any time with Shift+Alt+F or the { } button of the editor.
+                </p>
+            </fieldset>
+            <fieldset>
+                <legend>Readable keys</legend>
+                <label>
+                    <input type="radio" name="readableKeys" value="on" />
+                    On: fill the external key from the name while you type it
+                </label>
+                <label>
+                    <input type="radio" name="readableKeys" value="off" />
+                    Off: leave the key to Marketing Cloud, which uses a random one
+                </label>
+                <p>
+                    Eases working with DevOps tools like
+                    <a
+                        href="https://github.com/Accenture/sfmc-devtools"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        >SFMC DevTools</a
+                    >.
+                </p>
+            </fieldset>
+            <fieldset>
+                <legend>Journey names</legend>
+                <label>
+                    <input type="radio" name="journeyNameCheck" value="on" />
+                    On: ask for a name before a journey is saved as "New Journey" with date and time
+                </label>
+                <label>
+                    <input type="radio" name="journeyNameCheck" value="off" />
+                    Off
+                </label>
+                <p>
+                    Journey Builder gives every new journey that name, and hands it on to the
+                    journey's API event.
+                </p>
+            </fieldset>
+            <fieldset>
+                <legend>Saved logins on Setup's user pages</legend>
+                <label>
+                    <input type="radio" name="userAutofill" value="blocked" />
+                    Keep them out: your browser does not fill a saved login into a new or existing
+                    user
+                </label>
+                <label>
+                    <input type="radio" name="userAutofill" value="allowed" />
+                    Leave it to the browser
+                </label>
+                <p>
+                    Without this, a browser's password manager takes the page for a login form and
+                    fills a saved username and password into the user you are creating or editing,
+                    and into its external key.
+                </p>
+            </fieldset>
+        </main>
+        <footer>
             <p>
                 The same language features for files in VS Code:
                 <a
@@ -149,7 +167,19 @@
                 <a href="https://ssjs.guide" target="_blank" rel="noopener noreferrer">ssjs.guide</a
                 >.
             </p>
-        </fieldset>
+            <p>
+                Questions and problems:
+                <a
+                    href="https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >issues on GitHub</a
+                >. © 2026
+                <a href="https://joernberkefeld.com" target="_blank" rel="noopener noreferrer"
+                    >Jörn Berkefeld</a
+                >
+            </p>
+        </footer>
         <script src="options.js"></script>
     </body>
 </html>

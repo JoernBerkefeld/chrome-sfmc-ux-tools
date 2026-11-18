@@ -22,7 +22,8 @@ const extensionScripts = [
 ].map((file) => read(`../dist/extension/${file}`));
 const APP = 'https://mc.s7.marketingcloudapps.com/AutomationStudioFuel3/';
 const SCRIPT_ROUTE = '#ActivityModal/423/new';
-const OTHER_ROUTE = '#ActivityModal/300/new';
+// an activity that is neither a script (423) nor a SQL query (300)
+const OTHER_ROUTE = '#ActivityModal/73/new';
 const BESIDE = '.sfmc-format-beside';
 const FLOATING = '.sfmc-format-floating';
 const BUTTONS = `${BESIDE}, .sfmc-format-button`;

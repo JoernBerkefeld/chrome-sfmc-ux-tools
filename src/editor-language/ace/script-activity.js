@@ -5,7 +5,7 @@
  * That dialog edits its script with Ace in JavaScript mode, which reads the script tag as an
  * element and the code inside it as one string. This file gives the dialog's editors a mode of
  * its own instead, built at run time from the Ace of the page. Every other Ace editor of
- * Automation Studio, such as the one for SQL queries, is left alone, and so is the script
+ * Automation Studio is left alone here (./query-activity.js themes the one for SQL queries), and so is the script
  * activity's if anything this needs is missing. The editors that got the mode also get the
  * language features: completions, hover, parameter help, errors and warnings, quick fixes and
  * go to definition (the other files of this folder).
@@ -17,10 +17,9 @@ import { registerAceDiagnostics } from './diagnostics.js';
 import { registerAceHover } from './hover.js';
 import { registerAceSignature } from './signature.js';
 import { createHighlightRules, takeLanguageData } from './highlight-rules.js';
-import { TAKEN_CLASS, isScriptRoute } from './shared.js';
+import { SCRIPT_ACTIVITY_MODE as MODE_ID, TAKEN_CLASS, isScriptRoute } from './shared.js';
 
 const EDITOR_SELECTOR = '.ace_editor';
-const MODE_ID = 'sfmc-ux-tools/mode/script-activity';
 // what the page uses for the script
 const SCRIPT_MODE = 'ace/mode/javascript';
 // what an editor has before the page chose; only the dialog's own two editors are taken over

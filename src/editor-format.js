@@ -111,15 +111,16 @@ function replace(cm, { from, to, text }) {
  * @param {Element} element the editor's element, where the user is told about a failure
  * @param {() => string} read gives the editor's content
  * @param {(change: {from: number, to: number, text: string}, before: string) => void} write replaces a part of the content that was read
+ * @param {string} [filepath] a file name that tells Prettier what the content is; content of Content Builder if left out
  */
-async function formatContent(key, element, read, write) {
+async function formatContent(key, element, read, write, filepath = OPTIONS.filepath) {
     if (busy.has(key)) {
         return;
     }
     busy.add(key);
     try {
         const before = read();
-        const after = await format(before, OPTIONS);
+        const after = await format(before, { ...OPTIONS, filepath });
         // what was typed in the meantime is never overwritten
         if (after !== before && read() === before) {
             write(changedPart(before, after), before);

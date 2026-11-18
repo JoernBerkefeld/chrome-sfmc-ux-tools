@@ -1,16 +1,27 @@
 /*
- * SFMC UX Tools — formatting in the Ace editor of Automation Studio's script activity: a button
- * next to the dialog's "Validate Syntax" and Shift-Alt-F, as in the CodeMirror editor of Content
- * Builder. The formatter itself and the button's look come from ../../editor-format.js, which
+ * SFMC UX Tools — formatting in the Ace editors of Automation Studio's script and SQL query
+ * activities: a button next to the dialog's "Validate Syntax" and Shift-Alt-F, as in the
+ * CodeMirror editor of Content Builder. The formatter itself and the button's look come from ../../editor-format.js, which
  * is the only script that bundles Prettier.
  */
 import { report, watchPage } from '../editors.js';
 import { positionAt } from '../core/text.js';
-import { TAKEN_CLASS, isScriptRoute, textOf } from './shared.js';
+import { SQL_MODE, TAKEN_CLASS, isQueryRoute, isScriptRoute, textOf } from './shared.js';
 
 const EDITOR_SELECTOR = '.ace_editor';
-// the dialog's own button, which the format button stands next to
-const VALIDATE_BUTTON = '#scriptValidateBtn';
+// the dialogs' own buttons, which the format button stands next to
+const VALIDATE_BUTTON = '#scriptValidateBtn, #queryValidateBtn';
+// a file name that makes Prettier read the content as SQL
+const SQL_FILE = 'query.sql';
+
+/**
+ * Tells whether the page shows a dialog whose editors are formatted.
+ *
+ * @returns {boolean} true for the dialogs of the script and the SQL query activity
+ */
+function isActivityRoute() {
+    return isScriptRoute() || isQueryRoute();
+}
 // the looks of the dialog's buttons, and what tells ours apart
 const BESIDE_CLASSES = 'btn btn-default pull-right sfmc-format-beside';
 const FLOATING_CLASS = 'sfmc-format-floating';
@@ -27,11 +38,11 @@ const entries = [];
  * Tells whether an editor is one whose content may be formatted right now.
  *
  * @param {{editor: object, element: Element}} entry an editor that was set up
- * @returns {boolean} true for an editor of the script activity that the extension took over and that can be edited
+ * @returns {boolean} true for an editor of the script or SQL query activity that the extension marked as its own and that can be edited
  */
 function canFormat({ editor, element }) {
     return (
-        isScriptRoute() &&
+        isActivityRoute() &&
         element.isConnected &&
         element.classList.contains(TAKEN_CLASS) &&
         !editor.getReadOnly()
@@ -67,10 +78,10 @@ function replace(editor, before, { from, to, text }) {
 }
 
 /**
- * Sets up formatting for the editors of the script activity's dialog.
+ * Sets up formatting for the editors of the script and SQL query activities' dialogs.
  *
  * @param {object} tools what the formatting script shares
- * @param {(key: object, element: Element, read: () => string, write: (change: object, before: string) => void) => Promise.<void>} tools.formatContent formats what `read` returns and hands the part that differs to `write`
+ * @param {(key: object, element: Element, read: () => string, write: (change: object, before: string) => void, filepath?: string) => Promise.<void>} tools.formatContent formats what `read` returns and hands the part that differs to `write`; `filepath` names a file of the kind the content is, if it is not content of Content Builder
  * @param {(document: Document, onClick: () => void) => HTMLButtonElement} tools.createButton creates a "format code" button
  * @param {(event: MouseEvent, selector: string, formatsFor: (button: Element) => (() => Promise.<void>)[], clickAgain: (button: Element) => void) => void} tools.formatBeforeClick with "format on save" switched on, holds a click on a button back until the editors it is about are formatted
  * @param {(element: Element) => boolean} tools.isOnShow tells whether an element takes up room on the page
@@ -82,6 +93,8 @@ export function watchAceFormat({ formatContent, createButton, formatBeforeClick,
             entry.element,
             () => textOf(entry.editor),
             (change, before) => replace(entry.editor, before, change),
+            // a query is SQL as a whole; a script is read like the content of Content Builder
+            entry.editor.getSession().getMode()?.$id === SQL_MODE ? SQL_FILE : undefined,
         );
 
     /**
@@ -104,7 +117,7 @@ export function watchAceFormat({ formatContent, createButton, formatBeforeClick,
             }
             entry.editor.focus();
         });
-        const validate = document.querySelector(VALIDATE_BUTTON);
+        const validate = (entry.element.closest(DIALOG) ?? document).querySelector(VALIDATE_BUTTON);
         if (validate) {
             button.className = BESIDE_CLASSES;
             validate.after(button);
@@ -127,7 +140,7 @@ export function watchAceFormat({ formatContent, createButton, formatBeforeClick,
             entry.button = null;
             entries.splice(index, 1);
         }
-        if (isScriptRoute()) {
+        if (isActivityRoute()) {
             for (const element of document.querySelectorAll(EDITOR_SELECTOR)) {
                 const editor = element.env?.editor;
                 if (!editor || !editor.commands?.addCommand) {
@@ -172,7 +185,7 @@ export function watchAceFormat({ formatContent, createButton, formatBeforeClick,
     };
 
     /**
-     * Format on save: the dialog takes the script over when its "Next" is clicked and saves it
+     * Format on save: the dialog takes the script or query over when its "Next" is clicked and saves it
      * with "Finish", which is the same button. The click waits for the editor that is on show.
      *
      * @param {MouseEvent} event a click on the page

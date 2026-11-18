@@ -7,6 +7,21 @@ import { report } from '../editors.js';
 export const TAKEN_CLASS = 'sfmc-ux-tools-ace';
 // the dialog of an activity of type 423, "script": #ActivityModal/423/new or #ActivityModal/423/<id>
 const ROUTE = /^#ActivityModal\/423\//i;
+// the dialog of an activity of type 300, "SQL query"
+const QUERY_ROUTE = /^#ActivityModal\/300\//i;
+// the mode the extension gives the editors of the script activity
+export const SCRIPT_ACTIVITY_MODE = 'sfmc-ux-tools/mode/script-activity';
+// the page's mode of the editors of the SQL query activity
+export const SQL_MODE = 'ace/mode/sql';
+
+/**
+ * Tells whether the page shows the dialog of a SQL query activity.
+ *
+ * @returns {boolean} true while the address names that dialog
+ */
+export function isQueryRoute() {
+    return QUERY_ROUTE.test(location.hash);
+}
 
 /**
  * Tells whether the page shows the dialog of a script activity.

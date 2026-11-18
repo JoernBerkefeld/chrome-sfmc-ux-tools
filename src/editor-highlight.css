@@ -247,10 +247,10 @@ html :is(.CodeMirror, .sfmc-tooltip) .cm-sfmc-ssjs-object {
 }
 
 /*
- * Automation Studio's script activity edits with Ace instead of CodeMirror. The language script
- * gives the editors it colours the class sfmc-ux-tools-ace; only those are themed, so every other
- * Ace editor of that app keeps its look. The token classes are those of Ace's JavaScript rules
- * and of src/editor-language/ace/highlight-rules.js; the same kind of token has the same colour
+ * Automation Studio's script and SQL query activities edit with Ace instead of CodeMirror. The
+ * language script gives the editors of those two the class sfmc-ux-tools-ace; only those are
+ * themed, so every other Ace editor of that app keeps its look. The token classes are those of
+ * Ace's JavaScript and SQL rules and of src/editor-language/ace/highlight-rules.js; the same kind of token has the same colour
  * as in CodeMirror. The delimiters are not bold here: Ace places the cursor by the width of the
  * regular font.
  */

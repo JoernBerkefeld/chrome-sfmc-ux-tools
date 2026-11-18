@@ -4,6 +4,18 @@ A Chrome extension with small usability helpers for Salesforce Marketing Cloud E
 
 > Not affiliated with, endorsed by or supported by Salesforce.
 
+## TL;DR
+
+Install it and Marketing Cloud gets easier to work in. Nothing to set up.
+
+- **Code editors you can read:** AMPscript and SSJS in colour, in a light or dark theme.
+- **Help while you type:** suggestions, explanations when you point at code, and mistakes underlined before you save.
+- **Tidy code with one click:** the **{ }** button or **Shift+Alt+F**, and **Ctrl+S** saves.
+- **Readable keys instead of random ones:** new automations, activities, data extensions, journeys, API events, sender profiles, send classifications, file locations, roles and users get a key made from their name, such as `Welcome_series`.
+- **No more "New Journey - 18 November…":** Journey Builder asks you for a real name before a new journey is saved.
+- **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
+- **Private:** nothing is collected and nothing leaves Marketing Cloud.
+
 ## Features
 
 Everything below works on its own after installing; there is nothing to set up. A few things can be switched under [Options](#options).
@@ -17,6 +29,8 @@ Everything below works on its own after installing; there is nothing to set up. 
 - **Automation Studio, SQL query activity**: theme and tidying up only. There are no suggestions, explanations or checks for SQL.
 - **Automation Studio**: new automations and the dialogs that create an activity, for [readable keys](#readable-keys).
 - **Contact Builder and Email Studio**: the dialogs that create a data extension, for readable keys.
+- **Journey Builder**: new journeys and their API events, for readable keys and for [a real name before saving](#journey-builder-a-real-name-before-saving).
+- **Setup**: the pages for a new sender profile, send classification, delivery profile, file location, role or user, for readable keys.
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
 - **Setup → Installed Packages**: the dialog with the list of scopes.
 
@@ -128,6 +142,17 @@ Where it works:
 - **Automation Studio**: a new **automation**. Its key is on the **Summary** tab and in the **Save Automation** dialog, which appears when you save an automation that has no name yet.
 - **Contact Builder**: the dialog that creates a **data extension**.
 - **Email Studio**: the dialog that creates a **data extension**.
+- **Setup**: the pages that create a **sender profile**, a **send classification**, a **delivery profile**, a **file location**, a **role** or a **user**. A user's key is made from the name, not from the username.
+- **Journey Builder**: a new **journey** of any kind (multi-step, single send, transactional), a new **API event**, and the key a **transactional journey** asks for. See below.
+
+In Journey Builder:
+
+- **Journeys have no key field at all.** Journey Builder makes up a random key when you save a new journey, and the key of a journey can never be changed afterwards. With the extension, the journey is saved with a key made from its name instead.
+- **API events show their key but do not let you change it.** With the extension, the **Event Definition Key** of a new API event is a field you can type in. It starts with a key made from the event's name.
+- **Transactional journeys ask for an Event Definition Key.** The extension fills it in from the journey's name. You can change it before you save.
+- **A key that is already used gets a number.** If another journey or event already has the key, yours gets `_2`, `_3` and so on. This matters: Marketing Cloud does not refuse a second journey with the same key, it quietly turns it into a new version of the first one.
+- **Journeys and events that already exist are never touched**, and neither is a new version of a journey.
+- **Other kinds of entry events** (data extension, CloudPages, Salesforce data, …) keep the key Journey Builder gives them.
 
 How the key is built:
 
@@ -141,9 +166,19 @@ Good to know:
 
 - **Your own key wins.** As soon as you type a key yourself, the extension leaves it alone. Empty the field and it follows the name again.
 - **Only for new things.** If a dialog opens with a key, because you are editing something that exists, that key is never changed. A new automation's key follows its name only until the automation is saved.
-- **Nothing is saved for you.** The extension only fills the field. If the key is already in use, Marketing Cloud tells you when you finish the dialog.
+- **Nothing is saved for you.** The extension only fills the field, or in Journey Builder the key that is sent when you save. In the dialogs, Marketing Cloud tells you when you finish if the key is already in use.
 - **Longer keys for data extensions:** Contact Builder's dialog stops the key at 36 characters, although Marketing Cloud accepts 200. The extension lets you use all 200.
 - You can switch readable keys off in the options.
+
+### Journey Builder: a real name before saving
+
+Every new journey starts with a name like "New Journey - 18 November 2026 at 11.03". It is easy to save it that way by accident, and the name is also handed on to the journey's API event.
+
+- **Save is held back** while the journey still has that made-up name. The name field opens with the old name selected, so you can type the new one right away.
+- This applies to **Save**, **Validate**, **Test** and **Activate**.
+- As soon as the journey has a name of its own, saving works as usual.
+- Journeys that already exist are not affected.
+- You can switch this check off in the options.
 
 ### Fixed: pasting a name or key with the mouse
 
@@ -171,6 +206,7 @@ Click the extension's icon in Chrome's toolbar. Every change applies at once; no
 - **Right-click menu**: your browser's menu (default) or Marketing Cloud's.
 - **Format on save**: off (default) or on.
 - **Readable keys**: on (default) or off.
+- **Journey names**: ask for a real name before a new journey is saved, on (default) or off.
 
 The same options are on the extension's page in `chrome://extensions` (SFMC UX Tools → Details → Extension options).
 
@@ -204,15 +240,17 @@ This works the same way in other Chromium browsers such as Edge.
 
 ## Privacy
 
-The extension runs on five places of Marketing Cloud Engagement:
+The extension runs on seven places of Marketing Cloud Engagement:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
 - Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. To tell a code resource of CloudPages from other content, the extension reads the asset type, and nothing else, from the message with which Marketing Cloud sets the editor up. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the addresses listed here.
 - Automation Studio (`https://mc.<stack>.marketingcloudapps.com/AutomationStudioFuel3/`), where it adds colours, completions, hovers, parameter help, error underlines and quick fixes and formatting to the code editor of the script activity and applies the editor theme. The editor reads your script through the colouring rules and the built-in language service reads it to do the rest, inside the page only; the large TypeScript part is added to such a page in the same way as on Content Builder. The code editor of the SQL query activity gets the editor theme and formatting only; the built-in formatter reads the query inside the page. The same files as on Content Builder are loaded there, but the code editors of all other activities are left as they are. In the dialogs that create an activity and on the page of a new automation, it reads the name you type and writes the key derived from it into the dialog's key field.
 - Contact Builder (`https://mc.<stack>.marketingcloudapps.com/contactsmeta/`), where it does the same in the dialog that creates a data extension, and nothing else.
 - Email Studio (`https://*.exacttarget.com/C12/Default.aspx`), where it also does only that, in the dialog that creates a data extension. Chrome asks you to accept the wider site access when the extension is updated.
+- Setup (`https://*.exacttarget.com/Content/Administration/SendManagement/`), where it does the same on the pages for a new sender profile, send classification, delivery profile or file location, and on the pages for a new role (`…/Roles/RoleDetails.aspx`) and a new user (`…/EmployeeDetails.aspx`).
+- Journey Builder (`https://jbinteractions.<stack>.marketingcloudapps.com`), where it reads the name of the journey and of its API event, changes the key in the request that Journey Builder sends when a new journey or API event is saved, and holds a save back while the journey has its made-up name. Before it uses a key, it asks Journey Builder's own server, the one the page is talking to anyway, whether that key is free. These are the only requests the extension ever makes, and they go nowhere else.
 
-It does not collect or transmit any data and makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
+It does not collect any data and sends nothing to anyone but Marketing Cloud itself: apart from the question to Journey Builder described above, it makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 
 ## Development
 

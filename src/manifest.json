@@ -89,9 +89,27 @@
             "matches": [
                 "https://*.marketingcloudapps.com/AutomationStudioFuel3/*",
                 "https://*.marketingcloudapps.com/contactsmeta/*",
-                "https://*.exacttarget.com/C12/Default.aspx*"
+                "https://*.exacttarget.com/C12/Default.aspx*",
+                "https://*.exacttarget.com/Content/Administration/SendManagement/*",
+                "https://*.exacttarget.com/Content/Administration/Roles/RoleDetails.aspx*",
+                "https://*.exacttarget.com/Content/Administration/EmployeeDetails.aspx*"
             ],
-            "js": ["readable-keys.js"],
+            "js": ["key-rule.js", "readable-keys.js"],
+            "all_frames": true,
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["https://*.marketingcloudapps.com/*"],
+            "include_globs": ["https://jbinteractions.*"],
+            "js": ["journey-settings.js"],
+            "all_frames": true,
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["https://*.marketingcloudapps.com/*"],
+            "include_globs": ["https://jbinteractions.*"],
+            "js": ["key-rule.js", "journey-builder.js"],
+            "world": "MAIN",
             "all_frames": true,
             "run_at": "document_start"
         }

@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
-const script = read('../src/readable-keys.js');
+// in the order of the manifest
+const script = read('../src/key-rule.js') + read('../src/readable-keys.js');
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const DIALOG =
     '<div class="modal"><input id="queryName" maxlength="64" /><input id="queryExternalKey" maxlength="36" /></div>';
@@ -15,11 +16,13 @@ const DIALOG =
  * @param {string} html fields of the page
  * @param {Object.<string, string>} [stored] saved settings
  * @param {boolean} [isBroken] true makes the read of the settings fail
+ * @param {string} [url] address of the page
  * @returns {{document: Document, type: (selector: string, text: string) => void, value: (selector: string) => string, change: (value: string) => void}} the page, a way to type into a field, to read one and to change the setting
  */
-function page(html, stored = {}, isBroken = false) {
+function page(html, stored = {}, isBroken = false, url = 'https://mc.example.com/') {
     const { window } = new JSDOM(`<!doctype html><body>${html}</body>`, {
         runScripts: 'outside-only',
+        url,
     });
     const listeners = [];
     window.chrome = {
@@ -260,6 +263,95 @@ test('a name or key pasted with the mouse is made known to a dialog that waits f
     assert.equal(filled.value(KEY), 'Pasted_name');
 });
 
+test('sender profiles, send classifications and delivery profiles get their key on their own pages only', () => {
+    const base = 'https://members.s7.exacttarget.com/Content/Administration/SendManagement/';
+    const forms = [
+        [
+            'SenderProfile.aspx',
+            '<input id="profileName" /><input id="customerKey" maxlength="36" />',
+            '#profileName',
+            '#customerKey',
+        ],
+        [
+            'SendClassification.aspx',
+            '<input id="txtName" /><input id="txtCustKey" maxlength="36" />',
+            '#txtName',
+            '#txtCustKey',
+        ],
+        [
+            'DeliveryProfile.aspx',
+            '<input id="name" /><input id="customerKey" maxlength="36" />',
+            '#name',
+            '#customerKey',
+        ],
+    ];
+    for (const [file, html, name, key] of forms) {
+        const fresh = page(html, {}, false, base + file);
+        fresh.type(name, 'Newsletter (DE)');
+        assert.equal(fresh.value(key), 'Newsletter_DE', file);
+        // the same page opened for something that exists comes with its key
+        const existing = page(
+            html.replace('maxlength', 'value="abc" maxlength'),
+            {},
+            false,
+            `${base}${file}?id=1`,
+        );
+        existing.type(name, 'Renamed');
+        assert.equal(existing.value(key), 'abc', file);
+        // the same fields on any other page
+        const elsewhere = page(html);
+        elsewhere.type(name, 'Newsletter');
+        assert.equal(elsewhere.value(key), '', file);
+    }
+});
+
+test('file locations, roles and users get their key when they are new, by what their address says', () => {
+    const base = 'https://members.s7.exacttarget.com/Content/Administration/';
+    const forms = [
+        [
+            'SendManagement/ImportLocationDetails.aspx',
+            'SendManagement/ImportLocationDetails.aspx',
+            '<input id="Name" /><input id="CustomerKey" maxlength="36" />',
+            '#Name',
+            '#CustomerKey',
+        ],
+        [
+            'Roles/RoleDetails.aspx',
+            'Roles/RoleDetails.aspx?id=f4cfb80f-3550-e611-96fe-38eaa7142c61',
+            '<input id="Name" /><input id="ExternalKey" maxlength="36" />',
+            '#Name',
+            '#ExternalKey',
+        ],
+        [
+            'EmployeeDetails.aspx?e=1&emid=',
+            'EmployeeDetails.aspx?e=1&emid=12345',
+            '<input id="FullName" /><input id="ExternalKeyTextBox" maxlength="50" />',
+            '#FullName',
+            '#ExternalKeyTextBox',
+        ],
+    ];
+    for (const [fresh, existing, html, name, key] of forms) {
+        const created = page(html, {}, false, base + fresh);
+        created.type(name, 'Jörn Berkefeld (admin)');
+        assert.equal(created.value(key), 'Jorn_Berkefeld_admin', fresh);
+        // what exists comes with its key
+        const edited = page(
+            html.replace('maxlength', 'value="abc" maxlength'),
+            {},
+            false,
+            base + existing,
+        );
+        edited.type(name, 'Renamed');
+        assert.equal(edited.value(key), 'abc', existing);
+    }
+    // a role or user that exists without a key is not given one either
+    for (const [, existing, html, name, key] of forms.slice(1)) {
+        const keyless = page(html, {}, false, base + existing);
+        keyless.type(name, 'Renamed');
+        assert.equal(keyless.value(key), '', existing);
+    }
+});
+
 test('a key typed by the user stays; an emptied key follows the name again', () => {
     const { type, value } = page(DIALOG);
     type('#queryName', 'First');
@@ -337,6 +429,9 @@ test('the options page offers the setting, on first, and the manifest runs the s
         'https://*.marketingcloudapps.com/AutomationStudioFuel3/*',
         'https://*.marketingcloudapps.com/contactsmeta/*',
         'https://*.exacttarget.com/C12/Default.aspx*',
+        'https://*.exacttarget.com/Content/Administration/SendManagement/*',
+        'https://*.exacttarget.com/Content/Administration/Roles/RoleDetails.aspx*',
+        'https://*.exacttarget.com/Content/Administration/EmployeeDetails.aspx*',
     ]);
     assert.equal(entry.world, undefined);
     assert.equal(entry.all_frames, true);

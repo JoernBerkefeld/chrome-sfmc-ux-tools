@@ -16,6 +16,10 @@
     const ON = 'on';
     // Automation Studio draws its dialogs in a modal; only there do its plain ids mean these fields
     const MODAL = '.modal';
+    // the pages of Setup that define how emails are sent
+    const SEND_MANAGEMENT = /\/SendManagement\/\w+\.aspx$/i;
+    const ROLE_PAGE = /\/Roles\/RoleDetails\.aspx$/i;
+    const USER_PAGE = /\/Administration\/EmployeeDetails\.aspx$/i;
     // the name field of a dialog and the key field that belongs to it
     const PAIRS = [
         // Automation Studio: SQL query, script, filter, import, and data extract or file transfer
@@ -47,11 +51,24 @@
             key: '.new-de-key input.fuel-input',
             isTakenOnBlur: true,
         },
+        // Setup: sender profile, send classification and delivery profile, each a page of its own
+        { name: '#profileName', key: '#customerKey', path: SEND_MANAGEMENT },
+        { name: '#txtName', key: '#txtCustKey', path: SEND_MANAGEMENT },
+        { name: '#name', key: '#customerKey', path: SEND_MANAGEMENT },
+        // Setup: file location, on a page next to those
+        { name: '#Name', key: '#CustomerKey', path: SEND_MANAGEMENT },
+        // Setup: role and user. Their pages say in the address which one they show; a new one
+        // has none
+        { name: '#Name', key: '#ExternalKey', path: ROLE_PAGE, search: /^(?!.*[?&]id=.)/i },
+        {
+            name: '#FullName',
+            key: '#ExternalKeyTextBox',
+            path: USER_PAGE,
+            search: /[?&]emid=(&|$)/i,
+        },
     ];
-    // what a key keeps besides the underscores that replace spaces
-    const NOT_KEPT = /[^\w-]/g;
-    // the marks that are left of accented letters once they are taken apart
-    const MARKS = /\p{M}/gu;
+    // the rule for a key, from key-rule.js
+    const toKey = globalThis.sfmcUxToolsToKey;
     // how text gets into a field without a key being pressed
     const MOUSE_INPUTS = new Set(['insertFromPaste', 'insertFromDrop']);
     // key fields by the last key this script wrote into them
@@ -60,26 +77,6 @@
     const seen = new WeakSet();
     const broughtAlong = new WeakSet();
     let isOn = true;
-
-    /**
-     * Derives a key from a name: spaces become underscores, accents are dropped, and of the rest
-     * only letters, digits, underscores and hyphens stay.
-     *
-     * @param {string} name what the user typed as the name
-     * @param {number} max longest key the field takes; anything below 1 means no limit
-     * @returns {string} the key; empty if nothing of the name can be part of a key
-     */
-    function toKey(name, max) {
-        const key = name
-            .normalize('NFD')
-            .replaceAll(MARKS, '')
-            .trim()
-            .replaceAll(/\s+/g, '_')
-            .replaceAll(NOT_KEPT, '')
-            .replaceAll(/_+/g, '_')
-            .replaceAll(/^_|_$/g, '');
-        return max > 0 ? key.slice(0, max).replace(/_$/, '') : key;
-    }
 
     /**
      * Tells whether something is a field that text is typed into; an automation's name is a
@@ -100,7 +97,12 @@
      */
     function keyFieldOf(name) {
         for (const pair of PAIRS) {
-            if (!name.matches(pair.name) || pair.route?.test(location.hash) === false) {
+            if (
+                !name.matches(pair.name) ||
+                pair.route?.test(location.hash) === false ||
+                pair.path?.test(location.pathname) === false ||
+                pair.search?.test(location.search) === false
+            ) {
                 continue;
             }
 

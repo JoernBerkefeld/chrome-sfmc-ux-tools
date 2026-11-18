@@ -88,9 +88,26 @@
             </label>
             <p>
                 Applies to new automations and to the dialogs that create an SQL query, script,
-                filter, import, data extract or file transfer activity in Automation Studio, and
-                to new data extensions in Contact Builder and Email Studio. Spaces become underscores, special characters are left out. A key
-                you type yourself is kept.
+                filter, import, data extract or file transfer activity in Automation Studio, and to
+                new data extensions in Contact Builder and Email Studio, to new journeys and API
+                events in Journey Builder, and to new sender profiles, send classifications,
+                delivery profiles, file locations, roles and users in Setup. Spaces become
+                underscores, special characters are left out. A key you type yourself is kept.
+            </p>
+        </fieldset>
+        <fieldset>
+            <legend>Journey names</legend>
+            <label>
+                <input type="radio" name="journeyNameCheck" value="on" />
+                On: ask for a name before a journey is saved as "New Journey" with date and time
+            </label>
+            <label>
+                <input type="radio" name="journeyNameCheck" value="off" />
+                Off
+            </label>
+            <p>
+                Journey Builder gives every new journey that name, and hands it on to the journey's
+                API event.
             </p>
         </fieldset>
         <fieldset>

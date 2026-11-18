@@ -138,6 +138,7 @@ export default [
             'src/editor-format-setting.js',
             'src/editor-typescript-loader.js',
             'src/readable-keys.js',
+            'src/journey-settings.js',
             'src/background.js',
             'src/options.js',
         ],

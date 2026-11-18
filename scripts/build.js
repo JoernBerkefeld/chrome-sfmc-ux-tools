@@ -4,7 +4,8 @@
  *   editor-language.js is replaced by a bundle of that file, the files in src/editor-language
  *   and sfmc-language-lsp, editor-format.js by a bundle of that file, Prettier and
  *   prettier-plugin-sfmc, and editor-typescript.js by a minified bundle of that file, TypeScript,
- *   the SSJS service of sfmc-language-lsp and the declarations of the SSJS globals of ssjs-data;
+ *   the SSJS service of sfmc-language-lsp and the declarations of the SSJS globals of ssjs-data,
+ *   and to which key-rule-page.js is added, a copy of key-rule.js;
  * - dist/chrome-sfmc-ux-tools-v<version>.zip is the same folder packed for the Chrome Web Store.
  * manifest.json ends up at the root of the archive; entry paths always use forward slashes.
  */
@@ -43,6 +44,10 @@ const BUNDLES = {
         },
     },
 };
+// files that ship twice, by the name of the copy. Seen in Content Builder: where one file is
+// listed for both worlds of a page, Chrome runs it in the extension's world only. The key rule is
+// needed in both there, so the page's world gets it under a name of its own
+const COPIES = { 'key-rule-page.js': 'key-rule.js' };
 // sources that only exist inside the bundle
 const BUNDLED_DIRECTORY = 'editor-language/';
 
@@ -126,6 +131,9 @@ const files = Object.fromEntries(
 );
 for (const file of Object.keys(BUNDLES)) {
     files[file] = await bundle(file);
+}
+for (const [copy, original] of Object.entries(COPIES)) {
+    files[copy] = files[original];
 }
 
 for (const [archivePath, contents] of Object.entries(files)) {

@@ -305,6 +305,63 @@ test('sender profiles, send classifications and delivery profiles get their key 
     }
 });
 
+test('a content block gets its key in the dialog that saves it, cut to what Marketing Cloud takes and told the way its widgets listen', () => {
+    const dialog =
+        '<div class="contentitem-modal-properties">' +
+        '<div class="contentitem-properties-name"><input class="contentinput-editable-input" maxlength="100" /></div>' +
+        '<div class="contentitem-properties-customerkey"><input class="contentinput-editable-input" /></div></div>';
+    const name = '.contentitem-properties-name input';
+    const key = '.contentitem-properties-customerkey input';
+    const { document, type, value } = page(
+        dialog,
+        {},
+        false,
+        'https://content-builder.s7.marketingcloudapps.com/',
+    );
+    const heard = [];
+    for (const kind of ['keyup', 'blur']) {
+        document.querySelector(key).addEventListener(kind, () => {
+            heard.push(kind);
+        });
+    }
+    type(name, 'Footer (DE) v2');
+    assert.equal(value(key), 'Footer_DE_v2');
+    assert.deepEqual(heard, ['keyup', 'blur']);
+    type(name, 'b'.repeat(50));
+    assert.equal(value(key), 'b'.repeat(36));
+    // the dialog of a block that exists comes with its key
+    const existing = page(
+        dialog.replace('<input class="contentinput-editable-input" />', '<input value="abc" />'),
+    );
+    existing.type(name, 'Renamed');
+    assert.equal(existing.value(key), 'abc');
+    // the same fields outside that dialog
+    const elsewhere = page(dialog.replace('contentitem-modal-properties', 'other'));
+    elsewhere.type(name, 'Footer');
+    assert.equal(elsewhere.value(key), '');
+});
+
+test('a triggered send gets its key on its own page, when it is new', () => {
+    const form =
+        '<input id="txtName" maxlength="64" /><input id="txtCustomerKey" maxlength="36" />';
+    const address =
+        'https://members.s7.exacttarget.com/Content/Interactions/TriggeredSendConfiguration.aspx?CategoryID=1&SMTP=1';
+    const fresh = page(form, {}, false, address);
+    fresh.type('#txtName', 'Order confirmation (DE)');
+    assert.equal(fresh.value('#txtCustomerKey'), 'Order_confirmation_DE');
+    const existing = page(
+        form.replace('maxlength="36"', 'value="abc" maxlength="36"'),
+        {},
+        false,
+        address,
+    );
+    existing.type('#txtName', 'Renamed');
+    assert.equal(existing.value('#txtCustomerKey'), 'abc');
+    const elsewhere = page(form);
+    elsewhere.type('#txtName', 'Order confirmation');
+    assert.equal(elsewhere.value('#txtCustomerKey'), '');
+});
+
 test('file locations, roles and users get their key when they are new, by what their address says', () => {
     const base = 'https://members.s7.exacttarget.com/Content/Administration/';
     const forms = [
@@ -527,6 +584,7 @@ test('the options page offers the setting, on first, and the manifest runs the s
         'https://*.marketingcloudapps.com/AutomationStudioFuel3/*',
         'https://*.marketingcloudapps.com/contactsmeta/*',
         'https://*.exacttarget.com/C12/Default.aspx*',
+        'https://*.exacttarget.com/Content/Interactions/TriggeredSendConfiguration.aspx*',
         'https://*.exacttarget.com/Content/Administration/SendManagement/*',
         'https://*.exacttarget.com/Content/Administration/Roles/RoleDetails.aspx*',
         'https://*.exacttarget.com/Content/Administration/EmployeeDetails.aspx*',

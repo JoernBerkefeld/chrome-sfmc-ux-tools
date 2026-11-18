@@ -19,6 +19,7 @@
     const MODAL = '.modal';
     // the pages of Setup that define how emails are sent
     const SEND_MANAGEMENT = /\/SendManagement\/\w+\.aspx$/i;
+    const TRIGGERED_SEND = /\/Interactions\/TriggeredSendConfiguration\.aspx$/i;
     const ROLE_PAGE = /\/Roles\/RoleDetails\.aspx$/i;
     const USER_PAGE = /\/Administration\/EmployeeDetails\.aspx$/i;
     // the name field of a dialog and the key field that belongs to it
@@ -52,6 +53,18 @@
             key: '.new-de-key input.fuel-input',
             isTakenOnBlur: true,
         },
+        // Content Builder: the dialog that saves a content block for the first time. Its fields
+        // are widgets that take a value over when a key is released or the field is left; the
+        // key field allows more than the 36 characters Marketing Cloud takes
+        {
+            name: '.contentitem-properties-name input',
+            key: '.contentitem-properties-customerkey input',
+            within: '.contentitem-modal-properties',
+            max: 36,
+            isTakenOnBlur: true,
+        },
+        // Email Studio: triggered send, on a page of its own
+        { name: '#txtName', key: '#txtCustomerKey', path: TRIGGERED_SEND },
         // Setup: sender profile, send classification and delivery profile, each a page of its own
         { name: '#profileName', key: '#customerKey', path: SEND_MANAGEMENT },
         { name: '#txtName', key: '#txtCustKey', path: SEND_MANAGEMENT },

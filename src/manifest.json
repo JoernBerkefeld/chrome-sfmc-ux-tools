@@ -90,12 +90,28 @@
                 "https://*.marketingcloudapps.com/AutomationStudioFuel3/*",
                 "https://*.marketingcloudapps.com/contactsmeta/*",
                 "https://*.exacttarget.com/C12/Default.aspx*",
+                "https://*.exacttarget.com/Content/Interactions/TriggeredSendConfiguration.aspx*",
                 "https://*.exacttarget.com/Content/Administration/SendManagement/*",
                 "https://*.exacttarget.com/Content/Administration/Roles/RoleDetails.aspx*",
                 "https://*.exacttarget.com/Content/Administration/EmployeeDetails.aspx*"
             ],
             "js": ["key-rule.js", "readable-keys.js", "user-autofill.js"],
             "css": ["user-autofill.css"],
+            "all_frames": true,
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["https://*.marketingcloudapps.com/*"],
+            "include_globs": ["https://content-builder.*"],
+            "js": ["key-rule.js", "readable-keys.js", "journey-settings.js"],
+            "all_frames": true,
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["https://*.marketingcloudapps.com/*"],
+            "include_globs": ["https://content-builder.*"],
+            "js": ["key-rule-page.js", "content-builder.js"],
+            "world": "MAIN",
             "all_frames": true,
             "run_at": "document_start"
         },

@@ -22,13 +22,14 @@ Everything below works on its own after installing; there is nothing to set up. 
 
 ### Where it works
 
-- **Content Builder**: the code view of emails, templates and content blocks.
+- **Content Builder**: the code view of emails, templates and content blocks, and new content blocks and emails for [readable keys](#readable-keys).
 - **Email Studio and CloudPages**: both open Content Builder's code view, so everything said about Content Builder applies there too.
 - **CloudPages code resources**: files of one kind, such as JavaScript, CSS, JSON, XML, RSS or text.
 - **Automation Studio, script activity**: its code editor gets everything Content Builder's editor gets, unless a section says otherwise.
 - **Automation Studio, SQL query activity**: theme and tidying up only. There are no suggestions, explanations or checks for SQL.
 - **Automation Studio**: new automations and the dialogs that create an activity, for [readable keys](#readable-keys).
 - **Contact Builder and Email Studio**: the dialogs that create a data extension, for readable keys.
+- **Email Studio**: the page that creates a triggered send, for readable keys.
 - **Journey Builder**: new journeys and their API events, for readable keys and for [a real name before saving](#journey-builder-a-real-name-before-saving).
 - **Setup**: the pages for a new sender profile, send classification, delivery profile, file location, role or user, for readable keys.
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
@@ -142,6 +143,8 @@ Where it works:
 - **Automation Studio**: a new **automation**. Its key is on the **Summary** tab and in the **Save Automation** dialog, which appears when you save an automation that has no name yet.
 - **Contact Builder**: the dialog that creates a **data extension**.
 - **Email Studio**: the dialog that creates a **data extension**.
+- **Email Studio**: the page that creates a **triggered send** (Interactions → Triggered Emails → Create).
+- **Content Builder**: a new **content block** and a new **email message**. See below.
 - **Setup**: the pages that create a **sender profile**, a **send classification**, a **delivery profile**, a **file location**, a **role** or a **user**. A user's key is made from the **username** (the login), not from the person's name, and keeps its dots and its `@`. If a password manager puts a saved login into the External Key field of a new user, the extension replaces it with the key made from the username.
 - **Journey Builder**: a new **journey** of any kind (multi-step, single send, transactional), a new **API event**, and the key a **transactional journey** asks for. See below.
 
@@ -155,6 +158,16 @@ In Journey Builder:
 - **A key that is already used gets a number.** If another journey or event already has the key, yours gets `_2`, `_3` and so on. This matters: Marketing Cloud does not refuse a second journey with the same key, it quietly turns it into a new version of the first one.
 - **Journeys and events that already exist are never touched**, and neither is a new version of a journey.
 - **Other kinds of entry events** (data extension, CloudPages, Salesforce data, …) keep the key Journey Builder gives them.
+
+In Content Builder:
+
+- **Content blocks ask for a name when you save them the first time.** That dialog has a **Customer Key** field, which the extension fills from the name while you type.
+- **Email messages have no key field.** Marketing Cloud gives a new email a random key. With the extension, the email is saved with a key made from its name instead. This covers all three kinds: HTML, template-based and text only.
+- **A key that is already used gets a number.** Marketing Cloud refuses a second piece of content with the same key. So if the key is taken, yours gets `_2`, `_3` and so on, for emails and for blocks whose key came from the name.
+- **A key you typed yourself for a block is sent as you typed it.** If it is taken, Marketing Cloud tells you.
+- **Keys of content are at most 36 characters long**, so a long name is cut.
+- **Emails and blocks that already exist are never touched.**
+- **Everything else you can create there** (templates, images, uploads, mobile and chat messages) keeps the key Marketing Cloud gives it.
 
 How the key is built:
 
@@ -267,14 +280,14 @@ This works the same way in other Chromium browsers such as Edge.
 The extension runs on seven places of Marketing Cloud Engagement:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
-- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. To tell a code resource of CloudPages from other content, the extension reads the asset type, and nothing else, from the message with which Marketing Cloud sets the editor up. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the addresses listed here.
+- Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. In the dialog that saves a new content block it reads the name you type and writes the key derived from it into the key field, and it adds such a key to the request that Content Builder sends when a new email is saved. Before it uses a key there, it asks Content Builder's own server, the one the page is talking to anyway, whether that key is free. To tell a code resource of CloudPages from other content, the extension reads the asset type, and nothing else, from the message with which Marketing Cloud sets the editor up. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the addresses listed here.
 - Automation Studio (`https://mc.<stack>.marketingcloudapps.com/AutomationStudioFuel3/`), where it adds colours, completions, hovers, parameter help, error underlines and quick fixes and formatting to the code editor of the script activity and applies the editor theme. The editor reads your script through the colouring rules and the built-in language service reads it to do the rest, inside the page only; the large TypeScript part is added to such a page in the same way as on Content Builder. The code editor of the SQL query activity gets the editor theme and formatting only; the built-in formatter reads the query inside the page. The same files as on Content Builder are loaded there, but the code editors of all other activities are left as they are. In the dialogs that create an activity and on the page of a new automation, it reads the name you type and writes the key derived from it into the dialog's key field.
 - Contact Builder (`https://mc.<stack>.marketingcloudapps.com/contactsmeta/`), where it does the same in the dialog that creates a data extension, and nothing else.
-- Email Studio (`https://*.exacttarget.com/C12/Default.aspx`), where it also does only that, in the dialog that creates a data extension. Chrome asks you to accept the wider site access when the extension is updated.
+- Email Studio (`https://*.exacttarget.com/C12/Default.aspx`), where it also does only that, in the dialog that creates a data extension, and on the page that creates a triggered send (`https://*.exacttarget.com/Content/Interactions/TriggeredSendConfiguration.aspx`). Chrome asks you to accept the wider site access when the extension is updated.
 - Setup (`https://*.exacttarget.com/Content/Administration/SendManagement/`), where it does the same on the pages for a new sender profile, send classification, delivery profile or file location, and on the pages for a new role (`…/Roles/RoleDetails.aspx`) and a new user (`…/EmployeeDetails.aspx`).
-- Journey Builder (`https://jbinteractions.<stack>.marketingcloudapps.com`), where it reads the name of the journey and of its API event, changes the key in the request that Journey Builder sends when a new journey or API event is saved, and holds a save back while the journey has its made-up name. Before it uses a key, it asks Journey Builder's own server, the one the page is talking to anyway, whether that key is free. These are the only requests the extension ever makes, and they go nowhere else.
+- Journey Builder (`https://jbinteractions.<stack>.marketingcloudapps.com`), where it reads the name of the journey and of its API event, changes the key in the request that Journey Builder sends when a new journey or API event is saved, and holds a save back while the journey has its made-up name. Before it uses a key, it asks Journey Builder's own server, the one the page is talking to anyway, whether that key is free. These questions, and the same one in Content Builder, are the only requests the extension ever makes, and they go nowhere else.
 
-It does not collect any data and sends nothing to anyone but Marketing Cloud itself: apart from the question to Journey Builder described above, it makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
+It does not collect any data and sends nothing to anyone but Marketing Cloud itself: apart from the questions to Journey Builder and Content Builder described above, it makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 
 ## Development
 

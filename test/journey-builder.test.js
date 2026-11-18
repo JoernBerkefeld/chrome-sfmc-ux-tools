@@ -620,8 +620,11 @@ test('the settings reach the page, and the manifest runs both scripts on Journey
         ['on', 'off'],
     );
     const manifest = JSON.parse(read('../src/manifest.json'));
-    const entries = manifest.content_scripts.filter((item) =>
-        item.js.some((file) => file.startsWith('journey-')),
+    // the settings script also serves Content Builder, which has an entry of its own
+    const entries = manifest.content_scripts.filter(
+        (item) =>
+            item.js.some((file) => file.startsWith('journey-')) &&
+            item.include_globs.includes('https://jbinteractions.*'),
     );
     assert.deepEqual(
         entries.map((item) => [

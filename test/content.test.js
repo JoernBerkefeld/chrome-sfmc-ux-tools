@@ -170,7 +170,10 @@ test('manifest and package agree on the version and reference existing files', (
         ...manifest.content_scripts.flatMap((entry) => [...entry.js, ...(entry.css ?? [])]),
         ...Object.values(manifest.icons),
     ];
+    // the build ships key-rule.js a second time under this name
+    const copies = { 'key-rule-page.js': 'key-rule.js' };
     for (const file of files) {
-        assert.ok(existsSync(new URL(`../src/${file}`, import.meta.url)), `${file} is missing`);
+        const source = copies[file] ?? file;
+        assert.ok(existsSync(new URL(`../src/${source}`, import.meta.url)), `${file} is missing`);
     }
 });

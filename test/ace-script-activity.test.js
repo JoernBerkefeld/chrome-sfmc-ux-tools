@@ -618,8 +618,11 @@ test('an editor whose Ace cannot be used stays as the page made it, which is rep
 test('the manifest runs the editor scripts on Automation Studio as on Content Builder, in every frame', () => {
     const manifest = JSON.parse(read('../src/manifest.json'));
     const matches = ['https://*.marketingcloudapps.com/AutomationStudioFuel3/*'];
-    const contentBuilder = manifest.content_scripts.filter((entry) =>
-        entry.include_globs?.includes('https://content-builder.*'),
+    // Content Builder's entries for the editor; readable keys have entries of their own there
+    const contentBuilder = manifest.content_scripts.filter(
+        (entry) =>
+            entry.include_globs?.includes('https://content-builder.*') &&
+            entry.js.some((file) => file.startsWith('editor-')),
     );
     const automationStudio = manifest.content_scripts.filter(
         (entry) => JSON.stringify(entry.matches) === JSON.stringify(matches),

@@ -116,6 +116,11 @@ test('every dialog that is covered gets its key', () => {
             '#customerKey',
         ],
         [
+            '<div class="modal"><input id="automationName" /><input id="automationKey" /></div>',
+            '#automationName',
+            '#automationKey',
+        ],
+        [
             '<input id="name" data-testid="new-de-name-input" /><input id="key" data-testid="new-de-key-input" />',
             '#name',
             '#key',
@@ -150,6 +155,41 @@ test('a key that the dialog brought along stays out of reach once the user empti
     type('#queryExternalKey', '');
     type('#queryName', 'My renamed query');
     assert.equal(value('#queryExternalKey'), '');
+});
+
+test('a new automation gets its key from the name; one that exists keeps its key', () => {
+    const html =
+        '<div id="nameInput" class="placard"><textarea class="placard-field" maxlength="200"></textarea></div>' +
+        '<input id="externalKeyTextInput" class="placard-field" maxlength="200" />';
+    const fresh = page(html);
+    fresh.document.defaultView.location.hash = '#Instance/newunspecified/workflow';
+    fresh.type('#nameInput textarea', 'Daily import\nof orders');
+    assert.equal(fresh.value('#externalKeyTextInput'), 'Daily_import_of_orders');
+    // once saved, the page stays open under the address of the automation
+    fresh.document.defaultView.location.hash = '#Instance/ZGFpbHk/workflow';
+    fresh.type('#nameInput textarea', 'Daily import of all orders');
+    assert.equal(fresh.value('#externalKeyTextInput'), 'Daily_import_of_orders');
+});
+
+test('a new data extension may have the key length Marketing Cloud allows, not the shorter one of its dialog', () => {
+    const html =
+        '<input data-testid="new-de-name-input" maxlength="128" /><input data-testid="new-de-key-input" maxlength="36" />';
+    const key = '[data-testid="new-de-key-input"]';
+    const { document, type, value } = page(html);
+    type('[data-testid="new-de-name-input"]', 'a'.repeat(128));
+    assert.equal(value(key), 'a'.repeat(128));
+    assert.equal(document.querySelector(key).maxLength, 200);
+    // entering the key field first widens it as well
+    const typed = page(html);
+    typed.document
+        .querySelector(key)
+        .dispatchEvent(new typed.document.defaultView.Event('focusin', { bubbles: true }));
+    assert.equal(typed.document.querySelector(key).maxLength, 200);
+    // a field that came with a key keeps its limit
+    const existing = page(html.replace('maxlength="36"', 'maxlength="36" value="abc"'));
+    existing.type('[data-testid="new-de-name-input"]', 'Renamed');
+    assert.equal(existing.document.querySelector(key).maxLength, 36);
+    assert.equal(existing.value(key), 'abc');
 });
 
 test('a key typed by the user stays; an emptied key follows the name again', () => {

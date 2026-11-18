@@ -27,6 +27,12 @@
         "page": "options.html",
         "open_in_tab": false
     },
+    "web_accessible_resources": [
+        {
+            "resources": ["icons/icon16.png"],
+            "matches": ["https://*.exacttarget.com/*"]
+        }
+    ],
     "content_scripts": [
         {
             "matches": ["https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx*"],
@@ -113,6 +119,13 @@
             "world": "MAIN",
             "all_frames": true,
             "run_at": "document_start"
+        },
+        {
+            "matches": ["https://*.exacttarget.com/cloud/*"],
+            "include_globs": ["https://mc.*"],
+            "js": ["transactional-messages.js"],
+            "css": ["transactional-messages.css"],
+            "run_at": "document_idle"
         },
         {
             "matches": ["https://*.marketingcloudapps.com/*"],

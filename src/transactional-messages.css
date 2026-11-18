@@ -1,0 +1,120 @@
+/*
+ * SFMC UX Tools — the panel "Transactional Messages" on the Marketing Cloud page.
+ * Every rule starts with a class of the panel, so that nothing of the page itself is restyled.
+ */
+.sfmc-ux-tools-transactional-panel {
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    box-shadow: 0 2px 12px rgb(0 0 0 / 30%);
+    color: #181818;
+    font:
+        13px/1.5 system-ui,
+        sans-serif;
+    max-height: 80vh;
+    max-width: 1000px;
+    overflow: auto;
+    padding: 16px;
+    width: 80vw;
+}
+.sfmc-ux-tools-transactional-panel::backdrop {
+    background: rgb(0 0 0 / 40%);
+}
+.sfmc-ux-tools-transactional-head {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+}
+.sfmc-ux-tools-transactional-head h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+}
+.sfmc-ux-tools-transactional-icon {
+    vertical-align: text-bottom;
+}
+.sfmc-ux-tools-transactional-made-by {
+    color: #5c5c5c;
+    margin: 0 12px 0 auto;
+}
+.sfmc-ux-tools-transactional-made-by .sfmc-ux-tools-transactional-icon {
+    margin-right: 6px;
+}
+.sfmc-ux-tools-transactional-close,
+.sfmc-ux-tools-transactional-back,
+.sfmc-ux-tools-transactional-tab {
+    background: none;
+    border: 0;
+    color: #0176d3;
+    cursor: pointer;
+    font: inherit;
+    padding: 4px 8px;
+}
+.sfmc-ux-tools-transactional-close {
+    color: #181818;
+    font-size: 20px;
+    line-height: 1;
+}
+.sfmc-ux-tools-transactional-tabs {
+    border-bottom: 1px solid #c9c9c9;
+    margin: 12px 0;
+}
+.sfmc-ux-tools-transactional-tab {
+    border-bottom: 2px solid transparent;
+    padding: 6px 12px;
+}
+.sfmc-ux-tools-transactional-tab[aria-selected='true'] {
+    border-bottom-color: #0176d3;
+    color: #181818;
+    font-weight: 600;
+}
+.sfmc-ux-tools-transactional-note {
+    background: #fef7e5;
+    border-left: 3px solid #dd7a01;
+    margin: 0 0 12px;
+    padding: 8px 12px;
+}
+.sfmc-ux-tools-transactional-note a {
+    color: #0176d3;
+    text-decoration: underline;
+}
+.sfmc-ux-tools-transactional-hint {
+    color: #5c5c5c;
+    margin: 12px 0;
+}
+.sfmc-ux-tools-transactional-error {
+    color: #ba0517;
+    margin: 12px 0;
+}
+.sfmc-ux-tools-transactional-list {
+    border-collapse: collapse;
+    width: 100%;
+}
+.sfmc-ux-tools-transactional-list th,
+.sfmc-ux-tools-transactional-list td {
+    border-bottom: 1px solid #e5e5e5;
+    padding: 6px 8px;
+    text-align: left;
+}
+.sfmc-ux-tools-transactional-list tbody tr[tabindex] {
+    cursor: pointer;
+}
+.sfmc-ux-tools-transactional-list tbody tr[tabindex]:hover,
+.sfmc-ux-tools-transactional-list tbody tr[tabindex]:focus {
+    background: #f3f3f3;
+}
+.sfmc-ux-tools-transactional-fields {
+    display: grid;
+    gap: 4px 16px;
+    grid-template-columns: max-content 1fr;
+    margin: 8px 0 0;
+}
+.sfmc-ux-tools-transactional-fields dt {
+    color: #5c5c5c;
+}
+.sfmc-ux-tools-transactional-fields dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    /* the text of a message keeps its line breaks */
+    white-space: pre-wrap;
+}

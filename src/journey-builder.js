@@ -38,6 +38,8 @@
             isNew: (body) => !body.id && body.version === 1,
             // asked for by key, a journey that exists is found; a key that is free is not
             free: 404,
+            // a key the user typed counts only while its field is there to be seen
+            typed: () => (document.querySelector(`.${JOURNEY_KEY} input`) ? journeyWish : null),
         },
         {
             // an API event. Events of other kinds are named after what they read from, a data
@@ -47,8 +49,20 @@
             random: RANDOM_EVENT_KEY,
             isNew: (body) => !body.id,
             free: EVENT_FREE,
+            typed: (random) => chosen.get(random),
         },
     ];
+    // the requests that read or save journeys; their answers tell the key of a journey
+    const JOURNEYS = new RegExp(`/interaction/v1/interactions(?:/(${GUID}))?/?$`, 'i');
+    // the details of a journey below its name: the row, its first entry, the icon that opens the
+    // row where there is one, and what marks the row as open
+    const DETAILS = '.slds-page-header__detail-row';
+    const DESCRIPTION = '.description-block';
+    const DETAILS_TOGGLE = '.toggle-detail-icon';
+    const DETAILS_OPEN = 'detail-visible';
+    const JOURNEY_KEY = 'sfmc-ux-tools-journey-key';
+    // where a journey is drawn that was never saved
+    const UNSAVED_ROUTE = /^#(?:simple\/|0{8}-0{4}-0{4}-0{4}-0{12}\/)/;
     const FOUND = 200;
     // the name on the page that starts a journey, where it is the one Journey Builder made up;
     // next to the name, its element holds a label for screen readers
@@ -66,6 +80,11 @@
     const EVENT_NAME = '.api-event-hub-view #activity-name-input';
     const EVENT_KEY = '.api-event-hub-view #activity-description';
     const EVENT_KEY_FIELD = 'sfmc-ux-tools-event-key';
+    // what surrounds a field of those settings, and the classes that make the surroundings of
+    // the key look like those of a text or of a field
+    const CONTROL = 'slds-form-element__control';
+    const TEXT_LOOK = ['slds-m-top_x-small'];
+    const FIELD_LOOK = ['slds-border_bottom'];
     // the key field of a transactional journey, which is the key of its send definition
     const TRANSACTIONAL_KEY = '.transactional-summary-view input.event-key';
     // where a transactional journey is drawn before it is saved for the first time
@@ -90,6 +109,12 @@
     let typedName = null;
     // the name Journey Builder gave the journey that is being created
     let madeUpName = null;
+    // keys of saved journeys by their ids, as the server told them
+    const keys = new Map();
+    // the key the user typed for the journey that is being created; null while it follows the name
+    let journeyWish = null;
+    // whether the details of the journey that is being created were opened for its key field
+    let isShownOnce = false;
 
     /**
      * Tells whether a feature is switched on; without a setting it is.
@@ -142,7 +167,7 @@
         }
         // what is created here is no longer new from now on, whatever key it gets
         unsaved.set(random, false);
-        const key = chosen.get(random)?.trim() || toKey(content.name, MAX_LENGTH);
+        const key = creation.typed(random)?.trim() || toKey(content.name, MAX_LENGTH);
         return key
             ? { creation, address: address.pathname.replace(/\/$/, ''), content, key, random }
             : null;
@@ -205,6 +230,13 @@
         const opening = opened.get(request);
         try {
             const [method, url, isWaitedFor] = opening ?? ['', '', true];
+            const address = new URL(url, location.href);
+            const journey = JOURNEYS.exec(address.pathname);
+            if (journey && address.origin === location.origin) {
+                request.addEventListener('load', () => noteKeys(request, journey[1]), {
+                    once: true,
+                });
+            }
             const found = readableKeyFor(method, url, parameters[0]);
             // a request the page waits for cannot be held back for a question to the server
             wish = isWaitedFor ? null : found;
@@ -250,6 +282,130 @@
     }
 
     /**
+     * Notes the keys of the journeys in an answer of the server, which is where the page itself
+     * learns them.
+     *
+     * @param {XMLHttpRequest} request request of the page that was answered
+     * @param {string} [asked] id of the journey the request asked for, if it named one
+     */
+    function noteKeys(request, asked) {
+        try {
+            const content = JSON.parse(request.responseText);
+            const journeys = Array.isArray(content.items) ? content.items : [content];
+            for (const journey of journeys) {
+                if (typeof journey?.key !== 'string') {
+                    continue;
+                }
+                const ids = [journey.id, journey.definitionId, journeys.length === 1 && asked];
+                for (const id of ids) {
+                    if (id) {
+                        keys.set(String(id).toLowerCase(), journey.key);
+                    }
+                }
+            }
+            offerJourneyKey();
+        } catch {
+            // not an answer that lists journeys
+        }
+    }
+
+    /**
+     * Builds the entry of a journey's details that holds its key.
+     *
+     * @param {string} shows what the entry is for: a field, or the key to show
+     * @param {string} saved key of the journey, if it was saved
+     * @returns {HTMLLIElement} the entry
+     */
+    function keyEntry(shows, saved) {
+        const entry = document.createElement('li');
+        entry.className = `slds-page-header__detail-block ${JOURNEY_KEY}`;
+        entry.dataset.shows = shows;
+        const title = document.createElement('p');
+        title.className = 'slds-text-title slds-truncate slds-m-bottom_xx-small';
+        title.textContent = 'Key';
+        const body = document.createElement('p');
+        body.className = 'slds-text-body_regular';
+        if (saved) {
+            // one click marks the whole key, ready to be copied
+            body.style.userSelect = 'all';
+            body.title = 'The key of this journey. It cannot be changed.';
+            body.textContent = saved;
+        } else {
+            const field = document.createElement('input');
+            field.type = 'text';
+            field.className = 'slds-input';
+            field.maxLength = MAX_LENGTH;
+            // room for a key of the usual length
+            field.style.minWidth = '20rem';
+            field.setAttribute('aria-label', 'Key of the journey');
+            field.title =
+                'SFMC UX Tools: the key this journey is saved with. It cannot be changed later. If another journey has this key already, a number is added.';
+            field.addEventListener('input', () => {
+                // an emptied field follows the name again
+                journeyWish = field.value === '' ? null : field.value;
+            });
+            body.append(field);
+        }
+        entry.append(title, body);
+        return entry;
+    }
+
+    /**
+     * Shows the key of a journey among its details, which Journey Builder leaves out: as a field
+     * while the journey was never saved, holding the key derived from its name until the user
+     * types another one, and as text once the journey is saved, when its key is settled.
+     */
+    function offerJourneyKey() {
+        const isNew = UNSAVED_ROUTE.test(location.hash);
+        if (!isNew) {
+            // what was typed for a journey ends with it, whether it was saved or left
+            journeyWish = null;
+            isShownOnce = false;
+        }
+        const row = document.querySelector(DETAILS);
+        const description = row?.querySelector(DESCRIPTION);
+        if (!description) {
+            return;
+        }
+        const saved = isNew ? '' : keys.get(location.hash.slice(1).split('/', 1)[0].toLowerCase());
+        const field = isNew && isOn(KEYS_ATTRIBUTE) ? 'field' : '';
+        const shows = saved ? `key:${saved}` : field;
+        let entry = row.querySelector(`.${JOURNEY_KEY}`);
+        if (entry?.dataset.shows !== shows) {
+            entry?.remove();
+            entry = shows ? keyEntry(shows, saved) : null;
+            if (entry) {
+                description.after(entry);
+            }
+        }
+        if (!entry) {
+            return;
+        }
+        const toggle = document.querySelector(DETAILS_TOGGLE);
+        if (!toggle) {
+            // a journey of the simple kinds has no way to open its details
+            row.classList.add(DETAILS_OPEN);
+        } else if (isNew && !isShownOnce) {
+            // opened once, so that the field is seen; after that the row is the user's
+            isShownOnce = true;
+            if (!row.classList.contains(DETAILS_OPEN)) {
+                toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }
+        }
+        const input = entry.querySelector('input');
+        if (input && journeyWish === null) {
+            // the name as it is being typed, or else as the journey shows it
+            const typing = document.activeElement?.matches(NAME_FIELD)
+                ? document.activeElement.value
+                : '';
+            const name = typing || document.querySelector(NAME_TEXT)?.textContent || '';
+            input.value = toKey(name, MAX_LENGTH);
+        } else if (input && input.value !== journeyWish) {
+            input.value = journeyWish;
+        }
+    }
+
+    /**
      * Asks the server whether an API event with a made-up key is one that was never saved; an
      * event that was saved under such a key keeps it, and its key stays the text it is.
      *
@@ -271,7 +427,16 @@
      */
     function offerEventKey() {
         const shown = document.querySelector(EVENT_KEY);
-        if (!shown || shown.querySelector(`.${EVENT_KEY_FIELD}`) || !isOn(KEYS_ATTRIBUTE)) {
+        const control = shown?.parentElement;
+        const hasField = Boolean(shown?.querySelector(`.${EVENT_KEY_FIELD}`));
+        if (!hasField && control?.dataset.sfmcUxTools) {
+            // the page shows a key as text again: its surroundings get their own look back
+            control.classList.remove(...FIELD_LOOK);
+            control.classList.add(...TEXT_LOOK);
+            control.querySelector(`:scope > .${EVENT_KEY_FIELD}-pencil`)?.remove();
+            delete control.dataset.sfmcUxTools;
+        }
+        if (!shown || hasField || !isOn(KEYS_ATTRIBUTE)) {
             return;
         }
         const random = shown.textContent.trim();
@@ -288,7 +453,18 @@
         }
         const field = document.createElement('input');
         field.type = 'text';
-        field.className = `slds-input ${EVENT_KEY_FIELD}`;
+        // the look of the event's name next to it: a line below the text and a pencil at its end
+        const nameControl = document.querySelector(EVENT_NAME)?.closest(`.${CONTROL}`);
+        field.className = `${nameControl?.querySelector('input')?.className ?? 'slds-input'} ${EVENT_KEY_FIELD}`;
+        const pencil = nameControl?.querySelector(':scope > svg')?.cloneNode(true);
+        if (pencil) {
+            pencil.setAttribute('aria-hidden', 'true');
+            pencil.classList.add(`${EVENT_KEY_FIELD}-pencil`);
+            control.prepend(pencil);
+        }
+        control.classList.remove(...TEXT_LOOK);
+        control.classList.add(...FIELD_LOOK);
+        control.dataset.sfmcUxTools = 'key';
         field.maxLength = MAX_LENGTH;
         field.dataset.random = random;
         field.setAttribute('aria-labelledby', 'activity-desc_label');
@@ -331,9 +507,14 @@
      */
     function noteMadeUpName() {
         const name = document.querySelector(START_NAME)?.textContent.trim();
-        if (name && name !== typedName) {
-            madeUpName = name;
+        if (!name || name === typedName || name === madeUpName) {
+            return;
         }
+
+        madeUpName = name;
+        // another journey is being started: nothing typed for the one before applies to it
+        journeyWish = null;
+        isShownOnce = false;
     }
 
     /**
@@ -341,6 +522,7 @@
      */
     function onChange() {
         noteMadeUpName();
+        offerJourneyKey();
         offerEventKey();
         fillTransactionalKey();
     }
@@ -357,6 +539,10 @@
         if (event.target.closest(START)) {
             // a name the user gives the journey on the page that starts it is not a made-up one
             typedName = event.target.value.trim();
+        }
+        if (event.target.matches(NAME_FIELD)) {
+            // the key of a new journey follows its name while the name is typed
+            offerJourneyKey();
         }
         const field = document.querySelector(`.${EVENT_KEY_FIELD}`);
         if (!field || !event.target.matches(EVENT_NAME)) {

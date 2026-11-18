@@ -111,6 +111,22 @@
             </p>
         </fieldset>
         <fieldset>
+            <legend>Saved logins on Setup's user pages</legend>
+            <label>
+                <input type="radio" name="userAutofill" value="blocked" />
+                Keep them out: your browser does not fill a saved login into a new or existing user
+            </label>
+            <label>
+                <input type="radio" name="userAutofill" value="allowed" />
+                Leave it to the browser
+            </label>
+            <p>
+                Without this, a browser's password manager takes the page for a login form and
+                fills a saved username and password into the user you are creating or editing, and
+                into its external key.
+            </p>
+        </fieldset>
+        <fieldset>
             <legend>Related tools</legend>
             <p>
                 The same language features for files in VS Code:

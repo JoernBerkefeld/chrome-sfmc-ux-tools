@@ -524,10 +524,13 @@ html .sfmc-tooltip a:hover {
  * In Ace an underline is a marker: a box behind the text, as wide as the code and as high as its
  * line, that Ace places by its inline style. The wavy line along its bottom edge is a background
  * of two rows of slanted strokes, one leaning each way and half a wave apart, in the box's text
- * colour, which is the colour of the underline: the box has no text.
+ * colour, which is the colour of the underline: the box has no text. Ace stacks the boxes of that
+ * layer: the highlight of the line the cursor is on (2) and the selection (5) would cover an
+ * underline that has no place in that order.
  */
 .sfmc-ux-tools-ace .ace_marker-layer .sfmc-diagnostic {
     position: absolute;
+    z-index: 6;
     box-sizing: border-box;
     border-radius: 0;
     color: var(--sfmc-error-underline);

@@ -142,13 +142,15 @@ Where it works:
 - **Automation Studio**: a new **automation**. Its key is on the **Summary** tab and in the **Save Automation** dialog, which appears when you save an automation that has no name yet.
 - **Contact Builder**: the dialog that creates a **data extension**.
 - **Email Studio**: the dialog that creates a **data extension**.
-- **Setup**: the pages that create a **sender profile**, a **send classification**, a **delivery profile**, a **file location**, a **role** or a **user**. A user's key is made from the name, not from the username.
+- **Setup**: the pages that create a **sender profile**, a **send classification**, a **delivery profile**, a **file location**, a **role** or a **user**. A user's key is made from the **username** (the login), not from the person's name, and keeps its dots and its `@`. If a password manager puts a saved login into the External Key field of a new user, the extension replaces it with the key made from the username.
 - **Journey Builder**: a new **journey** of any kind (multi-step, single send, transactional), a new **API event**, and the key a **transactional journey** asks for. See below.
 
 In Journey Builder:
 
 - **Journeys have no key field at all.** Journey Builder makes up a random key when you save a new journey, and the key of a journey can never be changed afterwards. With the extension, the journey is saved with a key made from its name instead.
-- **API events show their key but do not let you change it.** With the extension, the **Event Definition Key** of a new API event is a field you can type in. It starts with a key made from the event's name.
+- **You can see and change the key before you save.** The details below the journey's name (Description, Status, Version, …) get a **Key** field. It opens by itself for a new journey, shows the key made from the name, and follows the name while you type. Type your own key there if you want another one.
+- **You can read the key of a saved journey.** Once the journey is saved, the same place shows its key as text. Click it to mark the whole key, then copy it. Open the details with the small arrow next to the journey's name. This also works with readable keys switched off.
+- **API events show their key but do not let you change it.** With the extension, the **Event Definition Key** of a new API event is a field you can type in, with the same look as the **Activity Name** field next to it. It starts with a key made from the event's name.
 - **Transactional journeys ask for an Event Definition Key.** The extension fills it in from the journey's name. You can change it before you save.
 - **A key that is already used gets a number.** If another journey or event already has the key, yours gets `_2`, `_3` and so on. This matters: Marketing Cloud does not refuse a second journey with the same key, it quietly turns it into a new version of the first one.
 - **Journeys and events that already exist are never touched**, and neither is a new version of a journey.
@@ -158,7 +160,7 @@ How the key is built:
 
 - Spaces become underscores.
 - Accents are removed: `ö` becomes `o`.
-- Only the letters A to Z, digits, underscores and hyphens are kept. Everything else, including dots, is left out.
+- Only the letters A to Z, digits, underscores and hyphens are kept. Everything else, including dots, is left out. The one exception is the key of a new user, which keeps dots and `@`.
 - The key is shortened to the length the field allows.
 - A name with none of these characters, for example one in Japanese, gives no key. Marketing Cloud then uses a random one, as before.
 
@@ -189,6 +191,27 @@ In Contact Builder's dialog for a new data extension, Marketing Cloud ignores te
 - **Always on.** This fix has no switch and also works when readable keys are switched off.
 - Pasting with **Ctrl+V** was never affected.
 
+### Fixed: an automation's name is kept when you click Save
+
+In Automation Studio you name a new automation in the small field at the top left. That field has its own **Done** and **Cancel** buttons.
+
+- **Without the extension:** if you type a name and click anywhere else, for example on **Save**, Marketing Cloud throws the name away. The "Save Automation" window then tells you that the automation has no name.
+- **With the extension:** a click anywhere else keeps the name you typed, as if you had clicked **Done** first.
+- **Cancel** still drops what you typed.
+- **Always on.** This fix has no switch.
+
+### Fixed: no saved logins in a new user
+
+When you create or edit a user under **Setup → Users**, the page has a username and password fields. A browser's password manager takes that for a login form.
+
+- **Without the extension:** the browser fills one of your saved logins into the **Username**, the **External Key** and the **Temporary Password** of the user you are creating. If you do not notice, the new user is saved with someone else's details.
+- **With the extension:** the browser is told that these are not login fields, so it leaves them empty.
+- Chrome no longer offers your saved logins when you click into **Temporary Password** or **Confirm Password**. What you type there still shows as dots.
+- Password managers that are extensions (LastPass, 1Password, Bitwarden, Dashlane) are told to skip these fields too.
+- LastPass pastes a saved login into the **Username** anyway when you click into it. The extension takes it out again at once; what you typed or pasted yourself stays.
+- If a password manager writes a saved login into the **External Key** anyway, the extension puts back the key made from the username. A key you typed yourself stays.
+- You can switch this off in the options, under **Saved logins on Setup's user pages**.
+
 ### Select all scopes of an installed package
 
 When you add or edit an API integration under **Setup → Platform Tools → Apps → Installed Packages**, the dialog lists around a hundred checkboxes.
@@ -207,6 +230,7 @@ Click the extension's icon in Chrome's toolbar. Every change applies at once; no
 - **Format on save**: off (default) or on.
 - **Readable keys**: on (default) or off.
 - **Journey names**: ask for a real name before a new journey is saved, on (default) or off.
+- **Saved logins on Setup's user pages**: keep the browser's saved logins out of a new or existing user (default), or leave it to the browser.
 
 The same options are on the extension's page in `chrome://extensions` (SFMC UX Tools → Details → Extension options).
 

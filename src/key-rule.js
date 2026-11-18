@@ -18,16 +18,17 @@
      *
      * @param {string} name what the user typed as the name
      * @param {number} max longest key that is allowed; anything below 1 means no limit
+     * @param {RegExp} [notKept] what is left out, for the one key that keeps more than that
      * @returns {string} the key; empty if nothing of the name can be part of a key
      */
     // eslint-disable-next-line unicorn/no-global-object-property-assignment -- content scripts of one world share nothing but their global object
-    globalThis.sfmcUxToolsToKey = (name, max) => {
+    globalThis.sfmcUxToolsToKey = (name, max, notKept = NOT_KEPT) => {
         const key = name
             .normalize('NFD')
             .replaceAll(MARKS, '')
             .trim()
             .replaceAll(/\s+/g, '_')
-            .replaceAll(NOT_KEPT, '')
+            .replaceAll(notKept, '')
             .replaceAll(/_+/g, '_')
             .replaceAll(/^_|_$/g, '');
         return max > 0 ? key.slice(0, max).replace(/_$/, '') : key;

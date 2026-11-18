@@ -325,8 +325,8 @@ test('file locations, roles and users get their key when they are new, by what t
         [
             'EmployeeDetails.aspx?e=1&emid=',
             'EmployeeDetails.aspx?e=1&emid=12345',
-            '<input id="FullName" /><input id="ExternalKeyTextBox" maxlength="50" />',
-            '#FullName',
+            '<input id="FullName" /><input id="UserName" /><input id="ExternalKeyTextBox" maxlength="50" />',
+            '#UserName',
             '#ExternalKeyTextBox',
         ],
     ];
@@ -350,6 +350,104 @@ test('file locations, roles and users get their key when they are new, by what t
         keyless.type(name, 'Renamed');
         assert.equal(keyless.value(key), '', existing);
     }
+});
+
+test('the key of a new user follows the name the user logs in with, dots and @ included, not the full name', async () => {
+    const user = page(
+        '<input id="FullName" /><input id="UserName" /><input id="ExternalKeyTextBox" maxlength="50" />',
+        {},
+        false,
+        'https://members.s7.exacttarget.com/Content/Administration/EmployeeDetails.aspx?e=1&emid=',
+    );
+    user.type('#FullName', 'Jörn Berkefeld');
+    assert.equal(user.value('#ExternalKeyTextBox'), '');
+    user.type('#UserName', 'jane.doe+test@example.com (new)');
+    assert.equal(user.value('#ExternalKeyTextBox'), 'jane.doetest@example.com_new');
+    // a saved login that the browser's password manager put into the key field gives way
+    const filled = page(
+        '<input id="UserName" /><input id="ExternalKeyTextBox" value="someone@else" maxlength="50" />',
+        {},
+        false,
+        'https://members.s7.exacttarget.com/Content/Administration/EmployeeDetails.aspx?e=1&emid=',
+    );
+    filled.type('#UserName', 'jane.doe@example.com');
+    assert.equal(filled.value('#ExternalKeyTextBox'), 'jane.doe@example.com');
+    // so does one that is put there later, after the field was looked at, with or without
+    // telling the page
+    const key = filled.document.querySelector('#ExternalKeyTextBox');
+    filled.type('#ExternalKeyTextBox', 'saved@login');
+    assert.equal(key.value, 'jane.doe@example.com');
+    key.value = 'saved@login';
+    filled.document
+        .querySelector('#UserName')
+        .dispatchEvent(new filled.document.defaultView.Event('focusin', { bubbles: true }));
+    assert.equal(key.value, 'jane.doe@example.com');
+    key.value = 'saved@login';
+    filled.document.body.click();
+    assert.equal(key.value, 'jane.doe@example.com');
+    // a key the user typed stays, until the user empties the field
+    const byUser = (text) => {
+        key.value = text;
+        key.dispatchEvent(
+            new filled.document.defaultView.InputEvent('input', {
+                bubbles: true,
+                inputType: text ? 'insertText' : 'deleteContentBackward',
+            }),
+        );
+    };
+    byUser('my-own-key');
+    filled.type('#UserName', 'john@example.com');
+    filled.document.body.click();
+    assert.equal(key.value, 'my-own-key');
+    byUser('');
+    filled.type('#UserName', 'jim@example.com');
+    assert.equal(key.value, 'jim@example.com');
+    // with readable keys switched off, what a password manager wrote is not touched
+    const off = page(
+        '<input id="UserName" /><input id="ExternalKeyTextBox" value="someone@else" maxlength="50" />',
+        { readableKeys: 'off' },
+        false,
+        'https://members.s7.exacttarget.com/Content/Administration/EmployeeDetails.aspx?e=1&emid=',
+    );
+    await tick();
+    off.type('#UserName', 'jane.doe@example.com');
+    off.document.body.click();
+    assert.equal(off.value('#ExternalKeyTextBox'), 'someone@else');
+    // everywhere else a key keeps neither
+    const { type, value } = page(
+        '<div class="modal"><input id="queryName" /><input id="queryExternalKey" /></div>',
+    );
+    type('#queryName', 'jane.doe@example.com');
+    assert.equal(value('#queryExternalKey'), 'janedoeexamplecom');
+});
+
+test('the name typed for an automation is taken over by a click elsewhere; its own buttons do what they did', () => {
+    const { document } = page(
+        '<div id="nameInput" class="placard showing"><textarea class="placard-field"></textarea>' +
+            '<a class="placard-cancel">Cancel</a><button class="placard-accept">Done</button></div>' +
+            '<div id="other" class="placard showing"><button class="placard-accept">Done</button></div>' +
+            '<button id="save">Save</button>',
+    );
+    const clicks = [];
+    for (const button of document.querySelectorAll('.placard-accept, .placard-cancel, #save')) {
+        button.addEventListener('click', () => {
+            clicks.push(`${button.parentElement.id}:${button.textContent}`);
+        });
+    }
+    const click = (selector) => document.querySelector(selector).click();
+    // the name is taken over before Save hears of the click; other fields of that kind are left
+    click('#save');
+    assert.deepEqual(clicks, ['nameInput:Done', ':Save']);
+    // inside the field nothing is added, so that Cancel still drops the name
+    clicks.length = 0;
+    click('#nameInput .placard-cancel');
+    click('#nameInput textarea');
+    assert.deepEqual(clicks, ['nameInput:Cancel']);
+    // a name field that is not open is none of this script's business
+    clicks.length = 0;
+    document.querySelector('#nameInput').classList.remove('showing');
+    click('#save');
+    assert.deepEqual(clicks, [':Save']);
 });
 
 test('a key typed by the user stays; an emptied key follows the name again', () => {

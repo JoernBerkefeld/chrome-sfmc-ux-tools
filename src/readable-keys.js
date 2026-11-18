@@ -7,7 +7,8 @@
  * A key that the dialog brought along, as when something existing is edited, is never touched.
  *
  * Apart from that, and also with readable keys switched off, it makes these dialogs notice a name
- * or key that was pasted with the mouse.
+ * or key that was pasted with the mouse, and keeps the name typed for an automation when the
+ * user clicks elsewhere.
  */
 (() => {
     'use strict';
@@ -60,13 +61,23 @@
         // Setup: role and user. Their pages say in the address which one they show; a new one
         // has none
         { name: '#Name', key: '#ExternalKey', path: ROLE_PAGE, search: /^(?!.*[?&]id=.)/i },
+        // the key of a user follows the name the user logs in with, which may be an email
+        // address: here the dots and the @ stay
         {
-            name: '#FullName',
+            name: '#UserName',
             key: '#ExternalKeyTextBox',
             path: USER_PAGE,
             search: /[?&]emid=(&|$)/i,
+            notKept: /[^\w.@-]/g,
+            // a password manager takes this field for part of a login and fills in a saved one,
+            // at any time: on the page of a new user, only a key the user typed is the user's
+            isFilledByBrowser: true,
         },
     ];
+    // Automation Studio: the name of an automation, a field that opens in place with buttons to
+    // take the name over or to drop it
+    const NAME_IN_PLACE = '#nameInput.placard.showing';
+    const TAKE_OVER = '.placard-accept';
     // the rule for a key, from key-rule.js
     const toKey = globalThis.sfmcUxToolsToKey;
     // how text gets into a field without a key being pressed
@@ -76,7 +87,75 @@
     // key fields this script has looked at, and those of them that came with a key
     const seen = new WeakSet();
     const broughtAlong = new WeakSet();
+    // key fields that a password manager fills in and that the user typed a key into
+    const typed = new WeakSet();
     let isOn = true;
+
+    /**
+     * Tells whether the page that is open is the one a pair is meant for.
+     *
+     * @param {object} pair one of PAIRS
+     * @returns {boolean} false if the address says otherwise
+     */
+    function isHere(pair) {
+        return (
+            pair.route?.test(location.hash) !== false &&
+            pair.path?.test(location.pathname) !== false &&
+            pair.search?.test(location.search) !== false
+        );
+    }
+
+    /**
+     * Finds the pair whose key field a password manager fills in, on the page it is meant for.
+     *
+     * @returns {object | undefined} that pair, if this is its page
+     */
+    function filledPair() {
+        return PAIRS.find((pair) => pair.isFilledByBrowser && isHere(pair));
+    }
+
+    /**
+     * Writes the key that belongs to a name into the key field and tells the page.
+     *
+     * @param {HTMLInputElement | HTMLTextAreaElement} name name field
+     * @param {HTMLInputElement} key key field
+     */
+    function fill(name, key) {
+        const notKept = PAIRS.find(
+            (pair) => name.matches(pair.name) && key.matches(pair.key),
+        )?.notKept;
+        const value = toKey(name.value, key.maxLength, notKept);
+        if (value === key.value) {
+            return;
+        }
+        key.value = value;
+        written.set(key, value);
+        // for pages that follow the field instead of reading it when the dialog is confirmed
+        key.dispatchEvent(new Event('input', { bubbles: true }));
+        key.dispatchEvent(new Event('change', { bubbles: true }));
+        // Contact Builder's dialog takes the key over when a key is released in the field
+        key.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+        if (PAIRS.some((pair) => pair.isTakenOnBlur && key.matches(pair.key))) {
+            // the focus stays where it is: this only tells the widget that the key is complete
+            key.dispatchEvent(new Event('blur'));
+        }
+    }
+
+    /**
+     * Puts the key of a new user back to what follows from the username, after a password
+     * manager wrote a saved login into it. A key the user typed stays.
+     */
+    function undoFilledKey() {
+        const pair = isOn && filledPair();
+        if (!pair) {
+            return;
+        }
+        const name = document.querySelector(pair.name);
+        const key = document.querySelector(pair.key);
+        if (isTextField(name) && isTextField(key) && !typed.has(key)) {
+            fill(name, key);
+        }
+    }
 
     /**
      * Tells whether something is a field that text is typed into; an automation's name is a
@@ -97,12 +176,7 @@
      */
     function keyFieldOf(name) {
         for (const pair of PAIRS) {
-            if (
-                !name.matches(pair.name) ||
-                pair.route?.test(location.hash) === false ||
-                pair.path?.test(location.pathname) === false ||
-                pair.search?.test(location.search) === false
-            ) {
+            if (!name.matches(pair.name) || !isHere(pair)) {
                 continue;
             }
 
@@ -127,11 +201,13 @@
     function isBroughtAlong(key) {
         if (!seen.has(key)) {
             seen.add(key);
-            const max = PAIRS.find((pair) => key.matches(pair.key))?.max;
-            if (key.value !== '') {
+            const pair = PAIRS.find((candidate) => key.matches(candidate.key));
+            if (pair?.isFilledByBrowser && isHere(pair)) {
+                // whatever is there was filled in, and gives way to the key that is derived
+            } else if (key.value !== '') {
                 broughtAlong.add(key);
-            } else if (isOn && max) {
-                key.maxLength = max;
+            } else if (isOn && pair?.max) {
+                key.maxLength = pair.max;
             }
         }
         return broughtAlong.has(key);
@@ -152,6 +228,7 @@
         if (key) {
             isBroughtAlong(key);
         }
+        undoFilledKey();
     }
 
     /**
@@ -173,6 +250,25 @@
         ) {
             name.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
         }
+        const filled = filledPair();
+        if (filled && name.matches(filled.key)) {
+            // typing, pasting and deleting say how the text changed; a password manager that
+            // writes into the field does not
+            if (event.inputType) {
+                if (name.value === '') {
+                    typed.delete(name);
+                } else {
+                    typed.add(name);
+                }
+            } else {
+                if (name.value === '' || name.value === written.get(name)) {
+                    // a pasted login that was taken out again: nothing here is the user's
+                    typed.delete(name);
+                }
+                undoFilledKey();
+            }
+            return;
+        }
         if (!isOn) {
             return;
         }
@@ -180,24 +276,30 @@
         if (!key || isBroughtAlong(key) || key.disabled || key.readOnly) {
             return;
         }
-        if (key.value !== '' && key.value !== written.get(key)) {
+        if (filled && key.matches(filled.key)) {
+            if (typed.has(key)) {
+                return;
+            }
+        } else if (key.value !== '' && key.value !== written.get(key)) {
             return;
         }
-        const value = toKey(name.value, key.maxLength);
-        if (value === key.value) {
-            return;
+        fill(name, key);
+    }
+
+    /**
+     * Keeps the name typed for an automation when the user clicks anywhere else, as on Save.
+     * Automation Studio drops the name unless its "Done" button was clicked first, and then asks
+     * for a name the user has just typed. The field's own buttons do what they always did.
+     *
+     * @param {MouseEvent} event click anywhere on the page
+     */
+    function onClick(event) {
+        const open = document.querySelector(NAME_IN_PLACE);
+        if (open && event.target instanceof Node && !open.contains(event.target)) {
+            open.querySelector(TAKE_OVER)?.click();
         }
-        key.value = value;
-        written.set(key, value);
-        // for pages that follow the field instead of reading it when the dialog is confirmed
-        key.dispatchEvent(new Event('input', { bubbles: true }));
-        key.dispatchEvent(new Event('change', { bubbles: true }));
-        // Contact Builder's dialog takes the key over when a key is released in the field
-        key.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-        if (PAIRS.some((pair) => pair.isTakenOnBlur && key.matches(pair.key))) {
-            // the focus stays where it is: this only tells the widget that the key is complete
-            key.dispatchEvent(new Event('blur'));
-        }
+        // a saved login written into the key of a new user is undone before the page is saved
+        undoFilledKey();
     }
 
     /**
@@ -214,6 +316,8 @@
 
     document.addEventListener('focusin', onFocus, { capture: true });
     document.addEventListener('input', onInput, { capture: true });
+    document.addEventListener('change', undoFilledKey, { capture: true });
+    document.addEventListener('click', onClick, { capture: true });
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'sync' && Object.hasOwn(changes, SETTING)) {
             isOn = changes[SETTING].newValue === ON;

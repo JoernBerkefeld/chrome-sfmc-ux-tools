@@ -820,6 +820,8 @@ test('ace language: the underlines have styles of their own, in the colours of C
     const base = rule('.sfmc-ux-tools-ace .ace_marker-layer .sfmc-diagnostic');
     // Ace places a marker by its inline style, but leaves the positioning to the style sheet
     assert.match(base, /position: absolute;/);
+    // above the highlight of the line the cursor is on, which Ace stacks at 2, and the selection
+    assert.match(base, /z-index: 6;/);
     assert.match(base, /color: var\(--sfmc-error-underline\);/);
     assert.match(base, /background:.*currentColor.*repeat-x/);
     assert.doesNotMatch(base, /url\(/, 'nothing is loaded');

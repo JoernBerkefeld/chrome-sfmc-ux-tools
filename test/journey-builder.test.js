@@ -417,6 +417,167 @@ test('a journey with a name of its own is saved, and the check can be switched o
     assert.equal(isThrough, true);
 });
 
+const UNSAVED = '#00000000-0000-0000-0000-000000000000/1';
+const SAVED_ID = 'efeafe99-e620-4e8d-aacc-cc7eee177ae5';
+const DETAILS =
+    '<span class="toggle-detail-icon"></span><ul class="slds-page-header__detail-row">' +
+    '<li class="description-block">Description</li><li>Status</li></ul>';
+
+/**
+ * Lets the server answer a request of the page for journeys.
+ *
+ * @param {Window} window page the script runs in
+ * @param {string} url address the page asks
+ * @param {object} answer what the server says
+ */
+function answerJourneys(window, url, answer) {
+    const request = new window.XMLHttpRequest();
+    request.open('GET', url, true);
+    Object.defineProperty(request, 'responseText', { value: JSON.stringify(answer) });
+    request.send();
+    request.dispatchEvent(new window.Event('load'));
+}
+
+test('a journey that was never saved shows its key as a field that follows the name until the user types a key', async () => {
+    const { window, document, post } = page('<div id="app"></div>', UNSAVED);
+    let opened = 0;
+    document.addEventListener('click', (event) => {
+        opened += event.target.matches('.toggle-detail-icon') ? 1 : 0;
+    });
+    const draw = async () => {
+        document.querySelector('#app').innerHTML =
+            CANVAS.replace('NAME', 'Welcome series') + DETAILS;
+        await tick();
+        return document.querySelector('.sfmc-ux-tools-journey-key input');
+    };
+    let field = await draw();
+    assert.equal(field.value, 'Welcome_series');
+    assert.equal(field.maxLength, 200);
+    // right after the description, in a row that was opened for it
+    assert.ok(field.closest('li').previousElementSibling.matches('.description-block'));
+    assert.equal(opened, 1);
+    // it follows the name while the name is typed
+    const name = document.querySelector('.name-editor input');
+    name.focus();
+    name.value = 'Welcome series 2026';
+    name.dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal(field.value, 'Welcome_series_2026');
+    // a key of the user's own is kept, also when the page draws the journey again, and the row
+    // is not opened a second time: the user may have closed it
+    field.value = 'welcome-2026';
+    field.dispatchEvent(new window.Event('input', { bubbles: true }));
+    field = await draw();
+    assert.equal(field.value, 'welcome-2026');
+    assert.equal(opened, 1);
+    const journey = { name: 'Welcome series', id: null, version: 1, key: RANDOM_JOURNEY };
+    assert.equal((await post(JOURNEYS, journey)).key, 'welcome-2026');
+    // an emptied field follows the name again
+    field.value = '';
+    field.dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal((await post(JOURNEYS, journey)).key, 'Welcome_series');
+    // a key typed for a journey that is left unsaved is not carried over to the next one
+    field.value = 'left-behind';
+    field.dispatchEvent(new window.Event('input', { bubbles: true }));
+    window.location.hash = '#dashboard/view/all-journeys';
+    document.querySelector('#app').innerHTML = '<p>Journeys Dashboard</p>';
+    await tick();
+    assert.equal((await post(JOURNEYS, journey)).key, 'Welcome_series');
+    window.location.hash = UNSAVED;
+    field = await draw();
+    assert.equal(field.value, 'Welcome_series');
+    assert.equal(opened, 2);
+});
+
+test('a saved journey shows its key as text, as soon as the server has told it', async () => {
+    const { window, document } = page('<div id="app"></div>', UNSAVED);
+    document.querySelector('#app').innerHTML = CANVAS + DETAILS;
+    await tick();
+    assert.notEqual(document.querySelector('.sfmc-ux-tools-journey-key input'), null);
+    // the journey is saved: the page moves to its address and the server answers with its key
+    window.location.hash = `#${SAVED_ID}/1`;
+    answerJourneys(window, JOURNEYS, { id: SAVED_ID.toUpperCase(), key: 'Welcome_series_2' });
+    const entry = document.querySelector('.sfmc-ux-tools-journey-key');
+    assert.equal(entry.querySelector('input'), null);
+    assert.equal(entry.lastElementChild.textContent, 'Welcome_series_2');
+    assert.equal(document.querySelectorAll('.sfmc-ux-tools-journey-key').length, 1);
+    // a journey that is opened is asked for by its id; lists of journeys tell keys as well
+    const other = '11111111-2222-3333-4444-555555555555';
+    answerJourneys(window, `${JOURNEYS}${other}?extras=all`, { key: 'By_address' });
+    answerJourneys(window, `${JOURNEYS}?$page=1`, {
+        items: [{ id: 'aaaaaaaa-2222-3333-4444-555555555555', key: 'From_a_list' }],
+    });
+    window.location.hash = `#${other}/2`;
+    document.querySelector('#app').innerHTML = CANVAS + DETAILS;
+    await tick();
+    assert.equal(
+        document.querySelector('.sfmc-ux-tools-journey-key').lastElementChild.textContent,
+        'By_address',
+    );
+    window.location.hash = '#aaaaaaaa-2222-3333-4444-555555555555/1';
+    document.querySelector('#app').innerHTML = CANVAS + DETAILS;
+    await tick();
+    assert.equal(
+        document.querySelector('.sfmc-ux-tools-journey-key').lastElementChild.textContent,
+        'From_a_list',
+    );
+    // a journey whose key the server has not told shows none
+    window.location.hash = '#99999999-2222-3333-4444-555555555555/1';
+    document.querySelector('#app').innerHTML = CANVAS + DETAILS;
+    await tick();
+    assert.equal(document.querySelector('.sfmc-ux-tools-journey-key'), null);
+});
+
+test('the key of a journey is shown where the details cannot be opened, and a saved key also with readable keys switched off', async () => {
+    const simple = page('<div id="app"></div>', '#simple/transactional/email');
+    const row = DETAILS.replace('<span class="toggle-detail-icon"></span>', '');
+    simple.document.querySelector('#app').innerHTML = CANVAS.replace('NAME', 'Receipt') + row;
+    await tick();
+    assert.equal(
+        simple.document.querySelector('.sfmc-ux-tools-journey-key').lastElementChild
+            .firstElementChild.value,
+        'Receipt',
+    );
+    assert.ok(
+        simple.document
+            .querySelector('.slds-page-header__detail-row')
+            .classList.contains('detail-visible'),
+    );
+    const off = page('<div id="app"></div>', UNSAVED);
+    off.document.documentElement.setAttribute(KEYS, 'off');
+    off.document.querySelector('#app').innerHTML = CANVAS + DETAILS;
+    await tick();
+    assert.equal(off.document.querySelector('.sfmc-ux-tools-journey-key'), null);
+    off.window.location.hash = `#${SAVED_ID}/1`;
+    answerJourneys(off.window, `${JOURNEYS}${SAVED_ID}`, { id: SAVED_ID, key: 'Kept' });
+    assert.equal(
+        off.document.querySelector('.sfmc-ux-tools-journey-key').lastElementChild.textContent,
+        'Kept',
+    );
+});
+
+test('the key field of a new API event looks like the name field next to it', async () => {
+    const { document } = page('<div id="app"></div>');
+    const panel =
+        '<div class="api-event-hub-view">' +
+        '<div class="slds-form-element__control slds-border_bottom"><svg class="pencil"></svg>' +
+        '<div id="activity-name"><input id="activity-name-input" class="slds-input slds-input_bare" value="Order placed" /></div></div>' +
+        `<div class="slds-form-element__control slds-m-top_x-small"><div id="activity-description">${RANDOM_EVENT}</div></div></div>`;
+    document.querySelector('#app').innerHTML = panel;
+    await settle();
+    const field = document.querySelector('.sfmc-ux-tools-event-key');
+    const control = field.closest('.slds-form-element__control');
+    assert.ok(field.classList.contains('slds-input_bare'));
+    assert.ok(control.classList.contains('slds-border_bottom'));
+    assert.ok(!control.classList.contains('slds-m-top_x-small'));
+    assert.equal(control.querySelectorAll('svg.pencil[aria-hidden="true"]').length, 1);
+    // once the page shows a key as text there again, its surroundings are as they were
+    document.querySelector('#activity-description').textContent = 'Order_placed';
+    await tick();
+    assert.ok(!control.classList.contains('slds-border_bottom'));
+    assert.ok(control.classList.contains('slds-m-top_x-small'));
+    assert.equal(control.querySelector('svg'), null);
+});
+
 test('with readable keys switched off, requests and key fields are left alone', async () => {
     const { document, post } = page('<div id="app"></div>');
     document.documentElement.setAttribute(KEYS, 'off');

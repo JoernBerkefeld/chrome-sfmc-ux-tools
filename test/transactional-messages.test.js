@@ -413,16 +413,17 @@ test('the panel closes with its button and opens again on the first tab', async 
  * Opens the panel on the details of the SMS definition "welcome".
  *
  * @param {(path: string, method: string) => object} [answer] what the API answers to anything but the list and the first read of the details
+ * @param {object} [definition] what the first read of the details returns
  * @returns {Promise.<object>} the page, with a way to click a button of the details by its text
  */
-async function details(answer = () => ({ body: DEFINITION })) {
+async function details(answer = () => ({ body: DEFINITION }), definition = DEFINITION) {
     let reads = 0;
     const at = page(MENU, (path, method) => {
         if (path.startsWith('sms/definitions?')) {
             return { body: { definitions: [ROW('welcome')], count: 1 } };
         }
         // the first read fills the details; what comes after is the test's business
-        return method === 'GET' && reads++ === 0 ? { body: DEFINITION } : answer(path, method);
+        return method === 'GET' && reads++ === 0 ? { body: definition } : answer(path, method);
     });
     await at.open();
     rows(at)[0].click();
@@ -945,6 +946,415 @@ test('"Cancel" leaves the form without sending anything', async () => {
     assert.deepEqual(at.written, []);
     assert.equal(at.panel().querySelector('form'), null);
     assert.match(at.text(), /no transactional Push messages/);
+});
+
+/**
+ * Opens the form that changes the SMS definition "welcome".
+ *
+ * @param {object} [definition] the definition as Marketing Cloud holds it
+ * @param {(path: string, method: string, reads: number) => object} [answer] what the API answers once the form is open; reads counts the reads of the definition since then, from 1
+ * @returns {Promise.<object>} the page, with ways to fill a field, to read one, to send the form and to read what was sent
+ */
+async function editing(definition = DEFINITION, answer = () => ({ body: definition })) {
+    let reads = 0;
+    const at = await details((path, method) => {
+        // the lists the form offers are read too, and do not count
+        reads += method === 'GET' && path.endsWith('definitions/welcome') ? 1 : 0;
+        return answer(path, method, reads);
+    }, definition);
+    await at.press('Edit');
+    at.form = () => at.panel().querySelector('form');
+    at.field = (path) => at.form().elements[path];
+    at.type = (path, text) => {
+        at.field(path).value = text;
+        at.field(path).dispatchEvent(new at.window.Event('input', { bubbles: true }));
+    };
+    at.send = async () => {
+        at.form().dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
+        await tick();
+        await tick();
+        await tick();
+    };
+    at.changes = () =>
+        at.calls.filter((call) => call.method !== 'GET').map((call) => JSON.parse(call.body));
+    return at;
+}
+
+test('"Edit" opens the form filled with the message, and its key cannot be changed', async () => {
+    const at = await editing({ ...DEFINITION, description: 'old words', status: 'Inactive' });
+    assert.match(at.text(), /^Edit “name of welcome” \(key welcome\)/);
+    assert.equal(at.field('name').value, 'name of welcome');
+    assert.equal(at.field('definitionKey').value, 'welcome');
+    assert.equal(at.field('definitionKey').readOnly, true);
+    assert.equal(at.field('description').value, 'old words');
+    assert.equal(at.field('status').value, 'Inactive');
+    assert.equal(at.field('content.message').value, 'line 1\nline 2');
+    assert.equal(at.field('subscriptions.shortCode').value, '4912312345678');
+    assert.equal(at.field('subscriptions.keyword').value, 'WELCOME');
+    assert.equal(at.field('subscriptions.countryCode').value, '');
+    assert.equal(at.field('subscriptions.autoAddSubscriber').checked, false);
+    // the key does not follow the name of a message that exists
+    at.type('name', 'Another name');
+    assert.equal(at.field('definitionKey').value, 'welcome');
+    assert.equal(at.form().querySelector('button[type="submit"]').textContent, 'Save');
+});
+
+test('a form that was not changed sends nothing', async () => {
+    const at = await editing();
+    const before = at.calls.length;
+    await at.send();
+    assert.equal(at.calls.length, before);
+    assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+    // typing a value back to what it was is no change either
+    at.type('name', 'x');
+    at.type('name', 'name of welcome');
+    await at.send();
+    assert.equal(at.calls.length, before);
+});
+
+test('only the changed parts are sent, whole, as the update the page lets through', async () => {
+    const held = {
+        ...DEFINITION,
+        description: 'old words',
+        definitionId: 'id-1',
+        content: { message: 'line 1\nline 2', unknownToTheForm: 'kept' },
+        options: { urlShortenerOptions: { isLinkShorteningEnabled: true } },
+    };
+    const saved = {
+        ...held,
+        description: 'new words',
+        content: { ...held.content, message: 'new text' },
+        subscriptions: { ...held.subscriptions, autoAddSubscriber: true },
+    };
+    const at = await editing(held, (path, method, reads) => {
+        if (method !== 'GET') {
+            return { status: 200, body: { requestId: 'r-9' } };
+        }
+        // the check before the request sees the message as it was, the look after it the new one
+        return { body: reads === 1 ? held : saved };
+    });
+    at.type('description', ' new words ');
+    at.type('content.message', 'new text');
+    at.field('subscriptions.autoAddSubscriber').click();
+    await at.send();
+    assert.deepEqual(at.written, ['POST sms/definitions/welcome']);
+    const call = at.calls.find((item) => item.method !== 'GET');
+    assert.equal(call.headers['X-HTTP-Method-Override'], 'PATCH');
+    assert.equal(call.headers['Content-Type'], 'application/json');
+    assert.equal(call.credentials, 'same-origin');
+    assert.deepEqual(at.changes(), [
+        {
+            description: 'new words',
+            // what the form does not know of a part goes along, so that it is not lost
+            content: { message: 'new text', unknownToTheForm: 'kept' },
+            subscriptions: {
+                shortCode: '4912312345678',
+                keyword: 'WELCOME',
+                autoAddSubscriber: true,
+            },
+        },
+    ]);
+    // neither the key nor parts without a change
+    assert.equal(Object.hasOwn(at.changes()[0], 'definitionKey'), false);
+    assert.equal(Object.hasOwn(at.changes()[0], 'options'), false);
+    assert.equal(Object.hasOwn(at.changes()[0], 'name'), false);
+    assert.match(at.text(), /^Saved “name of welcome” \(key welcome\)\./);
+    // the details show what Marketing Cloud holds now
+    assert.match(at.text(), /new words/);
+    assert.equal(at.panel().querySelector('form'), null);
+});
+
+test('text that was taken out is sent as empty, and counts as saved when it is gone', async () => {
+    const held = { ...DEFINITION, description: 'old words' };
+    const at = await editing(held, (path, method, reads) => {
+        if (method !== 'GET') {
+            return { status: 200 };
+        }
+        return { body: reads === 1 ? held : DEFINITION };
+    });
+    at.type('description', '');
+    await at.send();
+    assert.deepEqual(at.changes(), [{ description: '' }]);
+    assert.match(at.text(), /^Saved “name of welcome”/);
+});
+
+test('a status the form does not know is kept and not sent as another', async () => {
+    const held = { ...DEFINITION, status: 'Paused' };
+    const at = await editing(held, (path, method, reads) => {
+        if (method !== 'GET') {
+            return { status: 200 };
+        }
+        return { body: reads === 1 ? held : { ...held, name: 'New name' } };
+    });
+    assert.equal(at.field('status').value, 'Paused');
+    assert.deepEqual(
+        [...at.field('status').options].map((item) => item.value),
+        ['Active', 'Inactive', 'Paused'],
+    );
+    at.type('name', 'New name');
+    await at.send();
+    assert.deepEqual(at.changes(), [{ name: 'New name' }]);
+});
+
+test('what a field cannot show as it is stored is left alone, unless that very field is changed', async () => {
+    const held = {
+        ...DEFINITION,
+        // none of these come back from their field as they are stored
+        description: ' two\nlines ',
+        content: { message: 'line 1\r\nline 2' },
+        subscriptions: {
+            shortCode: 4_912_312_345_678,
+            keyword: ' WELCOME ',
+            countryCode: null,
+            autoAddSubscriber: 'true',
+        },
+    };
+    const untouched = await editing(held);
+    const before = untouched.calls.length;
+    await untouched.send();
+    assert.equal(untouched.calls.length, before);
+    assert.match(untouched.text(), /Nothing was changed, so nothing was sent\./);
+    // a tick that is stored as text cannot be shown, so it cannot be changed here
+    assert.equal(untouched.field('subscriptions.autoAddSubscriber').disabled, true);
+    assert.equal(untouched.field('subscriptions.updateSubscriber').disabled, false);
+    // only the name is changed: nothing else goes along
+    const named = await editing(held, (path, method, reads) => {
+        if (method !== 'GET') {
+            return { status: 200 };
+        }
+        return { body: reads === 1 ? held : { ...held, name: 'New name' } };
+    });
+    named.type('name', 'New name');
+    await named.send();
+    assert.deepEqual(named.changes(), [{ name: 'New name' }]);
+    assert.match(named.text(), /^Saved “name of welcome”/);
+    // one field of a part is changed: the rest of the part goes along as it is stored
+    const part = await editing(held, (path, method, reads) => {
+        if (method !== 'GET') {
+            return { status: 200 };
+        }
+        return {
+            body:
+                reads === 1
+                    ? held
+                    : { ...held, subscriptions: { ...held.subscriptions, countryCode: 'DE' } },
+        };
+    });
+    part.type('subscriptions.countryCode', 'DE');
+    await part.send();
+    assert.deepEqual(part.changes(), [
+        {
+            subscriptions: {
+                shortCode: 4_912_312_345_678,
+                keyword: ' WELCOME ',
+                countryCode: 'DE',
+                autoAddSubscriber: 'true',
+            },
+        },
+    ]);
+    assert.match(part.text(), /^Saved “name of welcome”/);
+    // a value that is a list or an object is shown in the details only
+    const nested = await editing({ ...DEFINITION, description: { odd: true } });
+    assert.equal(nested.field('description').disabled, true);
+    assert.equal(nested.field('description').value, '');
+});
+
+test('a tick that was taken out and a number that was sent count as saved when Marketing Cloud holds them so', async () => {
+    const held = {
+        ...DEFINITION,
+        subscriptions: { ...DEFINITION.subscriptions, autoAddSubscriber: true },
+    };
+    const at = await editing(held, (path, method, reads) => {
+        if (method !== 'GET') {
+            return { status: 200 };
+        }
+        // the tick is simply gone afterwards, and the code comes back as a number
+        return {
+            body:
+                reads === 1
+                    ? held
+                    : {
+                          ...held,
+                          subscriptions: { shortCode: 4_912_300_000_000, keyword: 'WELCOME' },
+                      },
+        };
+    });
+    at.field('subscriptions.autoAddSubscriber').click();
+    at.type('subscriptions.shortCode', '4912300000000');
+    await at.send();
+    assert.equal(at.changes()[0].subscriptions.autoAddSubscriber, false);
+    assert.match(at.text(), /^Saved “name of welcome”/);
+});
+
+test('a line that an earlier try left in the form is gone when the next one starts', async () => {
+    let refusals = 1;
+    const at = await editing(DEFINITION, (path, method) => {
+        if (method === 'GET') {
+            return { body: DEFINITION };
+        }
+        return refusals-- > 0 ? { status: 400, body: { message: 'Try again' } } : { isDown: true };
+    });
+    await at.send();
+    assert.match(at.text(), /Nothing was changed/);
+    at.type('name', 'New name');
+    await at.send();
+    assert.match(at.text(), /Not saved: Try again/);
+    assert.doesNotMatch(at.text(), /Nothing was changed/);
+});
+
+test('what was changed meanwhile, or is another message by now, is not saved over', async () => {
+    const at = await editing(DEFINITION, () => ({
+        body: { ...DEFINITION, modifiedDate: '2026-02-02T02:02:00' },
+    }));
+    at.type('name', 'New name');
+    await at.send();
+    assert.deepEqual(at.written, []);
+    assert.match(at.text(), /Not saved: what Marketing Cloud holds under this key is no longer/);
+    // the form stays, with what was typed, and can be sent again
+    assert.equal(at.field('name').value, 'New name');
+    assert.equal(at.form().querySelector('button[type="submit"]').disabled, false);
+    // a check that gets no answer saves nothing either
+    const down = await editing(DEFINITION, () => ({ isDown: true }));
+    down.type('name', 'New name');
+    await down.send();
+    assert.deepEqual(down.written, []);
+    assert.match(down.text(), /Not saved: Marketing Cloud did not answer/);
+    assert.equal(down.field('name').value, 'New name');
+});
+
+test('a refused change says why and keeps what was typed', async () => {
+    const at = await editing(DEFINITION, (path, method) =>
+        method === 'GET'
+            ? { body: DEFINITION }
+            : { status: 400, body: { message: 'Keyword not found', errorcode: 30_003 } },
+    );
+    at.type('subscriptions.keyword', 'NOPE');
+    await at.send();
+    assert.deepEqual(at.written, ['POST sms/definitions/welcome']);
+    assert.match(at.text(), /Not saved: Keyword not found/);
+    assert.equal(at.field('subscriptions.keyword').value, 'NOPE');
+    assert.equal(at.form().querySelector('button[type="submit"]').disabled, false);
+});
+
+test('an answer that all went well is held against what Marketing Cloud holds afterwards', async () => {
+    // answered with success, but the message is as before
+    const at = await editing(DEFINITION, (path, method) =>
+        method === 'GET' ? { body: DEFINITION } : { status: 200 },
+    );
+    at.type('name', 'New name');
+    at.type('content.message', 'new text');
+    await at.send();
+    assert.match(
+        at.text(),
+        /^Marketing Cloud answered that “name of welcome” \(key welcome\) was saved, but these fields are not as they were sent: name, content\.message\./,
+    );
+    assert.doesNotMatch(at.text(), /^Saved/);
+    // the details below show what it holds
+    assert.ok(at.panel().querySelector('dl'));
+    // answered with success, but the message cannot be read again
+    const lost = await editing(DEFINITION, (path, method, reads) => {
+        if (method !== 'GET') {
+            return { status: 200 };
+        }
+        return reads === 1
+            ? { body: DEFINITION }
+            : { status: 500, body: { message: 'Server down' } };
+    });
+    lost.type('name', 'New name');
+    await lost.send();
+    await tick();
+    assert.match(
+        lost.text(),
+        /^Marketing Cloud answered that “name of welcome” \(key welcome\) was saved, but it could not be read again: Server down/,
+    );
+});
+
+test('a change without an answer is reported as unknown, with what Marketing Cloud holds', async () => {
+    const at = await editing(DEFINITION, (path, method) =>
+        method === 'GET' ? { body: DEFINITION } : { isDown: true },
+    );
+    at.type('name', 'New name');
+    await at.send();
+    await tick();
+    assert.deepEqual(at.written, ['POST sms/definitions/welcome']);
+    assert.match(
+        at.text(),
+        /^It is not known whether “name of welcome” \(key welcome\) was saved: Marketing Cloud did not answer/,
+    );
+    assert.ok(at.panel().querySelector('dl'));
+});
+
+test('a change is sent once, and not at all when the form is left before its check comes back', async () => {
+    const twice = await editing(DEFINITION, (path, method) =>
+        method === 'GET' ? { body: DEFINITION } : { status: 200 },
+    );
+    // the request waits to be let through
+    const pending = Promise.withResolvers();
+    const answering = twice.window.fetch;
+    twice.window.fetch = async (url, options) => {
+        const response = await answering(url, options);
+        if (options.method !== 'GET') {
+            await pending.promise;
+        }
+        return response;
+    };
+    twice.type('name', 'New name');
+    const sending = twice.form();
+    const submit = () =>
+        sending.dispatchEvent(
+            new twice.window.Event('submit', { bubbles: true, cancelable: true }),
+        );
+    submit();
+    // again before the check has come back
+    submit();
+    await tick();
+    await tick();
+    assert.deepEqual(twice.written, ['POST sms/definitions/welcome']);
+    // and again while the request itself is on its way
+    submit();
+    await tick();
+    await tick();
+    pending.resolve();
+    await tick();
+    await tick();
+    assert.deepEqual(twice.written, ['POST sms/definitions/welcome']);
+    // left before the check has come back
+    const gate = Promise.withResolvers();
+    const left = await editing();
+    const quick = left.window.fetch;
+    left.window.fetch = async (url, options) => {
+        if (url.endsWith('/definitions/welcome')) {
+            await gate.promise;
+        }
+        return quick(url, options);
+    };
+    left.type('name', 'New name');
+    left.form().dispatchEvent(new left.window.Event('submit', { bubbles: true, cancelable: true }));
+    await tab(left, 'push');
+    gate.resolve();
+    await tick();
+    await tick();
+    assert.deepEqual(left.written, []);
+    assert.match(left.text(), /no transactional Push messages/);
+});
+
+test('"Cancel" in the form of a message goes back to its details and sends nothing', async () => {
+    const at = await editing();
+    at.type('name', 'New name');
+    [...at.form().elements].find((item) => item.textContent === 'Cancel').click();
+    await tick();
+    assert.deepEqual(at.written, []);
+    assert.equal(at.panel().querySelector('form'), null);
+    assert.match(at.text(), /name of welcome/);
+    assert.ok(at.panel().querySelector('dl'));
+});
+
+test('a required field that was emptied keeps a change from being sent', async () => {
+    const at = await editing();
+    at.type('name', ' '.repeat(3));
+    await at.send();
+    assert.deepEqual(at.written, []);
+    assert.equal(at.calls.filter((call) => call.method !== 'GET').length, 0);
 });
 
 test('the entry and the panel carry the icon of the extension, which names it', async () => {

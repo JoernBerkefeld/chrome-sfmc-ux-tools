@@ -61,6 +61,9 @@
     gap: 16px;
     justify-content: space-between;
 }
+.sfmc-ux-tools-transactional-does {
+    text-align: right;
+}
 .sfmc-ux-tools-transactional-delete,
 .sfmc-ux-tools-transactional-keep {
     background: #fff;

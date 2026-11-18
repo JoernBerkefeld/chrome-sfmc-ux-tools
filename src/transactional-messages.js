@@ -3,10 +3,11 @@
  *
  * Transactional SMS, push and OTT (WhatsApp and the like) messages exist in Marketing Cloud's
  * API only; no app shows them. This adds an entry "Transactional Messages" to the Mobile Studio
- * menu, which opens a panel that lists those definitions, shows the details of one, creates one
- * from a form and deletes one on request. The lists and the details come from Marketing Cloud's
- * own server, through the page's session. A new message goes there when its form is sent, and a
- * delete only after a question that names the message.
+ * menu, which opens a panel that lists those definitions, shows the details of one, creates and
+ * changes one from a form and deletes one on request. The lists and the details come from
+ * Marketing Cloud's own server, through the page's session. A new or changed message goes there
+ * when its form is sent, and a delete only after a question that names the message. Before a
+ * change or a delete, the message is read again and left alone if it is no longer the one shown.
  */
 (() => {
     'use strict';
@@ -18,6 +19,10 @@
     const ISSUES = 'https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues';
     // where the page passes calls on to the REST API
     const API = '/cloud/fuelapi/';
+    // the page refuses a PATCH request outright (seen live: 501 "Unsupported Request"); the API
+    // takes a POST for one when this header says so
+    const PATCH = 'PATCH';
+    const OVERRIDE = 'X-HTTP-Method-Override';
     // the part of the API that holds the transactional messages
     const MESSAGES = 'messaging/v1/';
     // rows the API hands out per request unless asked otherwise
@@ -210,7 +215,7 @@
      * Asks Marketing Cloud's API through the page.
      *
      * @param {string} path address below the API
-     * @param {string} [method] GET to read, POST to create, DELETE to delete
+     * @param {string} [method] GET to read, POST to create, PATCH to change, DELETE to delete
      * @param {object} [content] what to send along
      * @returns {Promise.<object>} the answer; an error with isUnanswered when none came
      */
@@ -223,8 +228,9 @@
                 headers: {
                     Accept: 'application/json',
                     ...(content && { 'Content-Type': 'application/json' }),
+                    ...(method === PATCH && { [OVERRIDE]: PATCH }),
                 },
-                method,
+                method: method === PATCH ? 'POST' : method,
                 redirect: 'error',
             });
         } catch {
@@ -492,10 +498,7 @@
     function toDefinition(specs, inputs) {
         const definition = {};
         for (const { path, input: type } of specs) {
-            const input = inputs.get(path);
-            // the text of a message is taken as typed, anything else without the blanks around it
-            const text = type === 'textarea' ? input.value : input.value.trim();
-            const value = type === 'checkbox' ? input.checked : text;
+            const value = held({ input: type }, inputs.get(path));
             if (value === '') {
                 continue;
             }
@@ -527,6 +530,23 @@
     }
 
     /**
+     * Checks that a form has everything it must have, and points at what is missing.
+     *
+     * @param {HTMLFormElement} form the form
+     * @param {Map.<string, HTMLElement>} inputs its fields by their path
+     * @returns {boolean} true when it can be sent
+     */
+    function isComplete(form, inputs) {
+        // blanks alone are no entry: a required field that holds nothing else counts as empty
+        for (const input of inputs.values()) {
+            if (input.type === 'text') {
+                input.value = input.value.trim();
+            }
+        }
+        return form.reportValidity();
+    }
+
+    /**
      * Sends a new definition and shows what became of it.
      *
      * @param {{id: string, title: string, fields: object[]}} kind kind of message
@@ -536,17 +556,9 @@
      */
     async function create(kind, form, inputs, says) {
         const buttons = [...form.querySelectorAll('button')];
-        // one is on its way already: its buttons are switched off until it is answered
-        if (buttons.some((button) => button.disabled)) {
-            return;
-        }
-        // blanks alone are no entry: a required field that holds nothing else counts as empty
-        for (const input of inputs.values()) {
-            if (input.type === 'text') {
-                input.value = input.value.trim();
-            }
-        }
-        if (!form.reportValidity()) {
+        // one is on its way already (its buttons are switched off until it is answered), or a
+        // required field is empty
+        if (buttons.some((button) => button.disabled) || !isComplete(form, inputs)) {
             return;
         }
         const mine = ++asked;
@@ -582,13 +594,182 @@
     }
 
     /**
-     * Shows the form for a new definition.
+     * Reads a value of a definition by the path of its field.
+     *
+     * @param {object} definition the definition
+     * @param {string} path names from the definition down to the value, joined by dots
+     * @returns {unknown} the value, undefined when it is not there
+     */
+    function valueAt(definition, path) {
+        let at = definition;
+        for (const name of path.split('.')) {
+            at = at?.[name];
+        }
+        return at;
+    }
+
+    /**
+     * Reads what a field of a form holds.
+     *
+     * @param {{input?: string}} spec what the field is
+     * @param {HTMLElement} input the field
+     * @returns {string|boolean} a tick, or text; the text of a message as typed, other text without the blanks around it
+     */
+    function held(spec, input) {
+        if (spec.input === 'checkbox') {
+            return input.checked;
+        }
+        return spec.input === 'textarea' ? input.value : input.value.trim();
+    }
+
+    /**
+     * Collects what a form changes of a definition, as the API takes it: every part of the
+     * definition that has a changed field, whole. A part is sent with everything Marketing Cloud
+     * holds in it, also what the form does not know, because nobody has seen whether the API
+     * keeps what is left out of a part.
+     *
+     * @param {object[]} specs the fields of the kind of message
+     * @param {Map.<string, HTMLElement>} inputs the fields of the form by their path
+     * @param {object} loaded the definition the form was filled from
+     * @param {Map.<string, string|boolean>} filled what each field held when the form was filled
+     * @returns {{changes: object, paths: string[]}} what to send, and the fields that differ
+     */
+    function toChanges(specs, inputs, loaded, filled) {
+        const changes = {};
+        const paths = [];
+        for (const spec of specs) {
+            const value = held(spec, inputs.get(spec.path));
+            // changed is what the user changed in the form. Holding the field against the
+            // definition would also catch what a field cannot show as it is stored, such as a
+            // number, line breaks or blanks around a text, and send that back altered
+            if (value === filled.get(spec.path) || spec.path === 'definitionKey') {
+                continue;
+            }
+            paths.push(spec.path);
+            const [part, name] = spec.path.split('.', 2);
+            if (name) {
+                changes[part] ||= { ...loaded[part] };
+                changes[part][name] = value;
+            } else {
+                changes[part] = value;
+            }
+        }
+        return { changes, paths };
+    }
+
+    /**
+     * Sends the changes of a definition, unless it is no longer the one the form was filled
+     * from, and shows what became of them.
      *
      * @param {{id: string, title: string, fields: object[]}} kind kind of message
+     * @param {HTMLFormElement} form the form
+     * @param {Map.<string, HTMLElement>} inputs its fields by their path
+     * @param {HTMLElement} says where a refusal is shown
+     * @param {object} loaded the definition the form was filled from
+     * @param {Map.<string, string|boolean>} filled what each field held when the form was filled
      */
-    async function openCreate(kind) {
+    async function save(kind, form, inputs, says, loaded, filled) {
+        const buttons = [...form.querySelectorAll('button')];
+        // one is on its way already, or a required field is empty
+        if (buttons.some((button) => button.disabled) || !isComplete(form, inputs)) {
+            return;
+        }
+        const key = loaded.definitionKey;
+        const { changes, paths } = toChanges(kind.fields, inputs, loaded, filled);
+        // what an earlier try said no longer holds
+        says.hidden = true;
+        if (paths.length === 0) {
+            says.textContent = 'Nothing was changed, so nothing was sent.';
+            says.hidden = false;
+            return;
+        }
         const mine = ++asked;
-        const isFollowing = await isKeyFromName();
+        for (const button of buttons) {
+            button.disabled = true;
+        }
+        const called = `“${loaded.name}” (key ${key})`;
+        // how far it got: the check before, the request itself, the look at what came of it
+        let step = 'check';
+        try {
+            // as before a delete: the request names only the key, which another business unit
+            // may hold too, and someone else may have changed the message since it was read
+            const current = await readDefinition(kind, key);
+            if (mine !== asked) {
+                // the user went elsewhere before anything was sent: nothing is saved
+                return;
+            }
+            if (JSON.stringify(current) !== JSON.stringify(loaded)) {
+                throw new Error(
+                    'what Marketing Cloud holds under this key is no longer what this form was filled from. Was it changed meanwhile, or the business unit changed in another tab? Open the message again.',
+                );
+            }
+            step = 'send';
+            await ask(
+                `${MESSAGES}${kind.id}/definitions/${encodeURIComponent(key)}`,
+                PATCH,
+                changes,
+            );
+            if (mine !== asked) {
+                return;
+            }
+            step = 'read';
+            // an answer that all went well was never seen for a real message: what Marketing
+            // Cloud holds now is read and held against what was sent
+            const now = await readDefinition(kind, key);
+            if (mine !== asked) {
+                return;
+            }
+            const missed = paths.filter((path) => {
+                const sent = valueAt(changes, path);
+                // what is not there counts as not ticked, or as no text; a number as its digits
+                const got = valueAt(now, path) ?? (sent === false ? false : '');
+                return (typeof sent === 'boolean' ? got : String(got)) !== sent;
+            });
+            showDetails(
+                kind,
+                now,
+                missed.length === 0
+                    ? `Saved ${called}.`
+                    : `Marketing Cloud answered that ${called} was saved, but these fields are not as they were sent: ${missed.join(', ')}. See below what it holds now.`,
+            );
+        } catch (ex) {
+            if (mine !== asked) {
+                return;
+            }
+            if (step === 'read') {
+                openDetails(
+                    kind,
+                    key,
+                    `Marketing Cloud answered that ${called} was saved, but it could not be read again: ${ex.message}`,
+                );
+                return;
+            }
+            if (step === 'send' && ex.isUnanswered) {
+                openDetails(
+                    kind,
+                    key,
+                    `It is not known whether ${called} was saved: ${ex.message} See below what Marketing Cloud holds now.`,
+                );
+                return;
+            }
+            // nothing was saved; what was typed stays, to be put right
+            says.textContent = `Not saved: ${ex.message}`;
+            says.hidden = false;
+            for (const button of buttons) {
+                button.disabled = false;
+            }
+        }
+    }
+
+    /**
+     * Shows the form for a new definition, or for one that exists.
+     *
+     * @param {{id: string, title: string, fields: object[]}} kind kind of message
+     * @param {object} [loaded] the definition to change; none for a new one
+     */
+    async function openForm(kind, loaded) {
+        const mine = ++asked;
+        const isFollowing = !loaded && (await isKeyFromName());
         if (mine !== asked) {
             return;
         }
@@ -601,10 +782,38 @@
             const { row, input } = field(spec, `${NAME}-list-${number}-${index}`);
             inputs.set(spec.path, input);
             form.append(row);
+            if (!loaded) {
+                continue;
+            }
+            const value = valueAt(loaded, spec.path);
+            const isTick = spec.input === 'checkbox';
+            // what the field cannot hold is shown in the details only, and left as it is
+            const isHeld = isTick
+                ? value === undefined || typeof value === 'boolean'
+                : value === undefined || value === null || typeof value !== 'object';
+            if (!isHeld) {
+                input.disabled = true;
+                input.title = 'This value cannot be changed here.';
+            } else if (isTick) {
+                input.checked = value === true;
+            } else {
+                const text = value === undefined || value === null ? '' : String(value);
+                // a choice the form does not know is kept as it is, not turned into another
+                if (text && spec.input === 'select' && !spec.options.includes(text)) {
+                    input.append(make('option', undefined, text));
+                }
+                input.value = text;
+            }
         }
         // the key follows the name, as in the dialogs of Marketing Cloud, until one is typed
         const name = inputs.get('name');
         const key = inputs.get('definitionKey');
+        // the key of a message cannot be changed once it exists
+        key.readOnly = Boolean(loaded);
+        // what the form holds before the user touches it, to tell later what they changed
+        const filled = new Map(
+            kind.fields.map((spec) => [spec.path, held(spec, inputs.get(spec.path))]),
+        );
         let isTyped = false;
         key.addEventListener('input', () => {
             isTyped = key.value !== '';
@@ -629,18 +838,57 @@
         }
         const says = make('p', 'error');
         says.hidden = true;
-        const send = make('button', 'save', 'Create');
+        const send = make('button', 'save', loaded ? 'Save' : 'Create');
         send.type = 'submit';
         const cancel = make('button', 'keep', 'Cancel');
         cancel.type = 'button';
-        cancel.addEventListener('click', () => openList(kind));
+        cancel.addEventListener('click', () =>
+            loaded ? openDetails(kind, loaded.definitionKey) : openList(kind),
+        );
         form.append(says, send, cancel);
         form.addEventListener('submit', (event) => {
             event.preventDefault();
-            create(kind, form, inputs, says);
+            if (loaded) {
+                save(kind, form, inputs, says, loaded, filled);
+            } else {
+                create(kind, form, inputs, says);
+            }
         });
-        fill(make('h3', 'title', `New ${kind.title} message`), form);
+        fill(
+            make(
+                'h3',
+                'title',
+                loaded
+                    ? `Edit “${loaded.name}” (key ${loaded.definitionKey})`
+                    : `New ${kind.title} message`,
+            ),
+            form,
+        );
         name.focus();
+    }
+
+    /**
+     * Shows a definition with what can be done with it.
+     *
+     * @param {{id: string, title: string}} kind kind of message
+     * @param {object} definition the definition, as it was just read
+     * @param {string} [notice] what just happened, to say above the details
+     */
+    function showDetails(kind, definition, notice) {
+        const back = make('button', 'back', `← All ${kind.title} messages`);
+        back.type = 'button';
+        back.addEventListener('click', () => openList(kind));
+        const edit = make('button', 'keep', 'Edit');
+        edit.type = 'button';
+        edit.addEventListener('click', () => openForm(kind, definition));
+        const erase = make('button', 'delete', 'Delete');
+        erase.type = 'button';
+        erase.addEventListener('click', () => confirmDelete(kind, definition, erase));
+        const does = make('div', 'does');
+        does.append(edit, erase);
+        const actions = make('div', 'actions');
+        actions.append(back, does);
+        fill(...(notice ? [make('p', 'notice', notice)] : []), actions, show(definition));
     }
 
     /**
@@ -656,18 +904,9 @@
         fill(...said, make('p', 'hint', 'Loading …'));
         try {
             const definition = await readDefinition(kind, key);
-            if (mine !== asked) {
-                return;
+            if (mine === asked) {
+                showDetails(kind, definition, notice);
             }
-            const back = make('button', 'back', `← All ${kind.title} messages`);
-            back.type = 'button';
-            back.addEventListener('click', () => openList(kind));
-            const erase = make('button', 'delete', 'Delete');
-            erase.type = 'button';
-            erase.addEventListener('click', () => confirmDelete(kind, definition, erase));
-            const actions = make('div', 'actions');
-            actions.append(back, erase);
-            fill(...said, actions, show(definition));
         } catch (ex) {
             if (mine === asked) {
                 fail(ex, ...said);
@@ -746,7 +985,7 @@
             }
             const create = make('button', 'new', `New ${kind.title} message`);
             create.type = 'button';
-            create.addEventListener('click', () => openCreate(kind));
+            create.addEventListener('click', () => openForm(kind));
             fill(
                 ...said,
                 create,

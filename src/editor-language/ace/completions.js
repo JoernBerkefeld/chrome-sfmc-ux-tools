@@ -73,8 +73,17 @@ function styleAt(editor, row, column) {
  */
 export function registerAceCompletions(editor, isOurs) {
     // popup: the open popup; found: what it shows; text: the content that was worked out for;
-    // row: the line it was opened on; session: the one whose scrolling closes it
-    const state = { popup: null, found: null, text: '', row: -1, session: null, timer: undefined };
+    // row: the line it was opened on; session: the one whose scrolling closes it; spot: where the
+    // editor and its text stood when the popup was placed
+    const state = {
+        popup: null,
+        found: null,
+        text: '',
+        row: -1,
+        session: null,
+        spot: null,
+        timer: undefined,
+    };
 
     const close = () => {
         try {
@@ -82,6 +91,39 @@ export function registerAceCompletions(editor, isOurs) {
             state.popup?.close();
         } catch (ex) {
             report(ex);
+        }
+    };
+
+    /**
+     * Notes where the editor stands in the window and how far its text is scrolled.
+     *
+     * @returns {number[]} what changes when the text moves on the screen
+     */
+    const spotNow = () => {
+        const { left, top } = editor.container.getBoundingClientRect();
+        const session = editor.getSession();
+        return [left, top, session.getScrollLeft(), session.getScrollTop()];
+    };
+
+    /**
+     * Tells whether the text has moved on the screen since the popup was placed. Typing makes
+     * the editor and the page scroll things that move nothing, which must not close the popup.
+     *
+     * @returns {boolean} true if the popup is no longer where its text is
+     */
+    const isMoved = () => {
+        try {
+            const now = spotNow();
+            return !state.spot || now.some((value, index) => value !== state.spot[index]);
+        } catch (ex) {
+            report(ex);
+            return true;
+        }
+    };
+
+    const closeIfMoved = () => {
+        if (isMoved()) {
+            close();
         }
     };
 
@@ -103,8 +145,8 @@ export function registerAceCompletions(editor, isOurs) {
         state.popup = null;
         try {
             editor.keyBinding.removeKeyboardHandler(keyboard);
-            state.session?.off('changeScrollTop', close);
-            state.session?.off('changeScrollLeft', close);
+            state.session?.off('changeScrollTop', closeIfMoved);
+            state.session?.off('changeScrollLeft', closeIfMoved);
         } catch (ex) {
             report(ex);
         }
@@ -170,6 +212,7 @@ export function registerAceCompletions(editor, isOurs) {
                 top: start.pageY,
                 bottom: start.pageY + renderer.lineHeight,
             };
+            state.spot = spotNow();
             if (state.popup) {
                 state.popup.update(found.items, place);
                 return true;
@@ -181,11 +224,12 @@ export function registerAceCompletions(editor, isOurs) {
                 place,
                 onChoose: choose,
                 onClose: onClosed,
+                isMoved,
             });
             editor.keyBinding.addKeyboardHandler(keyboard);
             state.session = editor.getSession();
-            state.session.on('changeScrollTop', close);
-            state.session.on('changeScrollLeft', close);
+            state.session.on('changeScrollTop', closeIfMoved);
+            state.session.on('changeScrollLeft', closeIfMoved);
             return true;
         } catch (ex) {
             close();

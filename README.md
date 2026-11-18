@@ -13,7 +13,7 @@ Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. Wi
 - Personalisation strings such as `%%emailaddr%%` are coloured too.
 - In server-side JavaScript (`<script runat="server">`), Marketing Cloud's own objects and functions get colours of their own, for example `Platform`, `DataExtension`, `Variable`, `Write()` and the functions behind `Platform.Function.`. The JavaScript itself keeps the colours the editor already gives it.
 - Works in the code view of Content Builder. Other Marketing Cloud apps with the same editor will follow once each has been checked.
-- The code editor of Automation Studio's **script activity** is covered as well, with the same colours and both themes, also on the wizard's summary step. That editor also has [completions](#completions), hovers, parameter help, error and warning underlines with notes next to the line numbers, quick fixes (**Ctrl+.** / **Cmd+.**) and go to definition (**Ctrl+click** / **Cmd+click**), as described below for Content Builder; the read-only editor on the summary step explains and underlines but offers no fixes. A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, [format](#formatting) the script; saving with **Ctrl+S** and format on save are for Content Builder only, as that dialog saves at the end of its wizard. Its own check of the script, which marked the `<script runat="server">` tag as a JavaScript error, is switched off; **Validate Syntax** still asks Marketing Cloud.
+- The code editor of Automation Studio's **script activity** is covered as well, with the same colours and both themes, also on the wizard's summary step. That editor also has [completions](#completions), hovers, parameter help, error and warning underlines with notes next to the line numbers, quick fixes (**Ctrl+.** / **Cmd+.**) and go to definition (**Ctrl+click** / **Cmd+click**), as described below for Content Builder; the read-only editor on the summary step explains and underlines but offers no fixes. A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, [format](#formatting) the script; with format on save switched on, a click on **Next** formats it first. Saving with **Ctrl+S** is for Content Builder only, as that dialog saves at the end of its wizard. Its own check of the script, which marked the `<script runat="server">` tag as a JavaScript error, is switched off; **Validate Syntax** still asks Marketing Cloud.
 - The content itself is never changed; only the colours are.
 - A script tag is only recognised if its opening tag fits on one line.
 
@@ -47,7 +47,7 @@ Click the **{ }** button in the toolbar of the code view, or press **Shift+Alt+F
 
 - Formatting only changes the text in the editor. Nothing is saved until you save.
 - AMPscript with a syntax error is left exactly as written; the rest is formatted.
-- **Format on save** can be switched on in the extension's options. The code is then formatted first whenever you save with Marketing Cloud's **Save** or **Save and Exit** button or with the shortcut below.
+- **Format on save** can be switched on in the extension's options. The code is then formatted first whenever you save with Marketing Cloud's **Save** or **Save and Exit** button or with the shortcut below. In Automation Studio's script activity it is formatted when you click **Next**.
 
 ### Save with Ctrl+S
 

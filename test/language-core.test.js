@@ -97,6 +97,45 @@ test('core: SSJS completions by full path and by bare name', () => {
     assert.equal(completionsAt(...at(open + 'get().Wr|\n</script>')), null);
 });
 
+test('core: SSJS completions lead through the objects one at a time, in any spelling', () => {
+    const open = '<script runat="server">\nvar a = ';
+    const names = (typed) =>
+        (completionsAt(...at(`${open}${typed}|\n</script>`))?.items ?? []).map(
+            (item) => item.label,
+        );
+
+    // the start of an object: the object, not every function of it
+    const start = completionsAt(...at(open + 'plat|\n</script>'));
+    assert.deepEqual(start.items[0], { label: 'Platform', text: 'Platform', detail: 'object' });
+    assert.deepEqual(
+        names('plat').filter((name) => name.startsWith('Platform.')),
+        [],
+    );
+    // the typed spelling is replaced as a whole
+    assert.deepEqual(start.from, { line: 1, character: 8 });
+    assert.deepEqual(start.to, { line: 1, character: 12 });
+    // a name that is typed in full is not offered as itself
+    assert.ok(!names('Platform').includes('Platform'));
+
+    // after the dot: what the object has, each once
+    const members = names('platform.');
+    for (const name of ['Platform.Function', 'Platform.Response', 'Platform.Load']) {
+        assert.equal(members.filter((member) => member === name).length, 1, name);
+    }
+    assert.deepEqual(
+        members.filter((name) => name.startsWith('Platform.Function.')),
+        [],
+    );
+    assert.deepEqual(names('platform.f'), ['Platform.Function']);
+
+    // the last object: its functions
+    const functions = completionsAt(...at(open + 'platform.function.loo|\n</script>'));
+    assert.equal(functions.items[0].label, 'Platform.Function.Lookup');
+    assert.equal(functions.items[0].text, 'Platform.Function.Lookup(');
+    assert.ok(functions.items.length > 1);
+    assert.deepEqual(functions.from, { line: 1, character: 8 });
+});
+
 test('core: plain JavaScript names in a browser script', () => {
     const found = completionsAt(...at('<script>\nconst counter = 1;\nco|\n</script>'));
     assert.deepEqual(

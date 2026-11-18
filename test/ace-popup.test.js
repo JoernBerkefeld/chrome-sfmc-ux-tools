@@ -184,6 +184,32 @@ test('popup: Escape, a click elsewhere, scrolling and close() close it without a
     }
 });
 
+test('popup: scrolling that moves nothing leaves it open if its opener can tell', (t) => {
+    const { window } = new JSDOM('<!doctype html><body><input id="other"></body>');
+    t.after(() => window.close());
+    const moved = { is: false, asked: 0 };
+    const popup = openPopup({
+        ownerDocument: window.document,
+        items: ITEMS,
+        place: PLACE,
+        onChoose: () => {},
+        isMoved: () => {
+            moved.asked++;
+            return moved.is;
+        },
+    });
+    window.document.querySelector('#other').dispatchEvent(new window.Event('scroll'));
+    window.document.dispatchEvent(new window.Event('scroll'));
+    assert.equal(moved.asked, 2);
+    assert.equal(popup.isOpen(), true);
+    // its own scrolling is no question
+    popup.element.dispatchEvent(new window.Event('scroll'));
+    assert.equal(moved.asked, 2);
+    moved.is = true;
+    window.document.querySelector('#other').dispatchEvent(new window.Event('scroll'));
+    assert.equal(popup.isOpen(), false);
+});
+
 test('popup: a new list starts with its first entry active', (t) => {
     const { popup, chosen } = open(t);
     popup.key('End');

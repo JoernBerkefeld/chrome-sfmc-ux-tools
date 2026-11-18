@@ -450,6 +450,25 @@ test('ace completions: the popup goes when the dialog shows another activity, th
     assert.equal(labels(window), null);
 });
 
+test('ace completions: scrolling that leaves the text where it is does not close the popup, a moved editor does', (t) => {
+    const { window, editor, reports } = setup(t, '%%[ set @a = Loo| ]%%');
+    didPress(editor, 'Space', CTRL);
+    assert.ok(labels(window));
+    // the editor scrolls parts of itself while it is typed in
+    const inner = editor.container.querySelector('textarea');
+    inner.dispatchEvent(new window.Event('scroll'));
+    window.document.dispatchEvent(new window.Event('scroll'));
+    assert.ok(labels(window), 'nothing moved');
+    editor.onTextInput('k');
+    inner.dispatchEvent(new window.Event('scroll'));
+    assert.deepEqual(labels(window)?.slice(0, 1), ['Lookup']);
+    // the page scrolls the editor away
+    editor.container.getBoundingClientRect = () => ({ left: 0, top: -30 });
+    window.document.dispatchEvent(new window.Event('scroll'));
+    assert.equal(labels(window), null);
+    assert.deepEqual(reports, []);
+});
+
 test('ace completions: a failing language service closes the popup and is reported once', async (t) => {
     const { window, editor, reports } = setup(t, '%%[ set @a = Lo| ]%%');
     // describing a function is something only the completions do, not Ace; a failure there

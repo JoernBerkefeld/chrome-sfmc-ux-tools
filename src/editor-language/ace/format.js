@@ -14,6 +14,10 @@ const VALIDATE_BUTTON = '#scriptValidateBtn';
 // the looks of the dialog's buttons, and what tells ours apart
 const BESIDE_CLASSES = 'btn btn-default pull-right sfmc-format-beside';
 const FLOATING_CLASS = 'sfmc-format-floating';
+// the dialog, and its button that goes on to the summary ("Next") and saves there ("Finish");
+// the classes are the same in every language
+const DIALOG = '.modal';
+const ACCEPT_BUTTON = '.modal-footer button.accept';
 const COMMAND = 'sfmcUxToolsFormat';
 const marker = Symbol.for('sfmcUxTools.aceFormat');
 // the editors that were set up, each with its element and its button
@@ -68,8 +72,10 @@ function replace(editor, before, { from, to, text }) {
  * @param {object} tools what the formatting script shares
  * @param {(key: object, element: Element, read: () => string, write: (change: object, before: string) => void) => Promise.<void>} tools.formatContent formats what `read` returns and hands the part that differs to `write`
  * @param {(document: Document, onClick: () => void) => HTMLButtonElement} tools.createButton creates a "format code" button
+ * @param {(event: MouseEvent, selector: string, formatsFor: (button: Element) => (() => Promise.<void>)[], clickAgain: (button: Element) => void) => void} tools.formatBeforeClick with "format on save" switched on, holds a click on a button back until the editors it is about are formatted
+ * @param {(element: Element) => boolean} tools.isOnShow tells whether an element takes up room on the page
  */
-export function watchAceFormat({ formatContent, createButton }) {
+export function watchAceFormat({ formatContent, createButton, formatBeforeClick, isOnShow }) {
     const run = (entry) =>
         formatContent(
             entry.editor,
@@ -165,5 +171,40 @@ export function watchAceFormat({ formatContent, createButton }) {
         }
     };
 
+    /**
+     * Format on save: the dialog takes the script over when its "Next" is clicked and saves it
+     * with "Finish", which is the same button. The click waits for the editor that is on show.
+     *
+     * @param {MouseEvent} event a click on the page
+     */
+    const onClick = (event) => {
+        formatBeforeClick(
+            event,
+            ACCEPT_BUTTON,
+            (button) => {
+                const dialog = button.closest(DIALOG);
+                return entries
+                    .filter(
+                        (entry) =>
+                            canFormat(entry) &&
+                            dialog?.contains(entry.element) &&
+                            isOnShow(entry.element),
+                    )
+                    .map((entry) => () => run(entry));
+            },
+            (button) => {
+                // the dialog may have drawn its button again meanwhile
+                const current = button.isConnected
+                    ? button
+                    : [...document.querySelectorAll(ACCEPT_BUTTON)].find((other) =>
+                          isOnShow(other),
+                      );
+                current?.click();
+            },
+        );
+    };
+
+    // in the capture phase, so that the page has not acted on the click yet
+    document.addEventListener('click', onClick, { capture: true });
     watchPage(scan);
 }

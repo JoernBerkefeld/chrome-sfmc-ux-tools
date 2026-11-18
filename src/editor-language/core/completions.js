@@ -127,6 +127,8 @@ const KIND_FUNCTION = 3;
 // method, function, constructor and class: described by category and parameters
 const CALLABLE_KINDS = new Set([2, KIND_FUNCTION, 4, 7]);
 const KIND_NAMES = { 3: 'function', 6: 'variable', 14: 'keyword' };
+// how a name is described that only leads on to its members, like "Platform.Function"
+const OBJECT_DETAIL = 'object';
 // a member access on a dotted name, with what is typed of the member: "de.Rows.Ad"
 const RECEIVER_CHAIN = /((?:[\w$]+\s*\.\s*)*[\w$]+)\s*\.\s*[\w$]*$/;
 // a member access on any expression, with what is typed of the member
@@ -279,8 +281,9 @@ function ampscriptHints(text, position, line) {
 
 /**
  * SSJS suggestions at the cursor. The names of the language service carry their objects, like
- * "Platform.Function.Lookup"; they fit if they start with what was typed, objects included, or
- * if a single typed word starts the name itself, so that "Look" finds the entry above.
+ * "Platform.Function.Lookup"; they fit if they start with what was typed, objects included and
+ * in any spelling, or if a single typed word starts the name itself, so that "Look" finds the
+ * entry above. Of the names that start like the typed text, only the next object is offered.
  *
  * @param {string} text whole document
  * @param {{line: number, character: number}} position where the cursor is
@@ -298,7 +301,8 @@ function ssjsHints(text, position, line) {
     const needle = typed.toLowerCase();
     const isWord = needle !== '' && !needle.includes('.');
     const hasNew = /\bnew\s+$/.test(start);
-    const first = [];
+    // by name: what continues the typed text, one object at a time
+    const first = new Map();
     const second = [];
     const items = sfmcLanguageService.getCompletions(
         { text: ssjsOnly(text), languageId: SSJS, uri: DOCUMENT_URI },
@@ -308,7 +312,16 @@ function ssjsHints(text, position, line) {
         const insert = untilPlaceholder(item);
         const suggestion = toSuggestion(item, hasNew ? insert.replace(/^new\s+/, '') : insert);
         if (item.label.toLowerCase().startsWith(needle)) {
-            first.push(suggestion);
+            // "plat" is completed to "Platform" and "Platform." to "Platform.Function", not
+            // to every function of Platform at once; the spelling of the catalogue replaces
+            // the typed one
+            const dot = item.label.indexOf('.', needle.length);
+            if (dot === -1) {
+                first.set(item.label, suggestion);
+            } else if (!first.has(item.label.slice(0, dot))) {
+                const name = item.label.slice(0, dot);
+                first.set(name, { label: name, text: name, detail: OBJECT_DETAIL });
+            }
         } else if (
             isWord &&
             String(item.filterText ?? '')
@@ -319,7 +332,7 @@ function ssjsHints(text, position, line) {
             second.push(suggestion);
         }
     }
-    return { list: [...first, ...second], typed };
+    return { list: [...first.values(), ...second], typed };
 }
 
 /**

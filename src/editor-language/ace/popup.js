@@ -22,14 +22,15 @@ const PAGE_SIZE = 10;
  * @param {{left: number, top: number, bottom: number}} options.place where the text that is completed starts, in window coordinates: its left edge and the top and bottom of its line
  * @param {(item: object) => void} options.onChoose called with the chosen suggestion, after the popup closed
  * @param {() => void} [options.onClose] called once when the popup closes, whatever closed it
+ * @param {() => boolean} [options.isMoved] asked when something scrolls: whether the place of the popup is no longer right. Without it, any scrolling closes the popup
  * @returns {{element: HTMLElement, isOpen: () => boolean, activeIndex: () => number, update: (items: object[], place: object) => void, key: (name: string) => boolean, close: () => void}} the popup
  */
-export function openPopup({ ownerDocument, items, place, onChoose, onClose }) {
+export function openPopup({ ownerDocument, items, place, onChoose, onClose, isMoved }) {
     const view = ownerDocument.defaultView;
     const list = ownerDocument.createElement('ul');
     list.className = LIST_CLASS;
     list.setAttribute('role', 'listbox');
-    // the window coordinates stay right, because the popup closes when anything scrolls
+    // the window coordinates stay right, because the popup closes when scrolling moves its place
     list.style.position = 'fixed';
     const state = { items: [], active: 0, isOpen: true };
 
@@ -87,12 +88,13 @@ export function openPopup({ ownerDocument, items, place, onChoose, onClose }) {
     }
 
     /**
-     * Closes the popup when anything but its own list scrolls: its place is no longer right.
+     * Closes the popup when something else than its own list scrolls and its place is no longer
+     * right. An editor scrolls parts of itself while it is typed in, which moves nothing.
      *
      * @param {Event} event the scrolling
      */
     function onScrollAnywhere(event) {
-        if (event.target !== list) {
+        if (event.target !== list && (isMoved?.() ?? true)) {
             close();
         }
     }

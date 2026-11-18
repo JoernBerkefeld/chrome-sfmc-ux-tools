@@ -230,13 +230,13 @@ function saveButton(selector = SAVE_BUTTON) {
  * Whatever happens to the formatting, the save is never lost: it does not wait for a formatter
  * that takes too long, and if the page has redrawn its button meanwhile, the new one is clicked.
  *
- * @param {object[]} targets CodeMirror instances to format
- * @param {Element} button the save button that was clicked
+ * @param {(() => Promise.<void>)[]} formats each formats one editor
+ * @param {() => void} clickAgain clicks the save button that was held back
  */
-async function formatThenSave(targets, button) {
+async function formatThenSave(formats, clickAgain) {
     try {
         await Promise.race([
-            Promise.all(targets.map((cm) => formatEditor(cm))),
+            Promise.all(formats.map((formatOne) => formatOne())),
             new Promise((resolve) => setTimeout(resolve, FORMAT_TIME_LIMIT)),
         ]);
         await new Promise((resolve) => setTimeout(resolve, SETTLE_TIME));
@@ -246,12 +246,7 @@ async function formatThenSave(targets, button) {
     state.isPending = false;
     state.isSaving = true;
     try {
-        const selector = `[data-action="${button.dataset.action}"]`;
-        // "Save and Exit" sits in a menu that has closed again by now, so a hidden one will do
-        const current = button.isConnected
-            ? button
-            : (saveButton(selector) ?? document.querySelector(selector));
-        current?.click();
+        clickAgain();
     } finally {
         state.isSaving = false;
     }
@@ -259,11 +254,15 @@ async function formatThenSave(targets, button) {
 
 /**
  * Handles a click on the page: with "format on save" switched on, a click on one of Marketing
- * Cloud's save buttons is held back until the editors are formatted.
+ * Cloud's buttons that save or take the content over is held back until the editors are
+ * formatted.
  *
  * @param {MouseEvent} event the click
+ * @param {string} selector which buttons are meant
+ * @param {(button: Element) => (() => Promise.<void>)[]} formatsFor what formats the editors the button is about, one each; none lets the click through
+ * @param {(button: Element) => void} clickAgain clicks the button once the editors are formatted
  */
-function onClick(event) {
+function formatBeforeClick(event, selector, formatsFor, clickAgain) {
     try {
         if (
             state.isSaving ||
@@ -272,7 +271,7 @@ function onClick(event) {
         ) {
             return;
         }
-        const button = event.target.closest(SAVE_BUTTONS);
+        const button = event.target.closest(selector);
         if (!button) {
             return;
         }
@@ -282,20 +281,42 @@ function onClick(event) {
             event.stopImmediatePropagation();
             return;
         }
-        // only what the user sees is saved now; editors of hidden views are left alone
-        const targets = [...editors].filter(
-            (cm) => canFormat(cm) && isOnShow(cm.getWrapperElement()),
-        );
-        if (!targets.length) {
+        const formats = formatsFor(button);
+        if (!formats.length) {
             return;
         }
         event.preventDefault();
         event.stopImmediatePropagation();
         state.isPending = true;
-        formatThenSave(targets, button);
+        formatThenSave(formats, () => clickAgain(button));
     } catch (ex) {
         report(ex);
     }
+}
+
+/**
+ * Holds a click on one of Content Builder's save buttons back until its editors are formatted.
+ *
+ * @param {MouseEvent} event the click
+ */
+function onClick(event) {
+    formatBeforeClick(
+        event,
+        SAVE_BUTTONS,
+        // only what the user sees is saved now; editors of hidden views are left alone
+        () =>
+            [...editors]
+                .filter((cm) => canFormat(cm) && isOnShow(cm.getWrapperElement()))
+                .map((cm) => () => formatEditor(cm)),
+        (button) => {
+            const selector = `[data-action="${button.dataset.action}"]`;
+            // "Save and Exit" sits in a menu that has closed again by now, so a hidden one will do
+            const current = button.isConnected
+                ? button
+                : (saveButton(selector) ?? document.querySelector(selector));
+            current?.click();
+        },
+    );
 }
 
 /**
@@ -339,4 +360,4 @@ function registerFormat(cm) {
 document.addEventListener('click', onClick, { capture: true });
 watchEditors('format', [registerFormat]);
 // Automation Studio's script activity has another editor, Ace, which is formatted in the same way
-watchAceFormat({ formatContent, createButton });
+watchAceFormat({ formatContent, createButton, formatBeforeClick, isOnShow });

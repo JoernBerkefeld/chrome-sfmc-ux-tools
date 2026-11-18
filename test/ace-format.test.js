@@ -61,7 +61,10 @@ function setup(
     { route = SCRIPT_ROUTE, eol = '\n', isReadOnly = false, hasValidate = true } = {},
 ) {
     const { window } = new JSDOM(
-        '<!doctype html><body><div id="editor"></div><div id="footer"></div></body>',
+        '<!doctype html><body><div class="modal"><div id="editor"></div><div id="footer"></div>' +
+            '<div class="modal-footer"><button type="button" class="btn btn-default cancel">Cancel</button>' +
+            '<button type="button" class="btn btn-primary accept">Next</button></div></div>' +
+            '<div class="modal"><div class="modal-footer"><button type="button" id="confirmMove" class="btn btn-primary accept">Move</button></div></div></body>',
         { runScripts: 'outside-only', pretendToBeVisual: true, url: APP + route },
     );
     // a focused editor keeps a timer for its cursor, which would keep the test run alive
@@ -219,6 +222,78 @@ test('ace format: editors of other activities are left alone, and the button goe
     await formatPause();
     assert.equal(editor.getValue(), MESSY);
     assert.deepEqual(reports, []);
+});
+
+/**
+ * Switches "format on save" on, gives the page a layout to speak of and counts the clicks that
+ * reach the dialog's "Next".
+ *
+ * @param {{window: object, document: object, editor: object}} page a page from setup()
+ * @returns {{next: Element, seen: string[]}} the button, and the editor's content at each click the page got
+ */
+function withFormatOnSave({ window, document, editor }) {
+    document.documentElement.dataset.sfmcUxToolsFormatOnSave = 'on';
+    // jsdom lays nothing out; everything in these pages is on show
+    window.Element.prototype.getClientRects = () => [{}];
+    const next = document.querySelector('.modal-footer button.accept');
+    const seen = [];
+    next.addEventListener('click', () => {
+        seen.push(editor.getValue());
+    });
+    return { next, seen };
+}
+
+test('ace format on save: "Next" and "Finish" wait for the formatted script', async (t) => {
+    const page = setup(t, MESSY);
+    const { next, seen } = withFormatOnSave(page);
+    next.click();
+    // a second click while the first one waits is no second step
+    next.click();
+    assert.deepEqual(seen, [], 'held back');
+    await formatPause();
+    await formatPause();
+    assert.deepEqual(seen, [TIDY.join('\n')]);
+    // tidy content goes through after the same short wait
+    next.click();
+    await formatPause();
+    await formatPause();
+    assert.equal(seen.length, 2);
+    assert.equal(page.document.querySelector(NOTICE), null);
+    assert.deepEqual(page.reports, []);
+});
+
+test('ace format on save: clicks go straight through when there is nothing to format', async (t) => {
+    const off = setup(t, MESSY);
+    const offPage = withFormatOnSave(off);
+    delete off.document.documentElement.dataset.sfmcUxToolsFormatOnSave;
+    offPage.next.click();
+    assert.deepEqual(offPage.seen, [MESSY], 'the option is off');
+
+    // the summary step: the script's editor is the read-only one
+    const summary = setup(t, MESSY, { isReadOnly: true });
+    const summaryPage = withFormatOnSave(summary);
+    summaryPage.next.click();
+    assert.deepEqual(summaryPage.seen, [MESSY]);
+
+    const other = setup(t, MESSY, { route: OTHER_ROUTE });
+    const otherPage = withFormatOnSave(other);
+    otherPage.next.click();
+    assert.deepEqual(otherPage.seen, [MESSY], 'another activity');
+
+    // the same kind of button in a dialog without the editor, and the dialog's other buttons
+    const page = setup(t, MESSY);
+    withFormatOnSave(page);
+    const clicked = [];
+    for (const selector of ['#confirmMove', '.cancel', '#scriptValidateBtn']) {
+        const button = page.document.querySelector(selector);
+        button.addEventListener('click', () => {
+            clicked.push(selector);
+        });
+        button.click();
+    }
+    assert.deepEqual(clicked, ['#confirmMove', '.cancel', '#scriptValidateBtn']);
+    await formatPause();
+    assert.equal(page.editor.getValue(), MESSY);
 });
 
 test('ace format: the button next to "Validate Syntax" has a style of its own', () => {

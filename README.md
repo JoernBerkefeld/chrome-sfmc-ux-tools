@@ -13,7 +13,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Tidy code with one click:** the **{ }** button or **Shift+Alt+F**, and **Ctrl+S** saves.
 - **Readable keys instead of random ones:** new automations, activities, data extensions, journeys, API events, sender profiles, send classifications, file locations, roles and users get a key made from their name, such as `Welcome_series`.
 - **No more "New Journey - 18 November…":** Journey Builder asks you for a real name before a new journey is saved.
-- **Transactional SMS, push and OTT messages you can see:** Marketing Cloud has no screen for them; a new entry in the Mobile Studio menu lists them.
+- **Transactional SMS, push and OTT messages you can see:** Marketing Cloud has no screen for them; a new entry in the Mobile Studio menu lists them and lets you delete one.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
 
@@ -236,7 +236,10 @@ Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers Wh
 - **A new entry in the menu:** point at **Mobile Studio** at the top of Marketing Cloud. Below MobileConnect, MobilePush and GroupConnect you find **Transactional Messages**. The small icon behind it is this extension's, to show who added the entry.
 - **A list per channel:** the panel that opens has the tabs **SMS**, **Push** and **OTT**. Each lists the messages of the business unit you are in, with name, key, status and the dates they were created and last changed.
 - **The details of one message:** click a row to see everything Marketing Cloud stores for it, such as the text, the code and keyword, or the app. **← All … messages** takes you back.
-- **It only reads.** Nothing is created, changed or deleted. Creating, editing and deleting are planned.
+- **Delete a message:** the details have a **Delete** button. The panel then asks once more, with the name, key and status of the message, and only **Delete it** deletes. Marketing Cloud cannot bring a deleted message back, and whatever still sends with its key will fail.
+- **A safeguard against the wrong business unit:** right before deleting, the panel reads the message again. If it is no longer the one on screen, for example because you changed the business unit in another browser tab, nothing is deleted.
+- **Nothing else is changed.** Creating and editing are planned.
+- **Deleting is untested on a real message:** our test account has no transactional SMS, push or OTT message to delete. The request itself is the one Marketing Cloud's API documents and [mcdev](https://github.com/Accenture/sfmc-devtools) uses. If it does not work for you, please tell us in the [issues on GitHub](https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues).
 - **Always marked as ours:** the panel shows the icon and **SFMC UX Tools** at its top, so nobody takes it for a part of Marketing Cloud.
 - **OTT is untested:** it was built from Salesforce's documentation, because we have no account with WhatsApp or a similar channel. If you have one, please tell us whether it works, in the [issues on GitHub](https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues). The tab says so too.
 
@@ -301,9 +304,9 @@ The extension runs on eight places of Marketing Cloud Engagement:
 - Email Studio (`https://*.exacttarget.com/C12/Default.aspx`), where it also does only that, in the dialog that creates a data extension, and on the page that creates a triggered send (`https://*.exacttarget.com/Content/Interactions/TriggeredSendConfiguration.aspx`). Chrome asks you to accept the wider site access when the extension is updated.
 - Setup (`https://*.exacttarget.com/Content/Administration/SendManagement/`), where it does the same on the pages for a new sender profile, send classification, delivery profile or file location, and on the pages for a new role (`…/Roles/RoleDetails.aspx`) and a new user (`…/EmployeeDetails.aspx`).
 - Journey Builder (`https://jbinteractions.<stack>.marketingcloudapps.com`), where it reads the name of the journey and of its API event, changes the key in the request that Journey Builder sends when a new journey or API event is saved, and holds a save back while the journey has its made-up name. Before it uses a key, it asks Journey Builder's own server, the one the page is talking to anyway, whether that key is free.
-- the Marketing Cloud page around the apps (`https://mc.<stack>.exacttarget.com/cloud/`), where it adds the entry **Transactional Messages** to the Mobile Studio menu. When you open that panel, it asks Marketing Cloud's own server, through the page you are logged in to, for the list of transactional SMS, push and OTT messages, and for the details of the one you click. It shows them to you and keeps nothing. The page loads one file of the extension, its icon.
+- the Marketing Cloud page around the apps (`https://mc.<stack>.exacttarget.com/cloud/`), where it adds the entry **Transactional Messages** to the Mobile Studio menu. When you open that panel, it asks Marketing Cloud's own server, through the page you are logged in to, for the list of transactional SMS, push and OTT messages, and for the details of the one you click. It shows them to you and keeps nothing. When you delete a message there and confirm it, it sends that one delete request to the same server. The page loads one file of the extension, its icon.
 
-The questions about a free key in Journey Builder and Content Builder, and the lists and details of transactional messages, are the only requests the extension ever makes. They go to Marketing Cloud's own servers and nowhere else.
+The questions about a free key in Journey Builder and Content Builder, the lists and details of transactional messages, and the delete of a transactional message that you confirmed, are the only requests the extension ever makes. They go to Marketing Cloud's own servers and nowhere else.
 
 It does not collect any data and sends nothing to anyone but Marketing Cloud itself: apart from the requests described above, it makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 

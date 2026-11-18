@@ -3,9 +3,10 @@
  *
  * Transactional SMS, push and OTT (WhatsApp and the like) messages exist in Marketing Cloud's
  * API only; no app shows them. This adds an entry "Transactional Messages" to the Mobile Studio
- * menu, which opens a panel that lists those definitions and shows the details of one. It only
- * reads: the lists and the details come from Marketing Cloud's own server, through the page's
- * session.
+ * menu, which opens a panel that lists those definitions, shows the details of one and deletes
+ * one on request. The lists and the details come from Marketing Cloud's own server, through the
+ * page's session, and so does the delete, which is only sent after a question that names the
+ * message.
  */
 (() => {
     'use strict';
@@ -19,6 +20,8 @@
     const API = '/cloud/fuelapi/messaging/v1/';
     // rows the API hands out per request unless asked otherwise
     const PAGE_SIZE = 50;
+    // Marketing Cloud keeps a deleted definition in its lists, with the status "Deleted"
+    const NOT_DELETED = '$filter=status%20neq%20deleted';
     const MARK = 'data-sfmc-ux-tools-transactional';
     const NAME = 'sfmc-ux-tools-transactional';
     // the apps of Mobile Studio that the menu is recognised by
@@ -90,14 +93,24 @@
      * Asks Marketing Cloud's API through the page.
      *
      * @param {string} path address below the API of transactional messages
-     * @returns {Promise.<object>} the answer
+     * @param {string} [method] GET to read, DELETE to delete
+     * @returns {Promise.<object>} the answer; an error with isUnanswered when none came
      */
-    async function ask(path) {
-        const response = await fetch(API + path, {
-            credentials: 'same-origin',
-            headers: { Accept: 'application/json' },
-            redirect: 'error',
-        });
+    async function ask(path, method = 'GET') {
+        let response;
+        try {
+            response = await fetch(API + path, {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+                method,
+                redirect: 'error',
+            });
+        } catch {
+            const error = new Error('Marketing Cloud did not answer. Are you still logged in?');
+            // after a request that changes something, nobody knows whether it was carried out
+            error.isUnanswered = true;
+            throw error;
+        }
         let answer;
         try {
             answer = await response.json();
@@ -105,10 +118,12 @@
             // an answer that is no JSON is told by its status
         }
         const isObject = typeof answer === 'object' && answer !== null;
-        if (!isObject || !response.ok) {
+        // what was read must be there; what was changed is told by the status alone
+        const isUnreadable = method === 'GET' && !isObject;
+        if (isUnreadable || !response.ok) {
             throw new Error(answer?.message || `Marketing Cloud answered with ${response.status}.`);
         }
-        return answer;
+        return isObject ? answer : {};
     }
 
     /**
@@ -122,7 +137,9 @@
         const rows = [];
         let before;
         for (let page = 1; isWanted(); page++) {
-            const answer = await ask(`${kind}/definitions?$page=${page}&$pageSize=${PAGE_SIZE}`);
+            const answer = await ask(
+                `${kind}/definitions?$page=${page}&$pageSize=${PAGE_SIZE}&${NOT_DELETED}`,
+            );
             const found = Array.isArray(answer.definitions) ? answer.definitions : [];
             const first = JSON.stringify(found[0]);
             // the same rows again: the page asked for was ignored, and would be for ever
@@ -177,9 +194,101 @@
      * Shows that something failed, with what Marketing Cloud said.
      *
      * @param {unknown} error what went wrong
+     * @param {...Node} before what stays above it
      */
-    function fail(error) {
-        fill(make('p', 'error', `That did not work: ${error?.message || error}`));
+    function fail(error, ...before) {
+        fill(...before, make('p', 'error', `That did not work: ${error?.message || error}`));
+    }
+
+    /**
+     * Reads one definition.
+     *
+     * @param {{id: string}} kind kind of message
+     * @param {string} key key of the definition
+     * @returns {Promise.<object>} the definition
+     */
+    async function readDefinition(kind, key) {
+        const definition = await ask(`${kind.id}/definitions/${encodeURIComponent(key)}`);
+        // the id of the request says nothing about the definition
+        delete definition.requestId;
+        return definition;
+    }
+
+    /**
+     * Deletes a definition that the user has confirmed, unless it is no longer the one shown.
+     *
+     * @param {{id: string, title: string}} kind kind of message
+     * @param {object} shown the definition as the details show it
+     * @param {HTMLElement} box the confirmation, which takes what goes wrong
+     */
+    async function remove(kind, shown, box) {
+        const mine = ++asked;
+        const key = shown.definitionKey;
+        const called = `“${shown.name}” (key ${key})`;
+        let isSent = false;
+        for (const button of box.querySelectorAll('button')) {
+            button.disabled = true;
+        }
+        try {
+            // the request names only the key, and the same key can exist in another business unit,
+            // which the user may have changed to in another tab since the details were read
+            const held = await readDefinition(kind, key);
+            if (mine !== asked) {
+                // the user went elsewhere before anything was sent: nothing is deleted
+                return;
+            }
+            if (JSON.stringify(held) !== JSON.stringify(shown)) {
+                throw new Error(
+                    'what Marketing Cloud holds under this key is no longer what is shown here. Was the business unit changed in another tab? Open the message again.',
+                );
+            }
+            isSent = true;
+            await ask(`${kind.id}/definitions/${encodeURIComponent(key)}`, 'DELETE');
+            // an answer that comes after the user went elsewhere is not shown; the lists are read anew
+            if (mine === asked) {
+                openList(kind, `Deleted ${called}.`);
+            }
+        } catch (ex) {
+            if (mine !== asked) {
+                return;
+            }
+            // only a delete that went out and got no answer leaves its outcome open
+            if (isSent && ex.isUnanswered) {
+                openList(
+                    kind,
+                    `It is not known whether ${called} was deleted: ${ex.message} Look for it in the list.`,
+                );
+                return;
+            }
+            box.replaceChildren(make('p', 'error', `Not deleted: ${ex.message}`));
+        }
+    }
+
+    /**
+     * Asks whether a definition is really to be deleted, in place of the button that was clicked.
+     *
+     * @param {{id: string, title: string}} kind kind of message
+     * @param {object} shown the definition as the details show it
+     * @param {HTMLElement} button the button that was clicked
+     */
+    function confirmDelete(kind, shown, button) {
+        const box = make('div', 'confirm');
+        const yes = make('button', 'delete', 'Delete it');
+        const no = make('button', 'keep', 'Keep it');
+        yes.type = 'button';
+        no.type = 'button';
+        yes.addEventListener('click', () => remove(kind, shown, box));
+        no.addEventListener('click', () => box.replaceWith(button));
+        box.append(
+            make(
+                'p',
+                undefined,
+                `Delete “${shown.name}” (key ${shown.definitionKey}, status ${shown.status}) for good? Marketing Cloud cannot bring it back, and whatever still sends with this key will fail.`,
+            ),
+            yes,
+            no,
+        );
+        button.replaceWith(box);
     }
 
     /**
@@ -192,16 +301,19 @@
         const mine = ++asked;
         fill(make('p', 'hint', 'Loading …'));
         try {
-            const definition = await ask(`${kind.id}/definitions/${encodeURIComponent(key)}`);
-            // the id of the request says nothing about the definition
-            delete definition.requestId;
+            const definition = await readDefinition(kind, key);
             if (mine !== asked) {
                 return;
             }
             const back = make('button', 'back', `← All ${kind.title} messages`);
             back.type = 'button';
             back.addEventListener('click', () => openList(kind));
-            fill(back, show(definition));
+            const erase = make('button', 'delete', 'Delete');
+            erase.type = 'button';
+            erase.addEventListener('click', () => confirmDelete(kind, definition, erase));
+            const actions = make('div', 'actions');
+            actions.append(back, erase);
+            fill(actions, show(definition));
         } catch (ex) {
             if (mine === asked) {
                 fail(ex);
@@ -250,8 +362,9 @@
      * Shows the list of one kind of message.
      *
      * @param {{id: string, title: string, note?: Array}} kind kind of message
+     * @param {string} [notice] what just happened, to say above the list
      */
-    async function openList(kind) {
+    async function openList(kind, notice) {
         const mine = ++asked;
         for (const tab of tabs.children) {
             tab.setAttribute('aria-selected', String(tab.dataset.kind === kind.id));
@@ -269,13 +382,16 @@
             }),
         );
         note.hidden = !kind.note;
-        fill(make('p', 'hint', 'Loading …'));
+        // what just happened stays in view, whatever becomes of the list
+        const said = notice ? [make('p', 'notice', notice)] : [];
+        fill(...said, make('p', 'hint', 'Loading …'));
         try {
             const rows = await readList(kind.id, () => mine === asked);
             if (mine !== asked) {
                 return;
             }
             fill(
+                ...said,
                 rows.length > 0
                     ? table(kind, rows)
                     : make(
@@ -286,7 +402,7 @@
             );
         } catch (ex) {
             if (mine === asked) {
-                fail(ex);
+                fail(ex, ...said);
             }
         }
     }

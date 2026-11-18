@@ -29,8 +29,8 @@ const DEFINITION = {
  * Runs the script in a page with the given content.
  *
  * @param {string} html content of the page
- * @param {(path: string) => {status?: number, body?: unknown}} [answer] what the API answers to a path below the API of transactional messages
- * @returns {{window: Window, document: Document, asked: string[], entry: () => Element, open: () => Promise.<void>, panel: () => Element, text: () => string}} the page and what was asked of the API
+ * @param {(path: string, method: string) => {status?: number, body?: unknown, isDown?: boolean}} [answer] what the API answers to a path below the API of transactional messages; isDown lets the request fail without an answer
+ * @returns {{window: Window, document: Document, asked: string[], written: string[], calls: object[], entry: () => Element, open: () => Promise.<void>, panel: () => Element, text: () => string}} the page, what was read from the API, what was sent to change something, and every request as it was made
  */
 function page(html, answer = () => ({ body: { definitions: [], count: 0 } })) {
     const { window } = new JSDOM(`<!doctype html><body>${html}</body>`, {
@@ -49,13 +49,22 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } })) {
     `);
     window.chrome = { runtime: { getURL: (path) => `chrome-extension://id/${path}` } };
     const asked = [];
+    const written = [];
+    const calls = [];
     window.fetch = async (url, options) => {
-        assert.equal(options.credentials, 'same-origin');
-        assert.equal(options.method, undefined, 'only reads');
+        calls.push({ url, ...options });
         const prefix = '/cloud/fuelapi/messaging/v1/';
-        assert.ok(url.startsWith(prefix), url);
-        asked.push(url.slice(prefix.length));
-        const { status = 200, body } = answer(url.slice(prefix.length));
+        // what is read is noted without the filter that every list carries
+        const path = url.slice(prefix.length).replace('&$filter=status%20neq%20deleted', '');
+        if (options.method === 'GET') {
+            asked.push(path);
+        } else {
+            written.push(`${options.method} ${path}`);
+        }
+        const { status = 200, body, isDown } = answer(path, options.method);
+        if (isDown) {
+            throw new TypeError('Failed to fetch');
+        }
         return {
             ok: status >= 200 && status < 300,
             status,
@@ -75,6 +84,8 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } })) {
         window,
         document,
         asked,
+        written,
+        calls,
         entry,
         panel,
         open: async () => {
@@ -376,6 +387,234 @@ test('the panel closes with its button and opens again on the first tab', async 
     assert.equal(at.document.querySelectorAll('dialog').length, 1);
     assert.equal(at.panel().hasAttribute('open'), true);
     assert.equal(at.asked.at(-1), 'sms/definitions?$page=1&$pageSize=50');
+});
+
+/**
+ * Opens the panel on the details of the SMS definition "welcome".
+ *
+ * @param {(path: string, method: string) => object} [answer] what the API answers to anything but the list and the first read of the details
+ * @returns {Promise.<object>} the page, with a way to click a button of the details by its text
+ */
+async function details(answer = () => ({ body: DEFINITION })) {
+    let reads = 0;
+    const at = page(MENU, (path, method) => {
+        if (path.startsWith('sms/definitions?')) {
+            return { body: { definitions: [ROW('welcome')], count: 1 } };
+        }
+        // the first read fills the details; what comes after is the test's business
+        return method === 'GET' && reads++ === 0 ? { body: DEFINITION } : answer(path, method);
+    });
+    await at.open();
+    rows(at)[0].click();
+    await tick();
+    at.press = async (text) => {
+        [...at.panel().querySelectorAll('button')]
+            .find((item) => item.textContent === text)
+            .click();
+        await tick();
+        await tick();
+    };
+    return at;
+}
+
+test('every request uses the session of the page, and every list leaves out what was deleted', async () => {
+    const at = await details();
+    assert.equal(at.calls.length, 2);
+    for (const call of at.calls) {
+        assert.equal(call.credentials, 'same-origin');
+        assert.equal(call.redirect, 'error');
+        assert.equal(call.method, 'GET');
+        assert.ok(call.url.startsWith('/cloud/fuelapi/messaging/v1/sms/definitions'), call.url);
+    }
+    assert.ok(at.calls[0].url.endsWith('?$page=1&$pageSize=50&$filter=status%20neq%20deleted'));
+    assert.ok(at.calls[1].url.endsWith('/definitions/welcome'));
+});
+
+test('nothing is deleted before the question is answered with yes, and "Keep it" takes the question back', async () => {
+    const at = await details();
+    await at.press('Delete');
+    assert.match(
+        at.text(),
+        /Delete “name of welcome” \(key welcome, status Active\) for good\? Marketing Cloud cannot bring it back/,
+    );
+    assert.deepEqual(at.written, []);
+    await at.press('Keep it');
+    assert.doesNotMatch(at.text(), /for good/);
+    assert.deepEqual(at.written, []);
+    // the button is back and asks again
+    await at.press('Delete');
+    assert.match(at.text(), /for good/);
+    assert.deepEqual(at.written, []);
+});
+
+test('a confirmed delete is sent once, and the list comes back saying what was deleted', async () => {
+    const answers = [
+        { body: { message: 'Success', deletedDefinitionKey: 'welcome' } },
+        // an answer without content counts by its status
+        { status: 204 },
+    ];
+    for (const answerToDelete of answers) {
+        const at = await details((path, method) =>
+            method === 'DELETE' ? answerToDelete : { body: DEFINITION },
+        );
+        await at.press('Delete');
+        const yes = [...at.panel().querySelectorAll('button')].find(
+            (item) => item.textContent === 'Delete it',
+        );
+        yes.click();
+        // a second click while the first is on its way
+        yes.click();
+        assert.equal(yes.disabled, true);
+        await tick();
+        await tick();
+        await tick();
+        assert.deepEqual(at.written, ['DELETE sms/definitions/welcome']);
+        assert.equal(at.calls.at(-2).method, 'DELETE');
+        assert.equal(at.calls.at(-2).credentials, 'same-origin');
+        // the list was read again
+        assert.equal(at.asked.at(-1), 'sms/definitions?$page=1&$pageSize=50');
+        assert.match(at.text(), /^Deleted “name of welcome” \(key welcome\)\./);
+        assert.equal(rows(at).length, 1);
+    }
+});
+
+test('a refused delete says why and leaves the details', async () => {
+    const at = await details((path, method) =>
+        method === 'DELETE'
+            ? { status: 400, body: { message: 'Definition is in use', errorcode: 1 } }
+            : { body: DEFINITION },
+    );
+    await at.press('Delete');
+    await at.press('Delete it');
+    assert.deepEqual(at.written, ['DELETE sms/definitions/welcome']);
+    assert.match(at.text(), /Not deleted: Definition is in use/);
+    // the details are still there, and the list was not opened
+    assert.ok(at.panel().querySelector('dl'));
+    assert.equal(at.asked.at(-1), 'sms/definitions/welcome');
+});
+
+test('what is no longer the message shown is not deleted', async () => {
+    // the same key now holds something else, as after a change of the business unit in another tab
+    const other = await details(() => ({ body: { ...DEFINITION, definitionId: 'another' } }));
+    await other.press('Delete');
+    await other.press('Delete it');
+    assert.deepEqual(other.written, []);
+    assert.match(
+        other.text(),
+        /Not deleted: what Marketing Cloud holds under this key is no longer/,
+    );
+    // the key is gone altogether
+    const gone = await details(() => ({ status: 404, body: { message: 'Unable to find it' } }));
+    await gone.press('Delete');
+    await gone.press('Delete it');
+    assert.deepEqual(gone.written, []);
+    assert.match(gone.text(), /Not deleted: Unable to find it/);
+    // the request id differs with every read and does not count
+    const same = await details((path, method) =>
+        method === 'DELETE' ? { status: 200 } : { body: { ...DEFINITION, requestId: 'r-2' } },
+    );
+    await same.press('Delete');
+    await same.press('Delete it');
+    assert.deepEqual(same.written, ['DELETE sms/definitions/welcome']);
+});
+
+test('a delete without an answer says that the outcome is unknown, and shows the list', async () => {
+    const at = await details((path, method) =>
+        method === 'DELETE' ? { isDown: true } : { body: DEFINITION },
+    );
+    await at.press('Delete');
+    await at.press('Delete it');
+    await tick();
+    assert.deepEqual(at.written, ['DELETE sms/definitions/welcome']);
+    assert.match(
+        at.text(),
+        /^It is not known whether “name of welcome” \(key welcome\) was deleted/,
+    );
+    assert.equal(at.asked.at(-1), 'sms/definitions?$page=1&$pageSize=50');
+});
+
+test('what became of a delete stays in view when the list cannot be read afterwards', async () => {
+    // deleted, but the list fails
+    const done = await details((path, method) => {
+        if (method === 'DELETE') {
+            return { status: 204 };
+        }
+        return path.includes('?') ? { status: 500 } : { body: DEFINITION };
+    });
+    // the list that follows the delete is the second one read
+    let lists = 0;
+    const quick = done.window.fetch;
+    done.window.fetch = async (url, options) =>
+        url.includes('?') && ++lists > 0
+            ? { ok: false, status: 500, json: async () => ({ message: 'Server down' }) }
+            : quick(url, options);
+    await done.press('Delete');
+    await done.press('Delete it');
+    await tick();
+    assert.match(done.text(), /^Deleted “name of welcome” \(key welcome\)\./);
+    assert.match(done.text(), /did not work: Server down/);
+    // no answer to the delete, and none to the list either
+    let isCut = false;
+    const cut = await details();
+    const answering = cut.window.fetch;
+    cut.window.fetch = async (url, options) => {
+        isCut ||= options.method === 'DELETE';
+        if (isCut) {
+            cut.written.push(`${options.method} cut`);
+            throw new TypeError('Failed to fetch');
+        }
+        return answering(url, options);
+    };
+    await cut.press('Delete');
+    await cut.press('Delete it');
+    await tick();
+    // the delete, then the list that was tried after it
+    assert.deepEqual(cut.written, ['DELETE cut', 'GET cut']);
+    assert.match(
+        cut.text(),
+        /^It is not known whether “name of welcome” \(key welcome\) was deleted/,
+    );
+    assert.match(cut.text(), /did not work: Marketing Cloud did not answer/);
+});
+
+test('a check that gets no answer deletes nothing and says so', async () => {
+    const at = await details(() => ({ isDown: true }));
+    await at.press('Delete');
+    await at.press('Delete it');
+    assert.deepEqual(at.written, []);
+    assert.match(at.text(), /Not deleted: Marketing Cloud did not answer/);
+    assert.doesNotMatch(at.text(), /not known/);
+    // the details stay
+    assert.ok(at.panel().querySelector('dl'));
+});
+
+test('leaving the details before the check has come back sends no delete', async () => {
+    const gate = Promise.withResolvers();
+    const at = await details();
+    const quick = at.window.fetch;
+    at.window.fetch = async (url, options) => {
+        if (url.endsWith('/definitions/welcome')) {
+            await gate.promise;
+        }
+        return quick(url, options);
+    };
+    await at.press('Delete');
+    await at.press('Delete it');
+    await tab(at, 'push');
+    gate.resolve();
+    await tick();
+    await tick();
+    assert.deepEqual(at.written, []);
+    assert.match(at.text(), /no transactional Push messages/);
+});
+
+test('a list that cannot be reached says so in plain words', async () => {
+    const at = page(MENU, () => ({ isDown: true }));
+    await at.open();
+    assert.match(
+        at.text(),
+        /did not work: Marketing Cloud did not answer\. Are you still logged in\?/,
+    );
 });
 
 test('the entry and the panel carry the icon of the extension, which names it', async () => {

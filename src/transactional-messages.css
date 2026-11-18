@@ -55,6 +55,47 @@
     font-size: 20px;
     line-height: 1;
 }
+.sfmc-ux-tools-transactional-actions {
+    align-items: flex-start;
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+}
+.sfmc-ux-tools-transactional-delete,
+.sfmc-ux-tools-transactional-keep {
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    color: #181818;
+    cursor: pointer;
+    font: inherit;
+    margin-right: 8px;
+    padding: 4px 12px;
+}
+.sfmc-ux-tools-transactional-delete {
+    border-color: #ba0517;
+    color: #ba0517;
+}
+.sfmc-ux-tools-transactional-delete:disabled,
+.sfmc-ux-tools-transactional-keep:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+.sfmc-ux-tools-transactional-confirm {
+    border: 1px solid #ba0517;
+    border-radius: 4px;
+    max-width: 480px;
+    padding: 8px 12px;
+}
+.sfmc-ux-tools-transactional-confirm p {
+    margin: 0 0 8px;
+}
+.sfmc-ux-tools-transactional-notice {
+    background: #eef4ff;
+    border-left: 3px solid #0176d3;
+    margin: 0 0 12px;
+    padding: 8px 12px;
+}
 .sfmc-ux-tools-transactional-tabs {
     border-bottom: 1px solid #c9c9c9;
     margin: 12px 0;

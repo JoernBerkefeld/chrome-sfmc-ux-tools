@@ -592,6 +592,11 @@ html .sfmc-tooltip a:hover {
 .sfmc-format-floating:hover {
     opacity: 1;
 }
+/* No bundled formatter reads the XML and text files of CloudPages' code resources. */
+html[data-sfmc-ux-tools-file-kind='xml'] .sfmc-format-button,
+html[data-sfmc-ux-tools-file-kind='text'] .sfmc-format-button {
+    display: none;
+}
 /* In Automation Studio's script activity it stands next to "Validate Syntax" and looks like that button. */
 .sfmc-format-beside {
     margin-right: 8px;

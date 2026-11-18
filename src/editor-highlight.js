@@ -36,6 +36,27 @@
     const AMPSCRIPT_LANGUAGE = /\blanguage\s*=\s*["']?ampscript\b/i;
     // marks our mode factory; a registered symbol, so that a second copy of this script recognises it too
     const WRAPPED = Symbol.for('sfmcUxTools.wrappedMode');
+    // the isolated script editor-file-kind.js writes the kind of file the editor shows to this
+    // attribute, if the content is one of CloudPages' code resources
+    const KIND_ATTRIBUTE = 'data-sfmc-ux-tools-file-kind';
+    // the mode of the page's CodeMirror that colours a kind of file; the page's own mode takes
+    // every file for HTML
+    const KIND_MODES = new Map([
+        ['javascript', 'javascript'],
+        ['css', 'css'],
+        ['json', { name: 'javascript', json: true }],
+        ['xml', 'xml'],
+        ['text', 'text/plain'],
+    ]);
+
+    /**
+     * Tells what kind of file the editors of this page show.
+     *
+     * @returns {string | null} the kind of a code resource; null for content that is HTML
+     */
+    function fileKind() {
+        return document.documentElement.getAttribute(KIND_ATTRIBUTE);
+    }
 
     /**
      * Consumes the pattern if the stream continues with it.
@@ -473,8 +494,19 @@
      * @param {object} original the page's own mode factory
      */
     function patchMode(CodeMirror, original) {
-        const wrapped = (config, parserConfig) =>
-            combinedMode(CodeMirror, original(config, parserConfig));
+        const wrapped = (config, parserConfig) => {
+            // a code resource is a file of its own kind, in which AMPscript and server-side
+            // scripts still run; everything else is HTML, which the page's mode colours
+            const fileMode = KIND_MODES.get(fileKind());
+            // a mode the page's CodeMirror does not have would leave the file without colours
+            const hasFileMode =
+                fileMode !== undefined &&
+                Object.hasOwn(CodeMirror.modes ?? {}, CodeMirror.resolveMode(fileMode).name);
+            const base = hasFileMode
+                ? CodeMirror.getMode(config, fileMode)
+                : original(config, parserConfig);
+            return combinedMode(CodeMirror, base);
+        };
         wrapped.dependencies = original.dependencies;
         wrapped[WRAPPED] = true;
         CodeMirror.defineMode(BASE_MODE, wrapped);
@@ -503,26 +535,34 @@
     }
 
     let isScanPending = false;
+    // the kind of file the open editors are coloured as
+    let colouredKind = fileKind();
 
     /**
      * Patches the mode of every CodeMirror copy that has an editor on the page and whose mode is
      * not patched yet. That is the case for the first editor, and again if the page registers
-     * its mode anew later on.
+     * its mode anew later on. Editors that are open when the kind of file becomes known, or
+     * changes, are coloured anew.
      */
     function scan() {
         isScanPending = false;
+        const kind = fileKind();
+        const isNewKind = kind !== colouredKind;
+        colouredKind = kind;
+        const refreshed = [];
         for (const element of document.querySelectorAll(EDITOR_SELECTOR)) {
             const CodeMirror = element.CodeMirror?.constructor;
             const original = CodeMirror?.modes?.[BASE_MODE];
-            if (!(
-                typeof original === 'function' &&
-                original[WRAPPED] !== true &&
-                typeof CodeMirror.defineMode === 'function'
-            )) {
+            if (typeof original !== 'function' || refreshed.includes(CodeMirror)) {
                 continue;
             }
-
-            patchMode(CodeMirror, original);
+            const isPatched = original[WRAPPED] === true;
+            if (!isPatched && typeof CodeMirror.defineMode === 'function') {
+                patchMode(CodeMirror, original);
+            } else if (!isPatched || !isNewKind) {
+                continue;
+            }
+            refreshed.push(CodeMirror);
             refreshEditors(CodeMirror);
         }
     }
@@ -542,6 +582,8 @@
     new MutationObserver(scheduleScan).observe(document.documentElement, {
         childList: true,
         subtree: true,
+        attributes: true,
+        attributeFilter: [KIND_ATTRIBUTE],
     });
     scan();
 })();

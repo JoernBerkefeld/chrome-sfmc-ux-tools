@@ -11,7 +11,7 @@ import * as html from 'prettier/plugins/html';
 import * as postcss from 'prettier/plugins/postcss';
 import * as sfmc from 'prettier-plugin-sfmc';
 import { format } from 'prettier/standalone';
-import { isInMode, report, watchEditors } from './editor-language/editors.js';
+import { fileKind, isInMode, report, watchEditors } from './editor-language/editors.js';
 import { watchAceFormat } from './editor-language/ace/format.js';
 
 // the settings the SFMC Language Service extension for VS Code formats with
@@ -26,6 +26,20 @@ const OPTIONS = {
     // the plugin hands HTML, CSS and JavaScript on to these
     plugins: [html, babel, estree, postcss, sfmc],
 };
+// CloudPages' code resources are files of their own kind; these names make Prettier read them so
+const KIND_FILES = new Map([
+    ['javascript', 'content.js'],
+    ['css', 'content.css'],
+    ['json', 'content.json'],
+]);
+// kinds of code resources that no bundled formatter reads; as HTML they would be mangled
+const UNFORMATTED_KINDS = new Set(['xml', 'text']);
+// one server-side script, from its opening to its closing tag
+const SERVER_SCRIPT = /<script\b[^>]*\brunat\s*=\s*["']?server\b[^>]*>[\s\S]*?<\/script\s*>/gi;
+// AMPscript or a server-side script somewhere in the content
+const SERVER_CODE = /%%\[|%%=|<script\b[^>]*\brunat\s*=\s*["']?server\b/i;
+const MIXED_MESSAGE =
+    'this file mixes its own code with AMPscript or server-side script, which no formatter reads together';
 const NOTICE_TIME = 6000;
 // the isolated script editor-format-setting.js writes the user's choice to this attribute
 const ON_SAVE_ATTRIBUTE = 'data-sfmc-ux-tools-format-on-save';
@@ -142,12 +156,29 @@ async function formatContent(key, element, read, write, filepath = OPTIONS.filep
  * @param {object} cm CodeMirror instance
  * @returns {Promise.<void>} settled when the editor has its formatted content, or was told why not
  */
-function formatEditor(cm) {
-    return formatContent(
+async function formatEditor(cm) {
+    const text = cm.getValue();
+    const file = KIND_FILES.get(fileKind());
+    // a code resource that is nothing but server-side scripts, as for an answer in JSON, is read
+    // like the content of Content Builder: its own kind is only what the scripts write
+    const isContent =
+        !file || (SERVER_CODE.test(text) && text.replaceAll(SERVER_SCRIPT, '').trim() === '');
+    if (!isContent && SERVER_CODE.test(text)) {
+        // the formatters for JavaScript, CSS and JSON do not know AMPscript or server-side
+        // scripts and would rearrange them as if they were part of the file
+        try {
+            notify(cm.getWrapperElement(), new Error(MIXED_MESSAGE));
+        } catch (ex) {
+            report(ex);
+        }
+        return;
+    }
+    await formatContent(
         cm,
         cm.getWrapperElement(),
         () => cm.getValue(),
         (change) => replace(cm, change),
+        isContent ? undefined : file,
     );
 }
 
@@ -155,10 +186,15 @@ function formatEditor(cm) {
  * Tells whether an editor is one whose content may be formatted right now.
  *
  * @param {object} cm CodeMirror instance
- * @returns {boolean} true for an AMPscript editor on the page that can be edited
+ * @returns {boolean} true for an AMPscript editor on the page that can be edited and whose kind of file there is a formatter for
  */
 function canFormat(cm) {
-    return isInMode(cm) && !cm.isReadOnly() && cm.getWrapperElement().isConnected;
+    return (
+        isInMode(cm) &&
+        !cm.isReadOnly() &&
+        cm.getWrapperElement().isConnected &&
+        !UNFORMATTED_KINDS.has(fileKind())
+    );
 }
 
 /**

@@ -55,7 +55,8 @@
                 "editor-context-menu.js",
                 "editor-theme.js",
                 "editor-format-setting.js",
-                "editor-typescript-loader.js"
+                "editor-typescript-loader.js",
+                "editor-file-kind.js"
             ],
             "all_frames": true,
             "run_at": "document_start"

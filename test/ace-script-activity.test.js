@@ -626,11 +626,18 @@ test('the manifest runs the editor scripts on Automation Studio as on Content Bu
     );
     assert.equal(contentBuilder.length, 2);
     assert.equal(automationStudio.length, 2);
-    // the same scripts and styles, in the same worlds and at the same time
-    assert.deepEqual(
-        automationStudio.map((entry) => ({ ...entry, matches: null, include_globs: null })),
-        contentBuilder.map((entry) => ({ ...entry, matches: null, include_globs: null })),
+    // the same scripts and styles, in the same worlds and at the same time; only Content
+    // Builder's editor shows files of other kinds, which one script more takes note of
+    const [shared, own] = [automationStudio, contentBuilder].map((entries) =>
+        entries.map((entry) => ({
+            ...entry,
+            js: entry.js.filter((file) => file !== 'editor-file-kind.js'),
+            matches: null,
+            include_globs: null,
+        })),
     );
+    assert.deepEqual(shared, own);
+    assert.ok(!JSON.stringify(automationStudio).includes('editor-file-kind.js'));
     const [main, isolated] = automationStudio;
     assert.equal(main.world, 'MAIN');
     assert.deepEqual(main.js, [

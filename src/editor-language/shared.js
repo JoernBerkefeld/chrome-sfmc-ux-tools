@@ -3,7 +3,12 @@
  */
 import { extractScriptBodies, getScriptRegions } from 'sfmc-language-lsp';
 
+import { JAVASCRIPT_FILE, fileKind } from './editors.js';
+
 export { isInMode, report } from './editors.js';
+
+// an opening or closing script tag
+const SCRIPT_TAG = /<\/?script\b[^>]*>/gi;
 
 export const AMPSCRIPT = 'ampscript';
 export const SSJS = 'ssjs';
@@ -37,11 +42,15 @@ export function languageAt(text, offset) {
     if (region?.kind === SSJS) {
         return SSJS;
     }
-    if (!region || !BROWSER_KINDS.includes(region.kind)) {
+    // a JavaScript file is one browser script as a whole, without a script tag around it
+    const isScriptFile = !region && fileKind() === JAVASCRIPT_FILE;
+    if (!isScriptFile && (!region || !BROWSER_KINDS.includes(region.kind))) {
         return AMPSCRIPT;
     }
     const before = text.slice(0, offset);
-    const isInBlock = AMPSCRIPT_DELIMITERS.some(
+    // the delimiters of Marketing Cloud Next are plain JavaScript in a file, as in "[{{a: 1}}]"
+    const delimiters = isScriptFile ? AMPSCRIPT_DELIMITERS.slice(0, 2) : AMPSCRIPT_DELIMITERS;
+    const isInBlock = delimiters.some(
         ([open, close]) => before.lastIndexOf(open) > before.lastIndexOf(close),
     );
     return isInBlock ? AMPSCRIPT : JAVASCRIPT;
@@ -55,7 +64,22 @@ export function languageAt(text, offset) {
  * @returns {string} text of the same length that only contains those scripts
  */
 export function scriptsOnly(text, kinds) {
-    return extractScriptBodies(text, kinds).text;
+    const isScriptFile =
+        fileKind() === JAVASCRIPT_FILE && kinds.some((kind) => BROWSER_KINDS.includes(kind));
+    if (!isScriptFile) {
+        return extractScriptBodies(text, kinds).text;
+    }
+    // the whole file is the browser's, except for the server-side scripts in it and their tags
+    const server = extractScriptBodies(text, [SSJS]).text;
+    const tags = text.replaceAll(SCRIPT_TAG, (tag) => ' '.repeat(tag.length));
+    let browser = '';
+    let start = 0;
+    // every run of server-side code is blanked; the text keeps its length
+    for (const run of server.matchAll(/\S+/g)) {
+        browser += tags.slice(start, run.index) + ' '.repeat(run[0].length);
+        start = run.index + run[0].length;
+    }
+    return browser + tags.slice(start);
 }
 
 /**

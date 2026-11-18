@@ -6,7 +6,20 @@
 const BASE_MODE = 'ampScriptHtmlMixed';
 const EDITOR_SELECTOR = '.CodeMirror';
 const SCAN_DELAY = 50;
+// the isolated script editor-file-kind.js writes the kind of file the editor shows to this
+// attribute, if the content is one of CloudPages' code resources
+const KIND_ATTRIBUTE = 'data-sfmc-ux-tools-file-kind';
+export const JAVASCRIPT_FILE = 'javascript';
 const state = { hasReported: false, isScanPending: false };
+
+/**
+ * Tells what kind of file the editors of this page show.
+ *
+ * @returns {string | null} "javascript", "css", "json", "xml" or "text" for a code resource; null for content that is HTML, and where there is no page
+ */
+export function fileKind() {
+    return globalThis.document?.documentElement?.getAttribute(KIND_ATTRIBUTE) ?? null;
+}
 // what looks at the page whenever it changes
 const scans = [];
 

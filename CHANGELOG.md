@@ -5,6 +5,7 @@
 ### Changed
 
 - Chrome 122 or newer is required.
+- Email Studio and CloudPages are named as covered: both open Content Builder's code view, where the extension already works.
 - The toolbar icon is no longer greyed out, and a click on it opens the options.
 - The editor theme follows the system's light or dark mode until a theme is chosen in the options; "Like the system" is the new default there.
 - The gear button below the code editor, which opens Marketing Cloud's own editor menu, is hidden while the browser's context menu is chosen (the default), and comes back with the option "Marketing Cloud's menu".
@@ -27,6 +28,7 @@
 - **Hovers, parameter help, errors and warnings, quick fixes and go to definition in Automation Studio's script activity**: the editor of that dialog explains the name under the mouse, shows a function's parameters while you type a call, underlines what the language service objects to and notes it next to the line number, offers quick fixes as buttons and on **Ctrl+.** / **Cmd+.**, and jumps to a declaration on **Ctrl+click** / **Cmd+click**, all as in Content Builder. The TypeScript-backed part is loaded there on demand too. The read-only editor on the summary step explains and underlines, but offers no fixes and no parameter help.
 - **Formatting in Automation Studio's script activity**: a **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, format the script like the code view of Content Builder, in one step for **Ctrl+Z**; the line endings of the script stay as they are. With **format on save** switched on, the script is also formatted when you click **Next**, before the dialog takes it over for its summary and for **Finish**. **Ctrl+S** is not part of that dialog, which saves at the end of its wizard.
 - **Theme and formatting in Automation Studio's SQL query activity**: the query editor of that dialog follows the editor theme, light or dark, and keeps Marketing Cloud's SQL colouring. A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, format the query as T-SQL with the bundled `prettier-plugin-sfmc`, in one step for **Ctrl+Z**; with **format on save** switched on, a click on **Next** formats it first.
+- **CloudPages code resources**: a JavaScript, CSS, JSON, XML or RSS resource is coloured as what it is; until now the editor showed it as HTML, which left it without colours. A JavaScript resource is completed like a browser script. **{ }** and **Shift+Alt+F** format JavaScript, CSS and JSON resources with the formatter for that language; a resource that mixes its own code with AMPscript or a server-side script is left as it is, and XML, RSS and text resources have no format button. AMPscript and server-side scripts inside a resource keep their colours and features.
 
 ## [0.3.0]
 

@@ -5,6 +5,9 @@
  * key (external key, customer key). Left empty, the key becomes a GUID. This script fills the key
  * from the name while the name is typed, the way Salesforce derives an API name from a label.
  * A key that the dialog brought along, as when something existing is edited, is never touched.
+ *
+ * Apart from that, and also with readable keys switched off, it makes these dialogs notice a name
+ * or key that was pasted with the mouse.
  */
 (() => {
     'use strict';
@@ -37,11 +40,20 @@
             key: '[data-testid="new-de-key-input"]',
             max: 200,
         },
+        // Email Studio: data extension. Its fields are widgets that take a value over when the
+        // field is left, not while it changes
+        {
+            name: '.new-de-name input.fuel-input',
+            key: '.new-de-key input.fuel-input',
+            isTakenOnBlur: true,
+        },
     ];
     // what a key keeps besides the underscores that replace spaces
     const NOT_KEPT = /[^\w-]/g;
     // the marks that are left of accented letters once they are taken apart
     const MARKS = /\p{M}/gu;
+    // how text gets into a field without a key being pressed
+    const MOUSE_INPUTS = new Set(['insertFromPaste', 'insertFromDrop']);
     // key fields by the last key this script wrote into them
     const written = new WeakMap();
     // key fields this script has looked at, and those of them that came with a key
@@ -148,7 +160,18 @@
      */
     function onInput(event) {
         const name = event.target;
-        if (!isOn || !isTextField(name)) {
+        if (!isTextField(name)) {
+            return;
+        }
+        // a name or key pasted or dropped with the mouse releases no key, and Contact Builder's
+        // dialog would not notice it. That is put right whether or not keys are filled in
+        if (
+            MOUSE_INPUTS.has(event.inputType) &&
+            PAIRS.some((pair) => name.matches(pair.name) || name.matches(pair.key))
+        ) {
+            name.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+        }
+        if (!isOn) {
             return;
         }
         const key = keyFieldOf(name);
@@ -167,6 +190,12 @@
         // for pages that follow the field instead of reading it when the dialog is confirmed
         key.dispatchEvent(new Event('input', { bubbles: true }));
         key.dispatchEvent(new Event('change', { bubbles: true }));
+        // Contact Builder's dialog takes the key over when a key is released in the field
+        key.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+        if (PAIRS.some((pair) => pair.isTakenOnBlur && key.matches(pair.key))) {
+            // the focus stays where it is: this only tells the widget that the key is complete
+            key.dispatchEvent(new Event('blur'));
+        }
     }
 
     /**

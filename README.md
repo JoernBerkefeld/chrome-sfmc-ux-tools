@@ -12,9 +12,12 @@ Everything below works on its own after installing; there is nothing to set up. 
 
 - **Content Builder**: the code view of emails, templates and content blocks.
 - **Email Studio and CloudPages**: both open Content Builder's code view, so everything said about Content Builder applies there too.
-- **CloudPages code resources** (JavaScript, CSS, JSON, XML, RSS, text).
-- **Automation Studio**: the script activity, the SQL query activity, new automations and the dialogs that create an activity.
-- **Contact Builder and Email Studio**: the dialogs that create a data extension.
+- **CloudPages code resources**: files of one kind, such as JavaScript, CSS, JSON, XML, RSS or text.
+- **Automation Studio, script activity**: its code editor gets everything Content Builder's editor gets, unless a section says otherwise.
+- **Automation Studio, SQL query activity**: theme and tidying up only. There are no suggestions, explanations or checks for SQL.
+- **Automation Studio**: new automations and the dialogs that create an activity, for [readable keys](#readable-keys).
+- **Contact Builder and Email Studio**: the dialogs that create a data extension, for readable keys.
+- **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
 - **Setup → Installed Packages**: the dialog with the list of scopes.
 
 ### Colours in the code editor
@@ -24,6 +27,7 @@ Marketing Cloud colours HTML but shows AMPscript as plain black text. The extens
 - **AMPscript** gets colours for keywords, functions, variables, texts, numbers and comments. This covers `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript inside a script tag.
 - **Personalisation strings** such as `%%emailaddr%%` are coloured too.
 - **Server-side JavaScript (SSJS)**: Marketing Cloud's own names, such as `Platform`, `DataExtension` and `Write()`, get a colour of their own, so they stand out from ordinary JavaScript.
+- **CloudPages code resources**: Marketing Cloud shows them without colours. JavaScript, CSS, JSON, XML and RSS resources are now coloured as what they are, and AMPscript or SSJS inside them is coloured as well.
 - **Only the colours change.** Your content stays exactly as you wrote it.
 - **One limit:** a script tag is only recognised if its opening tag fits on one line.
 
@@ -33,6 +37,7 @@ Marketing Cloud colours HTML but shows AMPscript as plain black text. The extens
 - You can fix it to **Light Modern** or **Dark Modern** in the options. These are the colour schemes of the code editor Visual Studio Code.
 - The theme covers the whole editor: background, line numbers, selection and all code.
 - It replaces the themes from Marketing Cloud's own menu.
+- The SQL query activity follows the theme too and keeps Marketing Cloud's colours for SQL.
 
 ### Suggestions while you type
 
@@ -44,9 +49,10 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 - **Find a function by any part of its name**: `Loo` finds `Platform.Function.Lookup`, and so does `Platform.Function.Loo`.
 - **One step at a time**: typing `plat` offers `Platform`; after `Platform.` you see what is inside it, and so on. Upper and lower case do not matter.
 - **After a dot**, you get what belongs to the thing in front of it. For example, after a variable that holds a data extension you get `Rows`, and after that `Add`, `Retrieve` and so on.
-- **JavaScript for the browser** (any other script tag): the names used in your browser scripts and the usual JavaScript words. Marketing Cloud's server-side names are kept out, because they do not work there.
+- **JavaScript for the browser** (any other script tag, and JavaScript code resources of CloudPages): the names used in your browser scripts and the usual JavaScript words. Marketing Cloud's server-side names are kept out, because they do not work there.
 - **Picking a function** writes its name and the opening bracket. Nothing is written unless you pick it.
 - **In AMPscript**, the list stays away inside texts and comments and in plain HTML.
+- **Keys in the list**: the arrow keys move, **Enter** or **Tab** picks, **Esc** closes. In the script activity, **Page Up**, **Page Down**, **Home** and **End** work as well.
 - **Not covered yet**: in browser scripts, what belongs to a value, such as the functions of `document`.
 
 ### Explanations when you point at code
@@ -72,6 +78,8 @@ The extension checks your AMPscript and SSJS while you type.
 - **AMPscript**: unknown functions, too few or too many inputs, blocks and `IF` statements that are never closed, and more.
 - **SSJS**: modern JavaScript that Marketing Cloud does not understand (`let`, arrow functions, …), functions Marketing Cloud does not have, a missing `Platform.Load`, and more.
 - **SSJS, deeper checks**: mistakes in how you use Marketing Cloud's objects or your own code, such as a misspelt function name (`de.Rowz`).
+- **Script activity**: a mark next to the line number shows where a problem is.
+- **Fixed in the script activity:** Marketing Cloud's own check marked the `<script runat="server">` tag as an error although it is correct. That false error is gone. **Validate Syntax** still asks Marketing Cloud as before.
 - **Not covered**: browser scripts are not checked, and there is no list of all problems yet.
 
 ### One-click fixes
@@ -94,50 +102,21 @@ The extension checks your AMPscript and SSJS while you type.
 - **Only the text in the editor changes.** Nothing is saved until you save.
 - AMPscript that contains a mistake is left exactly as written; the rest is tidied.
 - It always tidies the whole content, not just a selection.
-- **Format on save** (an option, off by default): your code is tidied automatically each time you save.
+- **Script activity and SQL query activity**: the **{ }** button sits next to **Validate Syntax**. A query is tidied as SQL.
+- **CloudPages code resources**: JavaScript, CSS and JSON resources are tidied. A resource that mixes its own code with AMPscript or SSJS is left as it is, so nothing gets rearranged by mistake. XML, RSS and text resources have no **{ }** button.
+- **Format on save** (an option, off by default): your code is tidied automatically each time you save. In the script activity and the SQL query activity this happens when you click **Next**. It does not apply to CloudPages code resources, because their Save and Publish buttons sit outside the editor.
 
 ### Save with Ctrl+S
 
 - **Ctrl+S** (**Cmd+S** on a Mac) in the code view of Content Builder saves your content, just like Marketing Cloud's **Save** button.
 - Without the extension, that key opens the browser's "save this page" window instead.
+- Content Builder only: the activities of Automation Studio save at the end of their wizard.
 
 ### The browser's right-click menu in the code editor
 
 - A right-click in the code editor opens your browser's normal menu (copy, paste, spell check, …) instead of the menu Marketing Cloud draws over your code.
 - The gear button below the editor, which opens that same Marketing Cloud menu, is hidden.
 - You can get Marketing Cloud's menu and the gear button back in the options.
-
-### CloudPages code resources
-
-A code resource is a file of one kind: JavaScript, CSS, JSON, XML, RSS or text. Marketing Cloud shows them without colours.
-
-- **Colours**: JavaScript, CSS, JSON, XML and RSS resources are coloured as what they are.
-- **AMPscript and SSJS inside a resource** keep their colours and all the help described above.
-- **JavaScript resources** get the suggestions of a browser script.
-- **Formatting**: **{ }** and **Shift+Alt+F** tidy JavaScript, CSS and JSON resources.
-- **Not formatted**: a resource that mixes its own code with AMPscript or SSJS is left as it is, so nothing gets rearranged by mistake.
-- **No format button**: XML, RSS and text resources.
-- **Format on save does not apply** to code resources, because their Save and Publish buttons sit outside the editor.
-
-### Automation Studio: script activity
-
-The code editor of the script activity gets everything Content Builder's editor has.
-
-- Colours and both themes, also on the summary step of the wizard.
-- Suggestions while you type and on **Ctrl+Space**. Use the arrow keys, **Page Up**/**Page Down**, **Home** and **End** to move, **Enter**, **Tab** or a click to pick, **Esc** to close.
-- Explanations on hover, help with a function's inputs, underlined mistakes with a mark next to the line number, one-click fixes and jump to definition.
-- A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, tidy the script.
-- With **format on save** switched on, the script is tidied when you click **Next**.
-- **Fixed:** Marketing Cloud's own check marked the `<script runat="server">` tag as an error although it is correct. That false error is gone. **Validate Syntax** still asks Marketing Cloud as before.
-- The summary step is read-only: it explains and underlines, but offers no suggestions or fixes.
-- **Ctrl+S** does nothing special here, because this dialog saves at the end of its wizard.
-
-### Automation Studio: SQL query activity
-
-- The query editor follows the light or dark theme and keeps Marketing Cloud's SQL colours, also on the summary step.
-- A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, tidy the query.
-- With **format on save** switched on, the query is tidied when you click **Next**.
-- **Not covered**: suggestions, explanations and checks for SQL.
 
 ### Readable keys
 
@@ -218,7 +197,7 @@ Not listed yet.
 
 1. Clone this repository.
 2. Open `chrome://extensions` and switch on **Developer mode**.
-3. Run `npm install --no-workspaces` and `npm run build`.
+3. Run `npm install` and `npm run build`.
 4. Choose **Load unpacked** and pick the `dist/extension` folder.
 
 This works the same way in other Chromium browsers such as Edge.
@@ -238,7 +217,7 @@ It does not collect or transmit any data and makes no network requests. The only
 ## Development
 
 ```bash
-npm install --no-workspaces
+npm install
 npm run lint
 npm test
 npm run build
@@ -256,7 +235,7 @@ npm run build
 - `codemirror` is fixed to the exact version Content Builder ships (5.65.21), so that the tests run against the editor the extension meets in the page. Change it only when Marketing Cloud updates its editor.
 - `ace-builds` is fixed to the exact version of the Ace editor in Automation Studio's script activity (1.4.12), for the same reason. It is only used by the tests: `src/editor-language/ace` builds its mode at run time from the Ace of the page and bundles no copy of it.
 - Keep `version` in `package.json` and `src/manifest.json` identical; a test checks this.
-- `npm run verify:bundled-latest` compares the SFMC packages in `package-lock.json` (`sfmc-language-lsp`, `prettier-plugin-sfmc`, the data packages and what they bring along) with the newest versions on npm and fails if one is behind. The release workflow runs it before building, because the build inlines these packages. Update them with `npm install <package>@latest --no-workspaces`.
+- `npm run verify:bundled-latest` compares the SFMC packages in `package-lock.json` (`sfmc-language-lsp`, `prettier-plugin-sfmc`, the data packages and what they bring along) with the newest versions on npm and fails if one is behind. The release workflow runs it before building, because the build inlines these packages. Update them with `npm install <package>@latest`.
 
 ### Releasing
 

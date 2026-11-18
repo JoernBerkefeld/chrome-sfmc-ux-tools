@@ -88,7 +88,8 @@
         {
             "matches": [
                 "https://*.marketingcloudapps.com/AutomationStudioFuel3/*",
-                "https://*.marketingcloudapps.com/contactsmeta/*"
+                "https://*.marketingcloudapps.com/contactsmeta/*",
+                "https://*.exacttarget.com/C12/Default.aspx*"
             ],
             "js": ["readable-keys.js"],
             "all_frames": true,

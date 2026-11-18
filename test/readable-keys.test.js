@@ -192,6 +192,74 @@ test('a new data extension may have the key length Marketing Cloud allows, not t
     assert.equal(existing.value(key), 'abc');
 });
 
+test("Email Studio's data extension dialog hears of the key the way its widgets listen: when the field is left", () => {
+    const { document, type, value } = page(
+        '<div class="new-de-name"><input class="fuel-input" maxlength="128" /></div>' +
+            '<div class="new-de-key"><input class="fuel-input" maxlength="200" /></div>',
+    );
+    const heard = [];
+    const key = document.querySelector('.new-de-key input');
+    for (const kind of ['input', 'change', 'keyup', 'blur']) {
+        key.addEventListener(kind, () => {
+            heard.push(kind);
+        });
+    }
+    type('.new-de-name input', 'Order history 2026');
+    assert.equal(value('.new-de-key input'), 'Order_history_2026');
+    assert.deepEqual(heard, ['input', 'change', 'keyup', 'blur']);
+    // the other dialogs read the field or follow its changes; they get no such event
+    const other = page(DIALOG);
+    let isLeft = false;
+    other.document.querySelector('#queryExternalKey').addEventListener('blur', () => {
+        isLeft = true;
+    });
+    other.type('#queryName', 'A');
+    assert.equal(isLeft, false);
+});
+
+test('a name or key pasted with the mouse is made known to a dialog that waits for a released key, also with readable keys switched off', async () => {
+    const html =
+        '<input data-testid="new-de-name-input" /><input data-testid="new-de-key-input" /><input id="other" />';
+    const NAME = '[data-testid="new-de-name-input"]';
+    const KEY = '[data-testid="new-de-key-input"]';
+    for (const setting of ['on', 'off']) {
+        const { document, value } = page(html, { readableKeys: setting });
+        await tick();
+        const { InputEvent } = document.defaultView;
+        const released = [];
+        document.body.addEventListener('keyup', (event) => {
+            released.push(event.target.dataset.testid ?? event.target.id);
+        });
+        const enter = (selector, text, inputType) => {
+            const field = document.querySelector(selector);
+            field.value = text;
+            field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType }));
+        };
+        enter(KEY, 'pasted_key', 'insertFromPaste');
+        assert.deepEqual(released, ['new-de-key-input'], setting);
+        assert.equal(value(KEY), 'pasted_key');
+        enter(NAME, 'Dropped name', 'insertFromDrop');
+        assert.deepEqual(released, ['new-de-key-input', 'new-de-name-input'], setting);
+        // the pasted key is the user's own and stays
+        assert.equal(value(KEY), 'pasted_key');
+        // typing releases a key by itself, and other fields are none of this script's business
+        enter(NAME, 'Dropped name!', 'insertText');
+        enter('#other', 'x', 'insertFromPaste');
+        assert.equal(released.length, 2, setting);
+    }
+    // with readable keys on, a pasted name also gives the key
+    const filled = page(html);
+    const name = filled.document.querySelector(NAME);
+    name.value = 'Pasted name';
+    name.dispatchEvent(
+        new filled.document.defaultView.InputEvent('input', {
+            bubbles: true,
+            inputType: 'insertFromPaste',
+        }),
+    );
+    assert.equal(filled.value(KEY), 'Pasted_name');
+});
+
 test('a key typed by the user stays; an emptied key follows the name again', () => {
     const { type, value } = page(DIALOG);
     type('#queryName', 'First');
@@ -207,15 +275,18 @@ test('the page hears of a key that was filled in, and only when it changed', () 
     const { document, type } = page(DIALOG);
     const heard = [];
     const key = document.querySelector('#queryExternalKey');
-    for (const kind of ['input', 'change']) {
-        key.addEventListener(kind, () => {
-            heard.push(kind);
+    // Contact Builder listens for a released key on an element around the field
+    for (const kind of ['input', 'change', 'keyup']) {
+        document.body.addEventListener(kind, (event) => {
+            if (event.target === key) {
+                heard.push(kind);
+            }
         });
     }
     type('#queryName', 'A');
-    assert.deepEqual(heard, ['input', 'change']);
+    assert.deepEqual(heard, ['input', 'change', 'keyup']);
     type('#queryName', 'A!');
-    assert.deepEqual(heard, ['input', 'change']);
+    assert.deepEqual(heard, ['input', 'change', 'keyup']);
 });
 
 test('fields that are not a known pair in its place are left alone', () => {
@@ -265,6 +336,7 @@ test('the options page offers the setting, on first, and the manifest runs the s
     assert.deepEqual(entry.matches, [
         'https://*.marketingcloudapps.com/AutomationStudioFuel3/*',
         'https://*.marketingcloudapps.com/contactsmeta/*',
+        'https://*.exacttarget.com/C12/Default.aspx*',
     ]);
     assert.equal(entry.world, undefined);
     assert.equal(entry.all_frames, true);

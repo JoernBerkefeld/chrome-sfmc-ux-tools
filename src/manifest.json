@@ -96,7 +96,6 @@
                 "https://*.exacttarget.com/Content/Administration/EmployeeDetails.aspx*"
             ],
             "js": ["key-rule.js", "readable-keys.js", "user-autofill.js"],
-            "css": ["user-autofill.css"],
             "all_frames": true,
             "run_at": "document_start"
         },

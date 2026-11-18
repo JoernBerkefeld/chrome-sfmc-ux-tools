@@ -53,6 +53,9 @@
             key: '.new-de-key input.fuel-input',
             isTakenOnBlur: true,
         },
+        // Email Studio: the dialog that saves a data filter. Its key is a text area, which the
+        // dialog reads when it is confirmed
+        { name: '#exp-save-name-input', key: '#exp-save-key-input' },
         // Content Builder: the dialog that saves a content block for the first time. Its fields
         // are widgets that take a value over when a key is released or the field is left; the
         // key field allows more than the 36 characters Marketing Cloud takes

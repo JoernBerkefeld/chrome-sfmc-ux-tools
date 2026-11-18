@@ -29,6 +29,7 @@ Everything below works on its own after installing; there is nothing to set up. 
 - **Automation Studio, SQL query activity**: theme and tidying up only. There are no suggestions, explanations or checks for SQL.
 - **Automation Studio**: new automations and the dialogs that create an activity, for [readable keys](#readable-keys).
 - **Contact Builder and Email Studio**: the dialogs that create a data extension, for readable keys.
+- **Email Studio**: the dialog that saves a data filter, for readable keys.
 - **Email Studio**: the page that creates a triggered send, for readable keys.
 - **Journey Builder**: new journeys and their API events, for readable keys and for [a real name before saving](#journey-builder-a-real-name-before-saving).
 - **Setup**: the pages for a new sender profile, send classification, delivery profile, file location, role or user, for readable keys.
@@ -144,6 +145,7 @@ Where it works:
 - **Contact Builder**: the dialog that creates a **data extension**.
 - **Email Studio**: the dialog that creates a **data extension**.
 - **Email Studio**: the page that creates a **triggered send** (Interactions → Triggered Emails → Create).
+- **Email Studio**: the dialog that saves a new **data filter** (Subscribers → Data Filters → Create, then Save). It is the same dialog for a filter on profile attributes and for one on a data extension. If the dialog answers **Error: Internal server error**, the key is most likely used by another data filter already: change the key and save again.
 - **Content Builder**: a new **content block** and a new **email message**. See below.
 - **Setup**: the pages that create a **sender profile**, a **send classification**, a **delivery profile**, a **file location**, a **role** or a **user**. A user's key is made from the **username** (the login), not from the person's name, and keeps its dots and its `@`. If a password manager puts a saved login into the External Key field of a new user, the extension replaces it with the key made from the username.
 - **Journey Builder**: a new **journey** of any kind (multi-step, single send, transactional), a new **API event**, and the key a **transactional journey** asks for. See below.
@@ -219,7 +221,7 @@ When you create or edit a user under **Setup → Users**, the page has a usernam
 
 - **Without the extension:** the browser fills one of your saved logins into the **Username**, the **External Key** and the **Temporary Password** of the user you are creating. If you do not notice, the new user is saved with someone else's details.
 - **With the extension:** the browser is told that these are not login fields, so it leaves them empty.
-- Chrome still shows its list of saved logins when you click into **Temporary Password** or **Confirm Password**; the extension cannot switch that list off. If you pick an entry from it by mistake, the extension takes out again what Chrome fills in. What you type there yourself stays, and shows as dots.
+- Chrome still shows its list of saved logins when you click into **Temporary Password** or **Confirm Password**; the extension cannot switch that list off. If you pick an entry from it by mistake, the extension takes out again what Chrome fills in. What you type there yourself stays.
 - Password managers that are extensions (LastPass, 1Password, Bitwarden, Dashlane) are told to skip these fields too.
 - LastPass pastes a saved login into the **Username** anyway when you click into it. The extension takes it out again at once; what you typed or pasted yourself stays.
 - If a password manager writes a saved login into the **External Key** anyway, the extension puts back the key made from the username. A key you typed yourself stays.

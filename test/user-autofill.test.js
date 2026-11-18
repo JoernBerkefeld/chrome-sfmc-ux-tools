@@ -48,25 +48,23 @@ function page(url, stored = {}) {
     };
 }
 
-test('on the page of a user, the browser is told not to fill in the fields, and password fields become fields for text that show dots', async () => {
+test('on the page of a user, the browser is told that passwords are new and other fields are not to be filled in', async () => {
     const { document, hint } = page(USER_PAGE);
     assert.equal(hint('FullName'), 'off');
     assert.equal(hint('UserName'), 'off');
     assert.equal(hint('ExternalKeyTextBox'), 'off');
-    assert.equal(hint('Password'), 'off');
-    const type = (id) => document.querySelector('#' + id).type;
-    assert.equal(type('Password'), 'text');
-    assert.equal(document.querySelector('#Password').dataset.sfmcUxToolsMasked, '');
+    assert.equal(hint('Password'), 'new-password');
+    // a password field stays one
+    assert.equal(document.querySelector('#Password').type, 'password');
     // what is no field for text is left alone
     assert.equal(hint('ApiUser'), null);
     // fields that the page adds later are guarded as they arrive
     document.body.insertAdjacentHTML('beforeend', '<input id="Confirm" type="password" />');
     await tick();
-    assert.equal(hint('Confirm'), 'off');
-    assert.equal(type('Confirm'), 'text');
+    assert.equal(hint('Confirm'), 'new-password');
     // the page of an existing user is guarded as well
     const edited = page(USER_PAGE.replace('emid=', 'emid=12345'));
-    assert.equal(edited.hint('Password'), 'off');
+    assert.equal(edited.hint('Password'), 'new-password');
 });
 
 test('the setting hands the fields back to the browser, as they were, and guards them again', async () => {
@@ -79,14 +77,13 @@ test('the setting hands the fields back to the browser, as they were, and guards
     await tick();
     assert.equal(hint('Confirm'), null);
     change('blocked');
-    assert.equal(hint('Password'), 'off');
-    assert.equal(hint('Confirm'), 'off');
+    assert.equal(hint('Password'), 'new-password');
+    assert.equal(hint('Confirm'), 'new-password');
     change('allowed');
     assert.equal(hint('Password'), null);
     assert.equal(hint('ExternalKeyTextBox'), 'on');
-    // a password field is one again, with nothing left on it
+    // nothing is left on a field that was guarded
     const password = document.querySelector('#Password');
-    assert.equal(password.type, 'password');
     assert.deepEqual(new Set(password.getAttributeNames()), new Set(['id', 'type']));
 });
 
@@ -152,8 +149,7 @@ test('other pages are left alone, and the options page offers the setting, guard
     const manifest = JSON.parse(read('../src/manifest.json'));
     const entry = manifest.content_scripts.find((item) => item.js.includes('user-autofill.js'));
     assert.ok(entry.matches.some((match) => match.endsWith('/EmployeeDetails.aspx*')));
-    assert.deepEqual(entry.css, ['user-autofill.css']);
-    assert.match(read('../src/user-autofill.css'), /\[data-sfmc-ux-tools-masked\]/);
+    assert.equal(entry.css, undefined);
     assert.equal(entry.run_at, 'document_start');
     assert.equal(entry.all_frames, true);
 });

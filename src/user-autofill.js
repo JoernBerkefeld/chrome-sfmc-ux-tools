@@ -3,9 +3,10 @@
  *
  * Those pages have a username next to password fields, which a browser's password manager takes
  * for a login form: it fills in a saved login, also into the external key. This script tells
- * the browser that the fields are not to be filled in, before the browser gets to them, and
- * turns the password fields into fields for text that show dots. Password managers that are extensions do
- * not read what is said to the browser; each has a word of its own, which is said as well.
+ * the browser that the passwords asked for here are new ones and that the other fields are not
+ * to be filled in, before the browser gets to them. Password managers that are extensions do
+ * not read what is said to the browser; each has a word of its own, which is said as well. What
+ * is filled in all the same is taken out again.
  */
 (() => {
     'use strict';
@@ -25,30 +26,11 @@
     };
     // which of those this script put on a field, to take them off again
     const HINTED = 'data-sfmc-ux-tools-hints';
-    // marks a field that stands in for a password field
-    const MASKED = 'data-sfmc-ux-tools-masked';
     const PASSWORDS = 'input[type="password"]';
     const TEXTS = 'input[type="text"], input[type="email"], input:not([type])';
     // fields by the text the user last gave them
     const own = new WeakMap();
     let isBlocked = true;
-
-    /**
-     * Puts a field for text in the place of a password field; user-autofill.css shows its text
-     * as dots. Chrome offers its saved logins at every password field, whatever the field says,
-     * and remembers a field that ever was one: so the field is a new one, with all the page
-     * gave the old one.
-     *
-     * @param {HTMLInputElement} field password field of the page
-     */
-    function mask(field) {
-        const plain = field.cloneNode(false);
-        plain.type = 'text';
-        plain.value = field.value;
-        plain.spellcheck = false;
-        plain.setAttribute(MASKED, '');
-        field.replaceWith(plain);
-    }
 
     /**
      * Tells the browser to leave the fields of the page alone, each field once.
@@ -61,22 +43,19 @@
             `:is(${PASSWORDS}, ${TEXTS}):not(${GUARDED})`,
         )) {
             field.setAttribute(KEPT, field.getAttribute('autocomplete') ?? '');
-            field.setAttribute('autocomplete', 'off');
+            field.setAttribute('autocomplete', field.matches(PASSWORDS) ? 'new-password' : 'off');
             const added = Object.keys(MANAGER_HINTS).filter((hint) => !field.hasAttribute(hint));
             for (const hint of added) {
                 field.setAttribute(hint, MANAGER_HINTS[hint]);
             }
             field.setAttribute(HINTED, added.join(' '));
-            if (field.matches(PASSWORDS)) {
-                mask(field);
-            }
         }
     }
 
     /**
      * Undoes what a password manager wrote into a field. LastPass pastes a saved login into the
-     * username when the field is entered, and Chrome fills a saved password into the fields that
-     * show dots, whatever the fields say.
+     * username when the field is entered, and Chrome fills in the saved login the user picks
+     * from the list it shows at the password fields, whatever the fields say.
      *
      * @param {Event} event the text of a field changed
      */
@@ -120,13 +99,6 @@
                 }
             }
             field.removeAttribute(HINTED);
-            if (!field.hasAttribute(MASKED)) {
-                continue;
-            }
-
-            field.type = 'password';
-            field.removeAttribute(MASKED);
-            field.removeAttribute('spellcheck');
         }
     }
 

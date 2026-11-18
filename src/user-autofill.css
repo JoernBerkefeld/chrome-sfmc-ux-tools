@@ -1,7 +1,0 @@
-/*
- * SFMC UX Tools: a field that user-autofill.js put in the place of a password field shows dots,
- * as that one did.
- */
-input[data-sfmc-ux-tools-masked] {
-    -webkit-text-security: disc;
-}

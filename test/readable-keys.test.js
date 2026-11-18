@@ -341,6 +341,22 @@ test('a content block gets its key in the dialog that saves it, cut to what Mark
     assert.equal(elsewhere.value(key), '');
 });
 
+test('a data filter gets its key in the dialog that saves it, where the key is a text area', () => {
+    const dialog =
+        '<input id="exp-save-name-input" type="text" /><textarea id="exp-save-key-input"></textarea>';
+    const { type, value } = page(dialog);
+    type('#exp-save-name-input', 'Opened in 30 days (DE)');
+    assert.equal(value('#exp-save-key-input'), 'Opened_in_30_days_DE');
+    // a key the user typed stays
+    type('#exp-save-key-input', 'my-key');
+    type('#exp-save-name-input', 'Renamed');
+    assert.equal(value('#exp-save-key-input'), 'my-key');
+    // the dialog of a filter that exists comes with its key
+    const existing = page(dialog.replace('></textarea>', '>abc</textarea>'));
+    existing.type('#exp-save-name-input', 'Renamed');
+    assert.equal(existing.value('#exp-save-key-input'), 'abc');
+});
+
 test('a triggered send gets its key on its own page, when it is new', () => {
     const form =
         '<input id="txtName" maxlength="64" /><input id="txtCustomerKey" maxlength="36" />';

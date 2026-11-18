@@ -6,111 +6,194 @@ A Chrome extension with small usability helpers for Salesforce Marketing Cloud E
 
 ## Features
 
-### AMPscript and SSJS colours in the code editor
+Everything below works on its own after installing; there is nothing to set up. A few things can be switched under [Options](#options).
 
-Marketing Cloud's code editor colours HTML but shows AMPscript as plain text. With the extension, the code inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and `<script runat="server" language="ampscript">` tags is coloured as well: keywords, functions, variables, strings, numbers and comments.
+### Where it works
 
-- Personalisation strings such as `%%emailaddr%%` are coloured too.
-- In server-side JavaScript (`<script runat="server">`), Marketing Cloud's own objects and functions get colours of their own, for example `Platform`, `DataExtension`, `Variable`, `Write()` and the functions behind `Platform.Function.`. The JavaScript itself keeps the colours the editor already gives it.
-- Works in the code view of Content Builder, and wherever Marketing Cloud shows that same editor: Email Studio and CloudPages open Content Builder's code view, so everything described here applies there too.
-- **Code resources** of CloudPages are files of their own kind in that same editor, which Marketing Cloud shows without colours. The extension colours a JavaScript, CSS, JSON, XML or RSS resource as what it is; AMPscript and `<script runat="server">` inside it keep their colours and features. A JavaScript resource gets the [completions](#completions) of a browser script. **{ }** and **Shift+Alt+F** [format](#formatting) JavaScript, CSS and JSON resources with the formatter for that language, and a resource that consists of server-side scripts only like other content. A resource that mixes its own code with AMPscript or a server-side script is not formatted, and XML, RSS and text resources have no format button, because no bundled formatter reads them. The Save and Publish buttons of a code resource are outside the editor, so format on save does not apply there.
-- The code editor of Automation Studio's **script activity** is covered as well, with the same colours and both themes, also on the wizard's summary step. That editor also has [completions](#completions), hovers, parameter help, error and warning underlines with notes next to the line numbers, quick fixes (**Ctrl+.** / **Cmd+.**) and go to definition (**Ctrl+click** / **Cmd+click**), as described below for Content Builder; the read-only editor on the summary step explains and underlines but offers no fixes. A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, [format](#formatting) the script; with format on save switched on, a click on **Next** formats it first. Saving with **Ctrl+S** is for Content Builder only, as that dialog saves at the end of its wizard. Its own check of the script, which marked the `<script runat="server">` tag as a JavaScript error, is switched off; **Validate Syntax** still asks Marketing Cloud.
-- The code editor of Automation Studio's **SQL query activity** follows the editor theme, light or dark, with the SQL colouring Marketing Cloud gives it. A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, [format](#formatting) the query as T-SQL; with format on save switched on, a click on **Next** formats it first. SQL has no completions, hovers or checks from the extension.
-- The content itself is never changed; only the colours are.
-- A script tag is only recognised if its opening tag fits on one line.
+- **Content Builder**: the code view of emails, templates and content blocks.
+- **Email Studio and CloudPages**: both open Content Builder's code view, so everything said about Content Builder applies there too.
+- **CloudPages code resources** (JavaScript, CSS, JSON, XML, RSS, text).
+- **Automation Studio**: the script activity, the SQL query activity, new automations and the dialogs that create an activity.
+- **Contact Builder and Email Studio**: the dialogs that create a data extension.
+- **Setup → Installed Packages**: the dialog with the list of scopes.
 
-### Documentation on hover
+### Colours in the code editor
 
-Rest the mouse on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions, and a box shows what it does: its parameters with their types, what it returns, an example and links to the full documentation. The text is the one the SFMC Language Service extension for VS Code shows, and the code in it has the colours of the editor. You can move the mouse onto the box to scroll it or to follow a link. Nothing is shown inside browser scripts.
+Marketing Cloud colours HTML but shows AMPscript as plain black text. The extension colours it, which makes code much easier to read.
 
-In server-side JavaScript the box also knows your own code: rest the mouse on a variable, a function of the content or a method of a value, such as `Rows.Add` of a `DataExtension.Init(...)` result, and it shows the type and, where there is one, the description. This comes from TypeScript, which reads the SSJS with the type declarations of Marketing Cloud's objects.
+- **AMPscript** gets colours for keywords, functions, variables, texts, numbers and comments. This covers `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript inside a script tag.
+- **Personalisation strings** such as `%%emailaddr%%` are coloured too.
+- **Server-side JavaScript (SSJS)**: Marketing Cloud's own names, such as `Platform`, `DataExtension` and `Write()`, get a colour of their own, so they stand out from ordinary JavaScript.
+- **Only the colours change.** Your content stays exactly as you wrote it.
+- **One limit:** a script tag is only recognised if its opening tag fits on one line.
 
-### Errors and warnings
+### Light and dark theme
 
-The extension checks your AMPscript and SSJS while you type and underlines what will not work: red for errors, yellow for warnings. Rest the mouse on an underline to read why, with a link to the rule behind it.
+- The editor follows your computer: dark if your computer is in dark mode, light otherwise. It switches along when your computer does.
+- You can fix it to **Light Modern** or **Dark Modern** in the options. These are the colour schemes of the code editor Visual Studio Code.
+- The theme covers the whole editor: background, line numbers, selection and all code.
+- It replaces the themes from Marketing Cloud's own menu.
 
-- AMPscript: unknown functions, a wrong number of arguments, blocks and `IF` statements that are never closed, and more.
-- SSJS: syntax that Marketing Cloud's engine rejects (`let`, arrow functions, template literals, …), JavaScript methods the engine does not have, Core library calls without `Platform.Load`, and more.
-- SSJS, with TypeScript: mistakes in the use of Marketing Cloud's objects and of your own code, such as a method that a value does not have (`de.Rowz`) or an argument of the wrong type.
-- **Quick fixes**: where the language service knows a remedy, the box offers it as a button, for example adding the polyfill for a JavaScript method that SSJS lacks. **Ctrl+.** (**Cmd+.** on a Mac) opens the fixes for the problem at the cursor; Enter applies the first one, Esc closes the box. A fix is one step for **Ctrl+Z**.
-- The checks are those of the language service; browser scripts are not checked. There is no list of all problems yet.
+### Suggestions while you type
 
-### Go to definition
+While you type code, a small list offers what fits. Pick an entry and it is written for you.
 
-Hold **Ctrl** (**Cmd** on a Mac) and click a name that the server-side JavaScript of the content declares; the cursor jumps to the declaration. It covers functions, variables, parameters and the members of your own objects in the same content, not Marketing Cloud's own names and not AMPscript.
+- **Open the list at any time** with **Ctrl+Space**.
+- **AMPscript**: functions, keywords, personalisation strings and the variables you already use in the same content.
+- **SSJS**: Marketing Cloud's functions and objects, the JavaScript functions that really work in Marketing Cloud, and the functions you wrote yourself in the same content.
+- **Find a function by any part of its name**: `Loo` finds `Platform.Function.Lookup`, and so does `Platform.Function.Loo`.
+- **One step at a time**: typing `plat` offers `Platform`; after `Platform.` you see what is inside it, and so on. Upper and lower case do not matter.
+- **After a dot**, you get what belongs to the thing in front of it. For example, after a variable that holds a data extension you get `Rows`, and after that `Add`, `Retrieve` and so on.
+- **JavaScript for the browser** (any other script tag): the names used in your browser scripts and the usual JavaScript words. Marketing Cloud's server-side names are kept out, because they do not work there.
+- **Picking a function** writes its name and the opening bracket. Nothing is written unless you pick it.
+- **In AMPscript**, the list stays away inside texts and comments and in plain HTML.
+- **Not covered yet**: in browser scripts, what belongs to a value, such as the functions of `document`.
 
-### Parameter help
+### Explanations when you point at code
 
-While the cursor is inside the brackets of an AMPscript function or of one of Marketing Cloud's SSJS functions, a box above the line lists the function's parameters, marks the one you are typing and says what it is for. It follows the cursor, also in calls that are already written, and **Esc** closes it. In SSJS this also works for the functions of the content and for the methods of a value, such as `de.Rows.Lookup(`.
+- **Rest the mouse** on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions. A box explains what it does, what you have to give it, what you get back, shows an example and links to the full documentation.
+- **Your own SSJS code is explained too**: point at one of your variables or functions and the box says what it is.
+- **You can move the mouse into the box** to scroll it or click a link.
+- Nothing is shown inside browser scripts.
 
-### Formatting
+### Help with a function's inputs
 
-Click the **{ }** button in the toolbar of the code view, or press **Shift+Alt+F**, to format the whole content: AMPscript, SSJS, HTML, CSS and browser JavaScript, with the rules of the [prettier-plugin-sfmc](https://github.com/JoernBerkefeld/prettier-plugin-sfmc) plugin and the settings the SFMC Language Service extension for VS Code uses (4 spaces, 100 characters per line, single quotes). **Ctrl+Z** undoes it in one step.
+- While your cursor is inside the brackets of a function, a box above the line lists the inputs the function expects and marks the one you are typing.
+- It also works when you click into a call that is already written.
+- It works for AMPscript functions, Marketing Cloud's SSJS functions and your own SSJS functions.
+- **Esc** closes it.
 
-- Formatting only changes the text in the editor. Nothing is saved until you save.
-- AMPscript with a syntax error is left exactly as written; the rest is formatted.
-- **Format on save** can be switched on in the extension's options. The code is then formatted first whenever you save with Marketing Cloud's **Save** or **Save and Exit** button or with the shortcut below. In Automation Studio's script activity it is formatted when you click **Next**.
+### Mistakes are underlined
+
+The extension checks your AMPscript and SSJS while you type.
+
+- **Red** means it will not work. **Yellow** is a warning.
+- **Rest the mouse on an underline** to read what is wrong, with a link to more information.
+- **AMPscript**: unknown functions, too few or too many inputs, blocks and `IF` statements that are never closed, and more.
+- **SSJS**: modern JavaScript that Marketing Cloud does not understand (`let`, arrow functions, …), functions Marketing Cloud does not have, a missing `Platform.Load`, and more.
+- **SSJS, deeper checks**: mistakes in how you use Marketing Cloud's objects or your own code, such as a misspelt function name (`de.Rowz`).
+- **Not covered**: browser scripts are not checked, and there is no list of all problems yet.
+
+### One-click fixes
+
+- Where the extension knows a remedy, the box of a problem offers it as a button.
+- **Ctrl+.** (**Cmd+.** on a Mac) opens the fixes for the problem at your cursor. **Enter** applies the first one, **Esc** closes the box.
+- **Ctrl+Z** undoes a fix in one step.
+
+### Jump to where something is defined
+
+- Hold **Ctrl** (**Cmd** on a Mac) and click a name from your own SSJS code. The cursor jumps to the place where it is defined.
+- Works for your functions, variables and the parts of your own objects, within the same content.
+- Does not work for Marketing Cloud's own names or for AMPscript.
+
+### Tidy up your code (formatting)
+
+- Click the **{ }** button in the editor's toolbar, or press **Shift+Alt+F**. The whole content is tidied: indentation, line breaks and spacing.
+- Covers AMPscript, SSJS, HTML, CSS and browser JavaScript.
+- **Ctrl+Z** undoes it in one step.
+- **Only the text in the editor changes.** Nothing is saved until you save.
+- AMPscript that contains a mistake is left exactly as written; the rest is tidied.
+- It always tidies the whole content, not just a selection.
+- **Format on save** (an option, off by default): your code is tidied automatically each time you save.
 
 ### Save with Ctrl+S
 
-**Ctrl+S** (**Cmd+S** on a Mac) in the code view saves the content, exactly like a click on Marketing Cloud's **Save** button. Without the extension the key opens the browser's "save page" dialog.
+- **Ctrl+S** (**Cmd+S** on a Mac) in the code view of Content Builder saves your content, just like Marketing Cloud's **Save** button.
+- Without the extension, that key opens the browser's "save this page" window instead.
 
-- There are no settings yet, and it always formats the whole content, not a selection.
+### The browser's right-click menu in the code editor
 
-### Completions
+- A right-click in the code editor opens your browser's normal menu (copy, paste, spell check, …) instead of the menu Marketing Cloud draws over your code.
+- The gear button below the editor, which opens that same Marketing Cloud menu, is hidden.
+- You can get Marketing Cloud's menu and the gear button back in the options.
 
-While you type AMPscript or server-side JavaScript (SSJS) in the code view of Content Builder or in Automation Studio's script activity, the extension suggests what fits. Press **Ctrl+Space** to ask for suggestions at any time.
+### CloudPages code resources
 
-- **AMPscript**: functions, keywords, personalisation strings and the variables of the current content.
-- **SSJS**, inside `<script runat="server">`: Marketing Cloud's functions and objects (`Platform.Function.Lookup`, `Write`, `DataExtension`, `HTTP.Get`, …), the JavaScript built-ins that work in SSJS, and the functions declared in the content. A name is found by its full path (`Platform.Function.Loo`) or by the name alone (`Loo`).
-- **Members of a value in SSJS**: after a dot, the suggestions are the members of what stands in front of it, whatever that is: `Platform.Function.`, a variable that holds a `DataExtension.Init(...)` result, its `Rows`, a string, an array or one of your own objects. The popup lists the members by their short names (`Lookup`, not `Platform.Function.Lookup`); Marketing Cloud's own members keep their description, documentation and brackets.
-- **JavaScript for the browser**, inside any other `<script>`: the names used in the content's browser scripts, JavaScript's keywords and the usual globals (`document`, `console`, …). Marketing Cloud's server-side names are never suggested there. SSJS gets the names of its own scripts and its keywords in the same way.
+A code resource is a file of one kind: JavaScript, CSS, JSON, XML, RSS or text. Marketing Cloud shows them without colours.
 
-- AMPscript suggestions appear inside `%%[ ... ]%%` blocks, `%%= ... =%%` expressions and AMPscript script tags, never in plain HTML. While you type, they stay away inside strings and comments.
-- Picking a function inserts its name and the opening bracket; picking anything else inserts the plain word. Nothing is inserted unless you pick it.
-- Not covered yet, in browser scripts: the members of a value, such as the methods of `document`.
-- What the extension knows about your own SSJS (members, types, declarations) comes from [TypeScript](https://www.typescriptlang.org/), with the type declarations of the `ssjs-data` package, as in the VS Code extension. This part is large, so it is only loaded into a page once that page shows a code editor. Until it is there, and if it cannot be loaded, the editor works with Marketing Cloud's own names alone.
-- The suggestions come from the [sfmc-language-lsp](https://github.com/JoernBerkefeld/sfmc-language-lsp) language service (version 4.5.1), the same one behind the SFMC Language Service extension for VS Code. It is built into the extension and runs inside the page.
-- In Content Builder the popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
-- **Automation Studio's script activity**: the editor of that dialog has the same completions, while you type and on **Ctrl+Space**, in a popup of the extension's own, as that editor has none. The arrow keys, **Page Up**/**Page Down**, **Home** and **End** move through the list, **Enter**, **Tab** or a click picks an entry, and **Esc**, a click elsewhere or scrolling closes it. A pick is one step for **Ctrl+Z**. The read-only editor on the summary step has no completions.
+- **Colours**: JavaScript, CSS, JSON, XML and RSS resources are coloured as what they are.
+- **AMPscript and SSJS inside a resource** keep their colours and all the help described above.
+- **JavaScript resources** get the suggestions of a browser script.
+- **Formatting**: **{ }** and **Shift+Alt+F** tidy JavaScript, CSS and JSON resources.
+- **Not formatted**: a resource that mixes its own code with AMPscript or SSJS is left as it is, so nothing gets rearranged by mistake.
+- **No format button**: XML, RSS and text resources.
+- **Format on save does not apply** to code resources, because their Save and Publish buttons sit outside the editor.
+
+### Automation Studio: script activity
+
+The code editor of the script activity gets everything Content Builder's editor has.
+
+- Colours and both themes, also on the summary step of the wizard.
+- Suggestions while you type and on **Ctrl+Space**. Use the arrow keys, **Page Up**/**Page Down**, **Home** and **End** to move, **Enter**, **Tab** or a click to pick, **Esc** to close.
+- Explanations on hover, help with a function's inputs, underlined mistakes with a mark next to the line number, one-click fixes and jump to definition.
+- A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, tidy the script.
+- With **format on save** switched on, the script is tidied when you click **Next**.
+- **Fixed:** Marketing Cloud's own check marked the `<script runat="server">` tag as an error although it is correct. That false error is gone. **Validate Syntax** still asks Marketing Cloud as before.
+- The summary step is read-only: it explains and underlines, but offers no suggestions or fixes.
+- **Ctrl+S** does nothing special here, because this dialog saves at the end of its wizard.
+
+### Automation Studio: SQL query activity
+
+- The query editor follows the light or dark theme and keeps Marketing Cloud's SQL colours, also on the summary step.
+- A **{ }** button next to **Validate Syntax**, and **Shift+Alt+F**, tidy the query.
+- With **format on save** switched on, the query is tidied when you click **Next**.
+- **Not covered**: suggestions, explanations and checks for SQL.
 
 ### Readable keys
 
-When you create something in Marketing Cloud and leave its external key empty, the key becomes a random string of letters and digits. With the extension, the key field of the dialog is filled from the name while you type it, much like Salesforce derives an API name from a label: `Welcome series - step 2` becomes `Welcome_series_-_step_2`.
+When you create something and leave its **External Key** empty, Marketing Cloud invents a random one such as `77E29FD6-6E4B-42EB-AA34-E4D6F91DCCCD`. With the extension, the key is filled in from the name while you type it: `Welcome series - step 2` becomes `Welcome_series_-_step_2`.
 
-- Covered: the dialogs that create an **SQL query**, **script**, **filter**, **import**, **data extract** or **file transfer** activity in Automation Studio, a new **automation**, whose key is on its **Summary** tab and in the **Save Automation** dialog that asks for a name, and the dialog that creates a **data extension** in Contact Builder. A new automation's key follows its name until the automation is saved. Automation Studio's Contact to Business Unit Mapping dialog uses the fields of the import dialog and is filled the same way.
-- Spaces become underscores. Accents are dropped (`ö` becomes `o`). Of the rest, only the letters A to Z, digits, underscores and hyphens stay; everything else is left out. The key is cut to the length its field allows.
-- The dialog for a new data extension limits the key to 36 characters although Marketing Cloud accepts 200 there. The extension lifts the field to 200, for the key it derives and for one you type.
-- A name without any of these characters, for example one in Japanese, gives no key; Marketing Cloud then uses its random one, as before.
-- A key you type yourself is kept. Empty the field and it follows the name again.
-- This is for creating only: a dialog that opens with a key, because it edits something that exists, is left alone, also if you empty its key field.
-- The extension only fills the field. Nothing is saved until you finish the dialog, and if the key is already in use, Marketing Cloud says so.
-- Switch it off under **Readable keys** in the extension's options.
+Where it works:
 
-### Options
+- **Automation Studio**: the dialogs that create an **SQL query**, **script**, **filter**, **import**, **data extract**, **file transfer** or **Contact to Business Unit Mapping** activity.
+- **Automation Studio**: a new **automation**. Its key is on the **Summary** tab and in the **Save Automation** dialog, which appears when you save an automation that has no name yet.
+- **Contact Builder**: the dialog that creates a **data extension**.
+- **Email Studio**: the dialog that creates a **data extension**.
 
-Click the extension's icon in Chrome's toolbar to open the options: editor theme, right-click menu, format on save and readable keys. The same options are on the extension's page in `chrome://extensions`. Changes apply at once.
+How the key is built:
 
-### Editor themes
+- Spaces become underscores.
+- Accents are removed: `ö` becomes `o`.
+- Only the letters A to Z, digits, underscores and hyphens are kept. Everything else, including dots, is left out.
+- The key is shortened to the length the field allows.
+- A name with none of these characters, for example one in Japanese, gives no key. Marketing Cloud then uses a random one, as before.
 
-Until you choose a theme, the editor follows your system: Dark Modern if your computer is in dark mode, Light Modern otherwise, and it switches along when the system does.
+Good to know:
 
-The code editor of Content Builder is shown in the colours of Visual Studio Code's **Light Modern** theme. To switch to **Dark Modern**, open the extension's options (`chrome://extensions` → SFMC UX Tools → Details → Extension options); the change applies at once. The theme covers the whole editor, not only AMPscript and SSJS, and replaces the themes that Marketing Cloud's own menu offers.
+- **Your own key wins.** As soon as you type a key yourself, the extension leaves it alone. Empty the field and it follows the name again.
+- **Only for new things.** If a dialog opens with a key, because you are editing something that exists, that key is never changed. A new automation's key follows its name only until the automation is saved.
+- **Nothing is saved for you.** The extension only fills the field. If the key is already in use, Marketing Cloud tells you when you finish the dialog.
+- **Longer keys for data extensions:** Contact Builder's dialog stops the key at 36 characters, although Marketing Cloud accepts 200. The extension lets you use all 200.
+- You can switch readable keys off in the options.
 
-### Browser context menu in the code editor
+### Fixed: pasting a name or key with the mouse
 
-The gear button below the editor opens the same Marketing Cloud menu as a right-click. While the browser's menu is chosen (the default), that button is hidden; choosing Marketing Cloud's menu in the options brings back both.
+In Contact Builder's dialog for a new data extension, Marketing Cloud ignores text that you paste with the mouse (right-click → **Paste**) or drag into the field. The field shows your text, but it is not used.
 
-A right-click in the code editor opens the browser's own context menu instead of the menu Marketing Cloud draws over the code. To get Marketing Cloud's menu back, open the extension's options (`chrome://extensions` → SFMC UX Tools → Details → Extension options) and choose it there; the change applies at once.
+- **Pasted key:** without the extension, your data extension gets a random key instead of the one you pasted. With the extension, your key is used.
+- **Pasted name:** the same fix applies to the name field.
+- **Always on.** This fix has no switch and also works when readable keys are switched off.
+- Pasting with **Ctrl+V** was never affected.
 
 ### Select all scopes of an installed package
 
-When you add or edit an API integration under **Setup → Platform Tools → Apps → Installed Packages**, the dialog lists around a hundred scope checkboxes. The extension adds a **Select all** button to the **Scope** bar of that dialog:
+When you add or edit an API integration under **Setup → Platform Tools → Apps → Installed Packages**, the dialog lists around a hundred checkboxes.
 
-- **Select all** ticks every scope, including the ones that are scrolled out of view.
-- Once everything is ticked, the button turns into **Deselect all** and clears every scope again.
+- A **Select all** button in the **Scope** bar ticks every scope, including the ones scrolled out of view.
+- Once everything is ticked, the button turns into **Deselect all**.
+- Nothing is saved until you press the dialog's own **Save** button.
+- Works in every language of Marketing Cloud, when adding a component and when editing one.
 
-Nothing is saved until you press the dialog's own **Save** button. The button works in every language of the Marketing Cloud user interface, in the dialog for adding a component and in the one for editing it.
+### Options
+
+Click the extension's icon in Chrome's toolbar. Every change applies at once; no reload is needed.
+
+- **Theme of the code editor**: like your computer (default), Light Modern or Dark Modern.
+- **Right-click menu**: your browser's menu (default) or Marketing Cloud's.
+- **Format on save**: off (default) or on.
+- **Readable keys**: on (default) or off.
+
+The same options are on the extension's page in `chrome://extensions` (SFMC UX Tools → Details → Extension options).
 
 ## Where it comes from, and what goes with it
 
@@ -142,12 +225,13 @@ This works the same way in other Chromium browsers such as Edge.
 
 ## Privacy
 
-The extension runs on four places of Marketing Cloud Engagement:
+The extension runs on five places of Marketing Cloud Engagement:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
 - Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. To tell a code resource of CloudPages from other content, the extension reads the asset type, and nothing else, from the message with which Marketing Cloud sets the editor up. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the addresses listed here.
 - Automation Studio (`https://mc.<stack>.marketingcloudapps.com/AutomationStudioFuel3/`), where it adds colours, completions, hovers, parameter help, error underlines and quick fixes and formatting to the code editor of the script activity and applies the editor theme. The editor reads your script through the colouring rules and the built-in language service reads it to do the rest, inside the page only; the large TypeScript part is added to such a page in the same way as on Content Builder. The code editor of the SQL query activity gets the editor theme and formatting only; the built-in formatter reads the query inside the page. The same files as on Content Builder are loaded there, but the code editors of all other activities are left as they are. In the dialogs that create an activity and on the page of a new automation, it reads the name you type and writes the key derived from it into the dialog's key field.
 - Contact Builder (`https://mc.<stack>.marketingcloudapps.com/contactsmeta/`), where it does the same in the dialog that creates a data extension, and nothing else.
+- Email Studio (`https://*.exacttarget.com/C12/Default.aspx`), where it also does only that, in the dialog that creates a data extension. Chrome asks you to accept the wider site access when the extension is updated.
 
 It does not collect or transmit any data and makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 

@@ -137,6 +137,7 @@ export default [
             'src/editor-theme.js',
             'src/editor-format-setting.js',
             'src/editor-typescript-loader.js',
+            'src/readable-keys.js',
             'src/background.js',
             'src/options.js',
         ],

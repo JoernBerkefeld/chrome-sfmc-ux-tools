@@ -84,6 +84,15 @@
             ],
             "all_frames": true,
             "run_at": "document_start"
+        },
+        {
+            "matches": [
+                "https://*.marketingcloudapps.com/AutomationStudioFuel3/*",
+                "https://*.marketingcloudapps.com/contactsmeta/*"
+            ],
+            "js": ["readable-keys.js"],
+            "all_frames": true,
+            "run_at": "document_start"
         }
     ]
 }

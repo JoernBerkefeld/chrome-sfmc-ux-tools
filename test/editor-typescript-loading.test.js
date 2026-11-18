@@ -254,8 +254,10 @@ test('the manifest loads the TypeScript script on demand only, and may inject it
     }
 
     // Automation Studio has the editor scripts on all its documents, and the loader with them
-    const automation = manifest.content_scripts.filter((entry) =>
-        entry.matches.some((match) => match.includes('/AutomationStudioFuel3/')),
+    const automation = manifest.content_scripts.filter(
+        (entry) =>
+            entry.matches.some((match) => match.includes('/AutomationStudioFuel3/')) &&
+            entry.js.some((file) => file.startsWith('editor-')),
     );
     assert.deepEqual(
         automation.map((entry) => entry.matches),

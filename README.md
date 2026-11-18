@@ -74,9 +74,21 @@ While you type AMPscript or server-side JavaScript (SSJS) in the code view of Co
 - In Content Builder the popup needs the editor's hint feature. Where an editor does not have it, completions stay off and everything else works as before.
 - **Automation Studio's script activity**: the editor of that dialog has the same completions, while you type and on **Ctrl+Space**, in a popup of the extension's own, as that editor has none. The arrow keys, **Page Up**/**Page Down**, **Home** and **End** move through the list, **Enter**, **Tab** or a click picks an entry, and **Esc**, a click elsewhere or scrolling closes it. A pick is one step for **Ctrl+Z**. The read-only editor on the summary step has no completions.
 
+### Readable keys
+
+When you create something in Marketing Cloud and leave its external key empty, the key becomes a random string of letters and digits. With the extension, the key field of the dialog is filled from the name while you type it, much like Salesforce derives an API name from a label: `Welcome series - step 2` becomes `Welcome_series_-_step_2`.
+
+- Covered: the dialogs that create an **SQL query**, **script**, **filter**, **import**, **data extract** or **file transfer** activity in Automation Studio, and the dialog that creates a **data extension** in Contact Builder. Automation Studio's Contact to Business Unit Mapping dialog uses the fields of the import dialog and is filled the same way.
+- Spaces become underscores. Accents are dropped (`ö` becomes `o`). Of the rest, only the letters A to Z, digits, underscores and hyphens stay; everything else is left out. The key is cut to the length its field allows.
+- A name without any of these characters, for example one in Japanese, gives no key; Marketing Cloud then uses its random one, as before.
+- A key you type yourself is kept. Empty the field and it follows the name again.
+- This is for creating only: a dialog that opens with a key, because it edits something that exists, is left alone, also if you empty its key field.
+- The extension only fills the field. Nothing is saved until you finish the dialog, and if the key is already in use, Marketing Cloud says so.
+- Switch it off under **Readable keys** in the extension's options.
+
 ### Options
 
-Click the extension's icon in Chrome's toolbar to open the options: editor theme, right-click menu and format on save. The same options are on the extension's page in `chrome://extensions`. Changes apply at once.
+Click the extension's icon in Chrome's toolbar to open the options: editor theme, right-click menu, format on save and readable keys. The same options are on the extension's page in `chrome://extensions`. Changes apply at once.
 
 ### Editor themes
 
@@ -129,11 +141,12 @@ This works the same way in other Chromium browsers such as Edge.
 
 ## Privacy
 
-The extension runs on three places of Marketing Cloud Engagement:
+The extension runs on four places of Marketing Cloud Engagement:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
 - Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. To tell a code resource of CloudPages from other content, the extension reads the asset type, and nothing else, from the message with which Marketing Cloud sets the editor up. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the addresses listed here.
-- Automation Studio (`https://mc.<stack>.marketingcloudapps.com/AutomationStudioFuel3/`), where it adds colours, completions, hovers, parameter help, error underlines and quick fixes and formatting to the code editor of the script activity and applies the editor theme. The editor reads your script through the colouring rules and the built-in language service reads it to do the rest, inside the page only; the large TypeScript part is added to such a page in the same way as on Content Builder. The code editor of the SQL query activity gets the editor theme and formatting only; the built-in formatter reads the query inside the page. The same files as on Content Builder are loaded there, but the code editors of all other activities are left as they are.
+- Automation Studio (`https://mc.<stack>.marketingcloudapps.com/AutomationStudioFuel3/`), where it adds colours, completions, hovers, parameter help, error underlines and quick fixes and formatting to the code editor of the script activity and applies the editor theme. The editor reads your script through the colouring rules and the built-in language service reads it to do the rest, inside the page only; the large TypeScript part is added to such a page in the same way as on Content Builder. The code editor of the SQL query activity gets the editor theme and formatting only; the built-in formatter reads the query inside the page. The same files as on Content Builder are loaded there, but the code editors of all other activities are left as they are. In the dialogs that create an activity, it reads the name you type and writes the key derived from it into the dialog's key field.
+- Contact Builder (`https://mc.<stack>.marketingcloudapps.com/contactsmeta/`), where it does the same in the dialog that creates a data extension, and nothing else.
 
 It does not collect or transmit any data and makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
 

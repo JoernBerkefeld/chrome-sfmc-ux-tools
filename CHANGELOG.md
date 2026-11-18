@@ -41,7 +41,7 @@
 
 - The Event Definition Key field of a new API event now looks like the Activity Name field next to it.
 - Setup, new or existing user: the browser's password manager no longer fills a saved login into the Username, External Key and password fields of the user page. The option "Saved logins on Setup's user pages" switches this off.
-- Setup, new or existing user: Chrome no longer offers saved logins at the password fields, and LastPass, 1Password, Bitwarden and Dashlane are told to skip the fields.
+- Setup, new or existing user: a saved login that Chrome or LastPass fills into a field of the user page is taken out again, and LastPass, 1Password, Bitwarden and Dashlane are told to skip the fields. Chrome still shows its list of saved logins at the password fields.
 - Setup, new user: a saved login that a password manager puts into the External Key field, at any time, is replaced by the key made from the username; a key typed by hand stays.
 - Automation Studio's script activity: the underline of an error or warning no longer disappears on the line the cursor is on.
 - Automation Studio: the name typed for an automation is kept when you click elsewhere, for example on **Save**, instead of being dropped unless **Done** was clicked first.

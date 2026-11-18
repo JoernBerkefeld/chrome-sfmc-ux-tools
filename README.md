@@ -219,7 +219,7 @@ When you create or edit a user under **Setup → Users**, the page has a usernam
 
 - **Without the extension:** the browser fills one of your saved logins into the **Username**, the **External Key** and the **Temporary Password** of the user you are creating. If you do not notice, the new user is saved with someone else's details.
 - **With the extension:** the browser is told that these are not login fields, so it leaves them empty.
-- Chrome no longer offers your saved logins when you click into **Temporary Password** or **Confirm Password**. What you type there still shows as dots.
+- Chrome still shows its list of saved logins when you click into **Temporary Password** or **Confirm Password**; the extension cannot switch that list off. If you pick an entry from it by mistake, the extension takes out again what Chrome fills in. What you type there yourself stays, and shows as dots.
 - Password managers that are extensions (LastPass, 1Password, Bitwarden, Dashlane) are told to skip these fields too.
 - LastPass pastes a saved login into the **Username** anyway when you click into it. The extension takes it out again at once; what you typed or pasted yourself stays.
 - If a password manager writes a saved login into the **External Key** anyway, the extension puts back the key made from the username. A key you typed yourself stays.

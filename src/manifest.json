@@ -123,7 +123,7 @@
         {
             "matches": ["https://*.exacttarget.com/cloud/*"],
             "include_globs": ["https://mc.*"],
-            "js": ["transactional-messages.js"],
+            "js": ["key-rule.js", "transactional-messages.js"],
             "css": ["transactional-messages.css"],
             "run_at": "document_idle"
         },

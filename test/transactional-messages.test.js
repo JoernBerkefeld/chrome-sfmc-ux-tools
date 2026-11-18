@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
-const script = read('../src/transactional-messages.js');
+// in the order of the manifest
+const script = read('../src/key-rule.js') + read('../src/transactional-messages.js');
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const APP = (name) =>
     `<li class="mc-app-group-dropdown-app"><a href="/cloud/#app/${name}"><span class="mc-app-name">${name}</span></a></li>`;
@@ -30,9 +31,10 @@ const DEFINITION = {
  *
  * @param {string} html content of the page
  * @param {(path: string, method: string) => {status?: number, body?: unknown, isDown?: boolean}} [answer] what the API answers to a path below the API of transactional messages; isDown lets the request fail without an answer
- * @returns {{window: Window, document: Document, asked: string[], written: string[], calls: object[], entry: () => Element, open: () => Promise.<void>, panel: () => Element, text: () => string}} the page, what was read from the API, what was sent to change something, and every request as it was made
+ * @param {Object.<string, string>} [stored] saved settings of the extension
+ * @returns {{window: Window, document: Document, asked: string[], looked: string[], written: string[], calls: object[], entry: () => Element, open: () => Promise.<void>, panel: () => Element, text: () => string}} the page, what was read of the messages, what was read for the lists of a form, what was sent to change something, and every request as it was made
  */
-function page(html, answer = () => ({ body: { definitions: [], count: 0 } })) {
+function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), stored = {}) {
     const { window } = new JSDOM(`<!doctype html><body>${html}</body>`, {
         runScripts: 'outside-only',
         url: 'https://mc.s7.exacttarget.com/cloud/',
@@ -47,16 +49,33 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } })) {
             this.dispatchEvent(new Event('close'));
         };
     `);
-    window.chrome = { runtime: { getURL: (path) => `chrome-extension://id/${path}` } };
+    window.chrome = {
+        runtime: { getURL: (path) => `chrome-extension://id/${path}` },
+        storage: {
+            sync: {
+                get: (defaults) =>
+                    stored.isBroken
+                        ? Promise.reject(new Error('broken'))
+                        : Promise.resolve({ ...defaults, ...stored }),
+            },
+        },
+    };
     const asked = [];
+    const looked = [];
     const written = [];
     const calls = [];
     window.fetch = async (url, options) => {
         calls.push({ url, ...options });
-        const prefix = '/cloud/fuelapi/messaging/v1/';
+        const prefix = '/cloud/fuelapi/';
+        assert.ok(url.startsWith(prefix), url);
         // what is read is noted without the filter that every list carries
-        const path = url.slice(prefix.length).replace('&$filter=status%20neq%20deleted', '');
-        if (options.method === 'GET') {
+        const path = url
+            .slice(prefix.length)
+            .replace(/^messaging\/v1\//, '')
+            .replace('&$filter=status%20neq%20deleted', '');
+        if (!url.startsWith(`${prefix}messaging/v1/`)) {
+            looked.push(path);
+        } else if (options.method === 'GET') {
             asked.push(path);
         } else {
             written.push(`${options.method} ${path}`);
@@ -84,6 +103,7 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } })) {
         window,
         document,
         asked,
+        looked,
         written,
         calls,
         entry,
@@ -617,6 +637,316 @@ test('a list that cannot be reached says so in plain words', async () => {
     );
 });
 
+/**
+ * Lists what a field of a form offers to choose from.
+ *
+ * @param {object} at the page with the form
+ * @param {string} path name of the field
+ * @returns {string[][]} value and label of every entry
+ */
+function options(at, path) {
+    return [...at.field(path).list.children].map((item) => [item.value, item.label]);
+}
+
+/**
+ * Opens the form for a new message of a kind.
+ *
+ * @param {string} kind sms, push or ott
+ * @param {(path: string, method: string) => object} [answer] what the API answers
+ * @param {Object.<string, string>} [stored] saved settings of the extension
+ * @returns {Promise.<object>} the page, with ways to fill a field, to tick one, to read one and to send the form
+ */
+async function form(kind, answer, stored) {
+    const at = page(MENU, answer, stored);
+    await at.open();
+    await tab(at, kind);
+    at.panel().querySelector('.sfmc-ux-tools-transactional-new').click();
+    await tick();
+    at.form = () => at.panel().querySelector('form');
+    at.field = (path) => at.form().elements[path];
+    at.button = (text) => [...at.form().elements].find((item) => item.textContent === text);
+    at.type = (path, text) => {
+        at.field(path).value = text;
+        at.field(path).dispatchEvent(new at.window.Event('input', { bubbles: true }));
+    };
+    at.tick = (path) => {
+        at.field(path).click();
+    };
+    at.send = async () => {
+        at.panel()
+            .querySelector('form')
+            .dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
+        await tick();
+        await tick();
+    };
+    at.sent = () =>
+        at.calls.filter((call) => call.method === 'POST').map((call) => JSON.parse(call.body));
+    return at;
+}
+
+test('every list offers a new message of its kind, also when it is empty', async () => {
+    const at = page(MENU, (path) => ({
+        body: path.startsWith('push/')
+            ? { definitions: [ROW('receipt')], count: 1 }
+            : { definitions: [], count: 0 },
+    }));
+    await at.open();
+    const offer = () => at.panel().querySelector('.sfmc-ux-tools-transactional-new').textContent;
+    assert.equal(offer(), 'New SMS message');
+    await tab(at, 'push');
+    assert.equal(offer(), 'New Push message');
+    assert.equal(rows(at).length, 1);
+    await tab(at, 'ott');
+    assert.equal(offer(), 'New OTT message');
+});
+
+test('a new SMS message is sent with what the form holds, and its details open', async () => {
+    const at = await form('sms', (path, method) => {
+        if (method === 'POST') {
+            return { status: 201, body: { definitionKey: 'Order_shipped' } };
+        }
+        return { body: path.includes('?') ? { definitions: [] } : DEFINITION };
+    });
+    assert.match(at.text(), /^New SMS message/);
+    assert.deepEqual(
+        [...at.form().elements].filter((item) => item.name).map((item) => item.name),
+        [
+            'name',
+            'definitionKey',
+            'description',
+            'status',
+            'content.message',
+            'subscriptions.shortCode',
+            'subscriptions.keyword',
+            'subscriptions.countryCode',
+            'subscriptions.autoAddSubscriber',
+            'subscriptions.updateSubscriber',
+        ],
+    );
+    at.type('name', '  Order shipped ');
+    at.type('content.message', ' Your order is on its way.\n');
+    at.type('subscriptions.shortCode', ' 4912312345678 ');
+    at.type('subscriptions.keyword', 'ORDER');
+    at.tick('subscriptions.autoAddSubscriber');
+    await at.send();
+    assert.deepEqual(at.written, ['POST sms/definitions']);
+    const call = at.calls.find((item) => item.method === 'POST');
+    assert.equal(call.credentials, 'same-origin');
+    assert.equal(call.headers['Content-Type'], 'application/json');
+    assert.deepEqual(at.sent(), [
+        {
+            name: 'Order shipped',
+            definitionKey: 'Order_shipped',
+            status: 'Active',
+            // the text of the message as typed; what was left empty is not sent
+            content: { message: ' Your order is on its way.\n' },
+            subscriptions: {
+                shortCode: '4912312345678',
+                keyword: 'ORDER',
+                autoAddSubscriber: true,
+                updateSubscriber: false,
+            },
+        },
+    ]);
+    // the details of the new message, read by its key
+    assert.equal(at.asked.at(-1), 'sms/definitions/Order_shipped');
+    assert.match(at.text(), /^Created “Order shipped” \(key Order_shipped\)\./);
+    assert.ok(at.panel().querySelector('dl'));
+});
+
+test('a new push message and a new OTT message carry the fields of their kind', async () => {
+    const push = await form('push', () => ({ body: {} }));
+    push.type('name', 'Receipt');
+    push.type('applicationId', '7d00d57d-0d94-4a5d-85bd-b51a47ba1b9f');
+    push.type('content.customerKey', 'receipt_push');
+    push.type('options.badge', '1');
+    push.field('status').value = 'Inactive';
+    await push.send();
+    assert.deepEqual(push.written, ['POST push/definitions']);
+    assert.deepEqual(push.sent(), [
+        {
+            name: 'Receipt',
+            definitionKey: 'Receipt',
+            status: 'Inactive',
+            applicationId: '7d00d57d-0d94-4a5d-85bd-b51a47ba1b9f',
+            content: { customerKey: 'receipt_push' },
+            options: { badge: '1' },
+        },
+    ]);
+    const ott = await form('ott', () => ({ body: {} }));
+    ott.type('name', 'Account reset');
+    ott.type('senderId', '15555551234');
+    ott.type('content.customerKey', 'reset_whatsapp');
+    await ott.send();
+    assert.deepEqual(ott.written, ['POST ott/definitions']);
+    assert.deepEqual(ott.sent(), [
+        {
+            name: 'Account reset',
+            definitionKey: 'Account_reset',
+            status: 'Active',
+            senderType: 'WhatsApp',
+            senderId: '15555551234',
+            content: { customerKey: 'reset_whatsapp' },
+        },
+    ]);
+});
+
+test('the key follows the name until one is typed, and not at all when readable keys are off', async () => {
+    const at = await form('sms');
+    at.type('name', 'Preise (EUR) & Währung v1.2');
+    assert.equal(at.field('definitionKey').value, 'Preise_EUR_Wahrung_v12');
+    // no longer than a key may be
+    at.type('name', 'a'.repeat(50));
+    assert.equal(at.field('definitionKey').value, 'a'.repeat(36));
+    assert.equal(at.field('definitionKey').maxLength, 36);
+    at.type('definitionKey', 'my-own-key');
+    at.type('name', 'Another name');
+    assert.equal(at.field('definitionKey').value, 'my-own-key');
+    // a key that was taken out again follows the name once more
+    at.type('definitionKey', '');
+    at.type('name', 'Third name');
+    assert.equal(at.field('definitionKey').value, 'Third_name');
+    const off = await form('sms', undefined, { readableKeys: 'off' });
+    off.type('name', 'Order shipped');
+    assert.equal(off.field('definitionKey').value, '');
+    // settings that cannot be read leave it switched on
+    const broken = await form('sms', undefined, { isBroken: true });
+    broken.type('name', 'Order shipped');
+    assert.equal(broken.field('definitionKey').value, 'Order_shipped');
+});
+
+test('a form with a required field left empty is not sent', async () => {
+    const at = await form('sms');
+    at.type('name', 'Order shipped');
+    at.type('content.message', 'text');
+    at.type('subscriptions.shortCode', '4912312345678');
+    // the keyword is missing
+    await at.send();
+    assert.deepEqual(at.written, []);
+    // blanks are no keyword either
+    at.type('subscriptions.keyword', ' '.repeat(3));
+    await at.send();
+    assert.deepEqual(at.written, []);
+    assert.equal(at.field('subscriptions.keyword').value, '');
+    assert.deepEqual(
+        [...at.form().elements].filter((item) => item.required).map((item) => item.name),
+        [
+            'name',
+            'definitionKey',
+            'content.message',
+            'subscriptions.shortCode',
+            'subscriptions.keyword',
+        ],
+    );
+    at.type('subscriptions.keyword', 'ORDER');
+    await at.send();
+    assert.deepEqual(at.written, ['POST sms/definitions']);
+});
+
+test('updating the subscriber is only ticked together with adding them', async () => {
+    const at = await form('sms');
+    const add = at.field('subscriptions.autoAddSubscriber');
+    const update = at.field('subscriptions.updateSubscriber');
+    at.tick('subscriptions.updateSubscriber');
+    assert.deepEqual([add.checked, update.checked], [true, true]);
+    at.tick('subscriptions.autoAddSubscriber');
+    assert.deepEqual([add.checked, update.checked], [false, false]);
+    at.tick('subscriptions.autoAddSubscriber');
+    assert.deepEqual([add.checked, update.checked], [true, false]);
+});
+
+test('a refused message says why, keeps what was typed and can be sent again', async () => {
+    let refusals = 1;
+    const at = await form('sms', (path, method) => {
+        if (method !== 'POST') {
+            return { body: { definitions: [] } };
+        }
+        return refusals-- > 0
+            ? { status: 400, body: { message: 'Keyword not found', errorcode: 10_002 } }
+            : { status: 201, body: {} };
+    });
+    at.type('name', 'Order shipped');
+    at.type('content.message', 'text');
+    at.type('subscriptions.shortCode', '4912312345678');
+    at.type('subscriptions.keyword', 'ORDER');
+    await at.send();
+    assert.match(at.text(), /Not created: Keyword not found/);
+    assert.equal(at.field('name').value, 'Order shipped');
+    assert.equal(at.field('subscriptions.keyword').value, 'ORDER');
+    assert.equal(at.button('Create').disabled, false);
+    await at.send();
+    assert.deepEqual(at.written, ['POST sms/definitions', 'POST sms/definitions']);
+    assert.match(at.text(), /^Created “Order shipped”/);
+});
+
+test('a message sent twice in a row goes out once, and one without an answer is reported as unknown', async () => {
+    const at = await form('ott', (path, method) =>
+        method === 'POST' ? { isDown: true } : { body: { definitions: [] } },
+    );
+    at.type('name', 'Account reset');
+    at.type('senderId', '15555551234');
+    at.type('content.customerKey', 'reset_whatsapp');
+    const sending = at.panel().querySelector('form');
+    const submit = () =>
+        sending.dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
+    submit();
+    // again, while the first is on its way
+    submit();
+    assert.equal(sending.querySelector('button[type="submit"]').disabled, true);
+    await tick();
+    await tick();
+    assert.deepEqual(at.written, ['POST ott/definitions']);
+    assert.match(
+        at.text(),
+        /^It is not known whether “Account reset” \(key Account_reset\) was created/,
+    );
+    assert.equal(at.asked.at(-1), 'ott/definitions?$page=1&$pageSize=50');
+});
+
+test('the form offers the codes, keywords and apps of the business unit, and works without them', async () => {
+    const lists = {
+        'legacy/v1/beta/mobile/code/': {
+            entry: [{ code: '4912312345678', countryCode: 'DE' }, { code: 77 }, {}],
+        },
+        'legacy/v1/beta/mobile/keyword/': {
+            entry: [{ keyword: 'ORDER', code: { code: '4912312345678' } }],
+        },
+        'push/v1/application': [{ id: 'app-1', name: 'Shop <b>app</b>' }],
+    };
+    const answer = (path) => ({ body: lists[path] || { definitions: [] } });
+    const sms = await form('sms', answer);
+    await tick();
+    assert.deepEqual(sms.looked, ['legacy/v1/beta/mobile/code/', 'legacy/v1/beta/mobile/keyword/']);
+    // only what can be chosen: a code that is no text is left out
+    assert.deepEqual(options(sms, 'subscriptions.shortCode'), [['4912312345678', 'DE']]);
+    assert.deepEqual(options(sms, 'subscriptions.keyword'), [['ORDER', '4912312345678']]);
+    const push = await form('push', answer);
+    await tick();
+    assert.deepEqual(push.looked, ['push/v1/application']);
+    // names are shown as text, whatever they contain
+    assert.deepEqual(options(push, 'applicationId'), [['app-1', 'Shop <b>app</b>']]);
+    assert.equal(push.panel().querySelector('b'), null);
+    // lists that cannot be read leave the fields as they are
+    const down = await form('sms', (path) =>
+        path.startsWith('legacy/') ? { isDown: true } : { body: { definitions: [] } },
+    );
+    await tick();
+    assert.deepEqual(options(down, 'subscriptions.shortCode'), []);
+    down.type('subscriptions.shortCode', '12345');
+    assert.equal(down.field('subscriptions.shortCode').value, '12345');
+    assert.equal(down.panel().querySelector('form') !== null, true);
+});
+
+test('"Cancel" leaves the form without sending anything', async () => {
+    const at = await form('push');
+    at.type('name', 'Receipt');
+    at.button('Cancel').click();
+    await tick();
+    assert.deepEqual(at.written, []);
+    assert.equal(at.panel().querySelector('form'), null);
+    assert.match(at.text(), /no transactional Push messages/);
+});
+
 test('the entry and the panel carry the icon of the extension, which names it', async () => {
     const at = page(MENU);
     const manifest = JSON.parse(read('../src/manifest.json'));
@@ -657,6 +987,8 @@ test('the manifest runs the script on the Marketing Cloud page only, in its top 
     assert.deepEqual(entry.matches, ['https://*.exacttarget.com/cloud/*']);
     assert.deepEqual(entry.include_globs, ['https://mc.*']);
     assert.deepEqual(entry.css, ['transactional-messages.css']);
+    // the rule that makes a key from a name comes first, for the form of a new message
+    assert.deepEqual(entry.js, ['key-rule.js', 'transactional-messages.js']);
     // the menu is in the page itself, not in the frames of the apps
     assert.equal(entry.all_frames, undefined);
     // the script uses the page's session through its own requests; it needs no place in the page's world

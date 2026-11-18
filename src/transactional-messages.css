@@ -96,6 +96,59 @@
     margin: 0 0 12px;
     padding: 8px 12px;
 }
+.sfmc-ux-tools-transactional-new,
+.sfmc-ux-tools-transactional-save {
+    background: #0176d3;
+    border: 1px solid #0176d3;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    margin: 0 8px 12px 0;
+    padding: 4px 12px;
+}
+.sfmc-ux-tools-transactional-save:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+.sfmc-ux-tools-transactional-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 12px;
+}
+.sfmc-ux-tools-transactional-form {
+    max-width: 560px;
+}
+.sfmc-ux-tools-transactional-field {
+    display: block;
+    margin: 0 0 12px;
+}
+.sfmc-ux-tools-transactional-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+.sfmc-ux-tools-transactional-field input[type='text'],
+.sfmc-ux-tools-transactional-field select,
+.sfmc-ux-tools-transactional-field textarea {
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font: inherit;
+    padding: 4px 8px;
+    width: 100%;
+}
+.sfmc-ux-tools-transactional-field input[type='checkbox'] {
+    margin-right: 6px;
+}
+.sfmc-ux-tools-transactional-field input[type='checkbox'] + .sfmc-ux-tools-transactional-label {
+    display: inline;
+    font-weight: normal;
+}
+.sfmc-ux-tools-transactional-help {
+    color: #5c5c5c;
+    display: block;
+}
 .sfmc-ux-tools-transactional-tabs {
     border-bottom: 1px solid #c9c9c9;
     margin: 12px 0;

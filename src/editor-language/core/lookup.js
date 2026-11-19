@@ -30,7 +30,20 @@ function isServed(language) {
 }
 
 /**
- * Asks the language service what it knows about a place in the document.
+ * Tells whether a place is inside a Handlebars expression of its line.
+ *
+ * @param {string} line the line
+ * @param {number} character column of a character
+ * @returns {boolean} true after an opening `{{` that is not closed before the place
+ */
+function isInHandlebars(line, character) {
+    const before = line.slice(0, character + 1);
+    return before.lastIndexOf('{{') > before.lastIndexOf('}}');
+}
+
+/**
+ * Asks the language service what it knows about a place in the document. Marketing Cloud Next
+ * explains Handlebars itself, so nothing is said about it there.
  *
  * @param {string} text whole document, its lines ending with a line feed
  * @param {{line: number, character: number}} position line and column of a character
@@ -39,6 +52,9 @@ function isServed(language) {
 export function hoverAt(text, position) {
     const language = languageAt(text, offsetAt(text, position));
     if (!isServed(language)) {
+        return null;
+    }
+    if (IS_NEXT && isInHandlebars(lineAt(text, position.line), position.character)) {
         return null;
     }
     const place = { line: position.line, character: position.character };

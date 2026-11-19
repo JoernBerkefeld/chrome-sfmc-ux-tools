@@ -30,7 +30,11 @@
     "web_accessible_resources": [
         {
             "resources": ["icons/icon16.png"],
-            "matches": ["https://*.exacttarget.com/*"]
+            "matches": [
+                "https://*.exacttarget.com/*",
+                "https://*.marketingcloudapps.com/*",
+                "https://*.lightning.force.com/*"
+            ]
         }
     ],
     "content_scripts": [

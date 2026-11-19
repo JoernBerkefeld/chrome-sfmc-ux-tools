@@ -1583,10 +1583,24 @@ test('the entry and the panel carry the icon of the extension, which names it', 
     // the header stays while the list and the details change below it
     await tab(at, 'ott');
     assert.equal(inPanel.isConnected, true);
-    // the page may only load that one file of the extension
+    // a page may only load that one file of the extension; the pages with a code editor show it in
+    // the boxes of the language features
     assert.deepEqual(manifest.web_accessible_resources, [
-        { resources: ['icons/icon16.png'], matches: ['https://*.exacttarget.com/*'] },
+        {
+            resources: ['icons/icon16.png'],
+            matches: [
+                'https://*.exacttarget.com/*',
+                'https://*.marketingcloudapps.com/*',
+                'https://*.lightning.force.com/*',
+            ],
+        },
     ]);
+    // every box of the language features carries it in its corner, at half its 16 pixels
+    const css = read('../src/editor-highlight.css');
+    const rule = /html \.sfmc-tooltip::before \{([^}]*)\}/.exec(css)[1];
+    assert.match(rule, /float: right;/);
+    assert.match(rule, /width: 8px;\s+height: 8px;/);
+    assert.match(rule, /chrome-extension:\/\/__MSG_@@extension_id__\/icons\/icon16\.png/);
     assert.equal(manifest.icons['16'], 'icons/icon16.png');
 });
 

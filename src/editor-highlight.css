@@ -445,6 +445,19 @@ html:not([data-sfmc-ux-tools-next]) li.CodeMirror-hint-active {
     text-align: left;
     white-space: normal;
 }
+/*
+ * The extension's icon in the top right corner of every box, at half its size, to tell the box
+ * from one of Marketing Cloud's own. The page may load this one file (see the manifest).
+ */
+html .sfmc-tooltip::before {
+    content: '';
+    float: right;
+    width: 8px;
+    height: 8px;
+    margin: 4px 0 4px 8px;
+    background: url('chrome-extension://__MSG_@@extension_id__/icons/icon16.png') center / contain
+        no-repeat;
+}
 html .sfmc-tooltip p,
 html .sfmc-tooltip pre,
 html .sfmc-tooltip blockquote {

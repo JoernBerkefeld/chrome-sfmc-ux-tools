@@ -23,7 +23,6 @@ const ENGAGEMENT_URL = 'https://content-builder.s1.marketingcloudapps.com/';
 const NEXT_MODE = 'ampscript-handlebars';
 const HOVER = '.sfmc-hover';
 const SIGNATURE = '.sfmc-signature';
-const FIX = '.sfmc-fix';
 // the features that are set up for an editor, by a key each of them binds
 const KEYS = {
     hover: 'Ctrl-.',
@@ -288,28 +287,15 @@ test('Next: no suggestions, no save key, no button and nothing of TypeScript are
     );
 });
 
-test('Next: Handlebars helpers and AMPscript are checked for Marketing Cloud Next, with fixes', async () => {
+test('Next: AMPscript is checked for Marketing Cloud Next, and what it lacks is only said to be unsupported', async () => {
     const content =
-        '<p>{{uppercas name}} {{lowercase name}}</p>\n%%[ set @a = HTTPGet("https://example.com") ]%%';
+        '<p>{{uppercas name}} {{base64Encode name}}</p>\n%%[ set @a = HTTPGet("https://example.com") ]%%\n%%=Uppercase(@a)=%%';
     const { window, editor } = await withEditor(content);
     await checkPause();
-    assert.deepEqual(underlined(editor), ['error: HTTPGet', 'warning: {{uppercas name}}']);
-
-    const { document } = window;
-    await rest(window, editor, '{{upper');
-    const problem = document.querySelector(`${HOVER} .sfmc-problem-warning`);
-    assert.match(problem.textContent, /Unknown Handlebars helper 'uppercas'/);
-    assert.equal(
-        problem.querySelector('.sfmc-problem-rule').textContent,
-        'sfmc/hbs-no-unknown-helper',
-    );
-    const fix = problem.querySelector(FIX);
-    assert.equal(fix.textContent, "Replace 'uppercas' with 'uppercase'");
-    fix.click();
-    assert.equal(editor.getLine(0), '<p>{{uppercase name}} {{lowercase name}}</p>');
-    await checkPause();
+    // nothing is said about Handlebars, of which the page knows more than the language service
     assert.deepEqual(underlined(editor), ['error: HTTPGet']);
 
+    const { document } = window;
     await rest(window, editor, 'set @a = HTTP');
     const box = document.querySelector(HOVER);
     assert.match(
@@ -317,18 +303,26 @@ test('Next: Handlebars helpers and AMPscript are checked for Marketing Cloud Nex
         /'HTTPGet' is not supported in Marketing Cloud Next/,
     );
     assert.match(box.querySelector('.sfmc-problem-rule').textContent, /amp-no-mcn-unsupported/);
-    assert.match(box.querySelector('pre').textContent, /^\(function\) HTTPGet\(/);
+    // the error alone, without the documentation of a function that cannot be used
+    assert.equal(box.querySelector('pre'), null);
     assert.equal(box.parentNode, document.body);
+
+    // a function that Marketing Cloud Next has is explained
+    await rest(window, editor, '%%=Upper');
+    assert.match(document.querySelector(`${HOVER} pre`).textContent, /^\(function\) Uppercase\(/);
+    assert.equal(document.querySelector(`${HOVER} .sfmc-problem`), null);
 });
 
-test('Next: a Handlebars helper is explained, and its parameters while they are typed', async () => {
-    const { window, editor } = await withEditor('<p>{{uppercase name}}</p>\n<p>{{add 1 2}}</p>');
+test('Next: Handlebars is left to the page: no box on a helper, known or not; parameters are still shown', async () => {
+    const { window, editor } = await withEditor(
+        '<p>{{uppercase name}} {{base64Encode name}}</p>\n<p>{{add 1 2}}</p>',
+    );
     const { document } = window;
     await rest(window, editor, '{{upper');
-    const box = document.querySelector(HOVER);
-    assert.match(box.querySelector('pre').textContent, /^\(helper\) uppercase\(/);
-    assert.match(box.textContent, /MCN helper/);
-    assert.equal(box.querySelector('.sfmc-problem'), null);
+    assert.equal(document.querySelector(HOVER), null);
+    // not the AMPscript function of the same name either
+    await rest(window, editor, '{{base64');
+    assert.equal(document.querySelector(HOVER), null);
 
     editor.hasFocus = () => true;
     editor.setCursor({ line: 1, ch: 11 });
@@ -428,11 +422,13 @@ test('the manifest runs the language and formatting scripts in the content edito
             run_at: 'document_idle',
         },
     ]);
-    // content scripts need no host permission, and nothing of the extension is loaded by the page
+    // content scripts need no host permission; the page loads one file of the extension, the icon
+    // that marks its boxes
     assert.deepEqual(manifest.host_permissions, ['https://*.marketingcloudapps.com/*']);
-    assert.ok(
-        manifest.web_accessible_resources.every((entry) =>
-            entry.matches.every((match) => !match.includes('force.com')),
-        ),
+    assert.deepEqual(
+        manifest.web_accessible_resources
+            .filter((entry) => entry.matches.some((match) => match.includes('force.com')))
+            .map((entry) => entry.resources),
+        [['icons/icon16.png']],
     );
 });

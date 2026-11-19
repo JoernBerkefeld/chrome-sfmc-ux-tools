@@ -2,7 +2,7 @@
  * SFMC UX Tools — the box for a place in the code editor: what is wrong there, how to fix it,
  * and its documentation. It opens where the mouse rests, and at the cursor on Ctrl-. (Cmd-.).
  */
-import { isInMode, report } from './shared.js';
+import { IS_NEXT, isInMode, report } from './shared.js';
 import { applyFix, fixesFor } from './quickfix.js';
 import { checkNow, diagnosticsAt } from './diagnostics.js';
 import { colour } from './colour.js';
@@ -13,6 +13,8 @@ import { renderMarkdown } from './markdown.js';
 export const SHOW_DELAY = 350;
 // time to move the mouse from the code onto the box
 export const HIDE_DELAY = 250;
+// the rule of the language service for an AMPscript function that Marketing Cloud Next lacks
+const UNSUPPORTED_IN_NEXT = 'sfmc/amp-no-mcn-unsupported';
 
 /**
  * Asks the language service what it knows about a place in the document.
@@ -156,7 +158,9 @@ export function registerHover(cm) {
     const didShowAt = (place, isForFixes = false) => {
         const isUsable = place && isInMode(cm) && wrapper.isConnected;
         const problems = isUsable ? problemsAt(cm, place) : [];
-        const hover = !isUsable || isForFixes ? null : hoverAt(cm, place);
+        // what Marketing Cloud Next cannot run is only said to be so, not explained
+        const isUnsupported = IS_NEXT && problems.some(({ code }) => code === UNSUPPORTED_IN_NEXT);
+        const hover = !isUsable || isForFixes || isUnsupported ? null : hoverAt(cm, place);
         const markdown = hover?.contents?.value;
         const hasContent = isForFixes
             ? problems.some((problem) => problem.fixes.length > 0)

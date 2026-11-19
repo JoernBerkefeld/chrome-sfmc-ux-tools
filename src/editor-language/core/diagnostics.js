@@ -10,6 +10,9 @@ import { AMPSCRIPT, DOCUMENT_URI, SETTINGS, SSJS } from '../shared.js';
 import { askTypescript } from '../typescript.js';
 import { offsetAt } from './text.js';
 
+// the source the language service gives its diagnostics about Handlebars
+const HANDLEBARS = 'handlebars';
+
 /**
  * Collects what the language service objects to in a document: its AMPscript, and the SSJS of
  * its server-side scripts. Browser scripts are not looked at.
@@ -18,10 +21,11 @@ import { offsetAt } from './text.js';
  * @returns {object[]} diagnostics of the language service
  */
 export function check(text) {
-    const list = sfmcLanguageService.validate(
-        { text, languageId: AMPSCRIPT, uri: DOCUMENT_URI },
-        SETTINGS,
-    );
+    // Marketing Cloud Next knows more Handlebars helpers than the language service does yet, so
+    // what the service says about Handlebars is left out
+    const list = sfmcLanguageService
+        .validate({ text, languageId: AMPSCRIPT, uri: DOCUMENT_URI }, SETTINGS)
+        .filter((diagnostic) => diagnostic.source !== HANDLEBARS);
     if (hasSsjs(text)) {
         list.push(...validateMixedDocumentSsjs(text, SETTINGS));
     }

@@ -378,8 +378,11 @@ html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_invalid {
     color: var(--sfmc-error);
 }
 
-/* Completions popup. It is added to the page body, outside of the editor. */
-.CodeMirror-hints {
+/*
+ * Completions popup. It is added to the page body, outside of the editor. Marketing Cloud Next has
+ * a list of suggestions of its own and gets none from the extension, so its list is left alone.
+ */
+html:not([data-sfmc-ux-tools-next]) .CodeMirror-hints {
     position: absolute;
     z-index: 2147483000;
     overflow: hidden auto;
@@ -396,7 +399,7 @@ html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_invalid {
     font-family: monospace;
     font-size: 90%;
 }
-.CodeMirror-hint {
+html:not([data-sfmc-ux-tools-next]) .CodeMirror-hint {
     margin: 0;
     padding: 0 4px;
     border-radius: 2px;
@@ -404,7 +407,7 @@ html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_invalid {
     white-space: pre;
     cursor: pointer;
 }
-li.CodeMirror-hint-active {
+html:not([data-sfmc-ux-tools-next]) li.CodeMirror-hint-active {
     background: var(--sfmc-widget-active-background);
     color: var(--sfmc-widget-active-foreground);
 }

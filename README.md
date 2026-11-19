@@ -1,6 +1,6 @@
 # SFMC UX Tools
 
-A Chrome extension with small usability helpers for Salesforce Marketing Cloud Engagement.
+A Chrome extension with small usability helpers for Salesforce Marketing Cloud Engagement, and for the content editor of Marketing Cloud Next.
 
 > Not affiliated with, endorsed by or supported by Salesforce.
 
@@ -35,6 +35,13 @@ Everything below works on its own after installing; there is nothing to set up. 
 - **Setup**: the pages for a new sender profile, send classification, delivery profile, file location, role or user, for readable keys.
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
 - **Setup → Installed Packages**: the dialog with the list of scopes.
+- **Marketing Cloud Next, content editor**: the code of an email made with **Create with HTML**, and the **HTML** component in emails, landing pages and the content blocks for both.
+    - **Explanations:** point at a Handlebars helper or an AMPscript function to read what it does.
+    - **Parameter help:** while you type a helper or a function, a box lists what it takes.
+    - **Checks:** what Marketing Cloud Next does not support is underlined, such as server-side JavaScript or an AMPscript function that only Engagement has. Point at the underline to read why; some come with a fix to click.
+    - **Tidying up:** **Shift+Alt+F** formats the code. One **Ctrl+Z** takes it back.
+    - **Left to Salesforce:** the colours and the list of suggestions are the editor's own. The extension adds no theme, no suggestions and no formatting on save there.
+    - **Good to know:** a helper that Salesforce's own list of suggestions offers can still be underlined as unknown. Our list of helpers is shorter than theirs at the moment.
 
 ### Colours in the code editor
 
@@ -279,7 +286,7 @@ This works the same way in other Chromium browsers such as Edge.
 
 ## Privacy
 
-The extension runs on eight places of Marketing Cloud Engagement:
+The extension runs on eight places of Marketing Cloud Engagement and on one of Marketing Cloud Next:
 
 - the Installed Packages page (`https://*.exacttarget.com/Content/Administration/InstalledPackages.aspx`), where it reads the open dialog to find the scope checkboxes and clicks them on your request;
 - Content Builder (`https://content-builder.<stack>.marketingcloudapps.com`), where it adds colours, completions, hovers, parameter help, error underlines and formatting to the code editor. The editor reads your code through the colouring rules, and the built-in language service and formatter read it to do the rest; all of this happens inside the page only. In the dialog that saves a new content block it reads the name you type and writes the key derived from it into the key field, and it adds such a key to the request that Content Builder sends when a new email is saved. Before it uses a key there, it asks Content Builder's own server, the one the page is talking to anyway, whether that key is free. To tell a code resource of CloudPages from other content, the extension reads the asset type, and nothing else, from the message with which Marketing Cloud sets the editor up. The part that understands the types of server-side JavaScript is large, so the extension only adds it to a Content Builder page that shows a code editor; for this it has Chrome's `scripting` permission, which it uses for nothing but loading that one file of its own into such a page. No code is ever loaded from anywhere else. Chrome's site-access prompt names `marketingcloudapps.com` as a whole because the stack number in the address differs per account; the extension itself is restricted to the addresses listed here.
@@ -289,6 +296,7 @@ The extension runs on eight places of Marketing Cloud Engagement:
 - Setup (`https://*.exacttarget.com/Content/Administration/SendManagement/`), where it does the same on the pages for a new sender profile, send classification, delivery profile or file location, and on the pages for a new role (`…/Roles/RoleDetails.aspx`) and a new user (`…/EmployeeDetails.aspx`).
 - Journey Builder (`https://jbinteractions.<stack>.marketingcloudapps.com`), where it reads the name of the journey and of its API event, changes the key in the request that Journey Builder sends when a new journey or API event is saved, and holds a save back while the journey has its made-up name. Before it uses a key, it asks Journey Builder's own server, the one the page is talking to anyway, whether that key is free.
 - the Marketing Cloud page around the apps (`https://mc.<stack>.exacttarget.com/cloud/`), where it adds nothing and makes no requests unless the preview feature **Transactional Messages** was switched on in the options. That feature is off after installing. Switched on, it adds an entry to the Mobile Studio menu. When you open its panel, it asks Marketing Cloud's own server, through the page you are logged in to, for the list of transactional SMS, push and OTT messages, and for the details of the one you click. It shows them to you and keeps nothing. When you open the form for a new message, it asks the same server for the SMS codes and keywords, or the push apps and the names and keys of the mobile messages in Content Builder with what each was written for, of the business unit, to offer them in the form. When you send that form, it sends the new message, or what you changed of an existing one, to that server, and when you delete a message and confirm it, it sends that one delete request. Before a change or a delete it reads the message again, and after a change once more. The page loads one file of the extension, its icon.
+- the content editor of Marketing Cloud Next (`https://<your domain>.lightning.force.com/cmsAuthor/contentEditor.app`), where it adds explanations, parameter help, error underlines with quick fixes and formatting on **Shift+Alt+F** to the code editor of an HTML email and of the HTML component. The built-in language service and formatter read your code to do this, inside the page only. It makes no requests there and changes nothing but the code you format. Chrome's site-access prompt names `lightning.force.com` as a whole because the first part of the address differs per account; the extension itself is restricted to the address of the content editor.
 
 The questions about a free key in Journey Builder and Content Builder, the lists and details of transactional messages with the lists their form offers, a new or changed transactional message that you sent and the delete of one that you confirmed, are the only requests the extension ever makes. They go to Marketing Cloud's own servers and nowhere else.
 

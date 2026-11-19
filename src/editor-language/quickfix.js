@@ -2,7 +2,7 @@
  * SFMC UX Tools — quick fixes: the changes the language service offers for an error or warning.
  */
 import { getScriptRegions, sfmcLanguageService } from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS } from './shared.js';
+import { AMPSCRIPT, DOCUMENT_URI, SETTINGS, SSJS } from './shared.js';
 import { offsetAt, positionAt } from './core/text.js';
 
 /**
@@ -50,7 +50,11 @@ export function fixesFor(text, diagnostic) {
         asked = { ...diagnostic, range: moveRange(diagnostic.range, text, source, -shift) };
     }
     return sfmcLanguageService
-        .getCodeActions({ text: source, languageId: language, uri: DOCUMENT_URI }, [asked])
+        .getCodeActions(
+            { text: source, languageId: language, uri: DOCUMENT_URI },
+            [asked],
+            SETTINGS,
+        )
         .map((action) => ({
             title: String(action.title),
             edits: (action.edit?.changes?.[DOCUMENT_URI] ?? []).map((edit) => ({

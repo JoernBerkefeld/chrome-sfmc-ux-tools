@@ -8,6 +8,7 @@ import {
     BROWSER_KINDS,
     DOCUMENT_URI,
     JAVASCRIPT,
+    SETTINGS,
     SSJS,
     languageAt,
     scriptsOnly,
@@ -268,6 +269,7 @@ function ampscriptHints(text, position, line) {
         .getCompletions(
             { text, languageId: AMPSCRIPT, uri: DOCUMENT_URI },
             { line: position.line, character: position.character },
+            SETTINGS,
         )
         .filter((item) => item.label.toLowerCase().startsWith(needle))
         .map((item) =>
@@ -307,6 +309,7 @@ function ssjsHints(text, position, line) {
     const items = sfmcLanguageService.getCompletions(
         { text: ssjsOnly(text), languageId: SSJS, uri: DOCUMENT_URI },
         { line: position.line, character: position.character },
+        SETTINGS,
     );
     for (const item of items) {
         const insert = untilPlaceholder(item);
@@ -376,6 +379,7 @@ function typescriptMembers(text, position, before, upToDot) {
             catalogueItems: sfmcLanguageService.getCompletions(
                 { text: ssjsOnly(text), languageId: SSJS, uri: DOCUMENT_URI },
                 place,
+                SETTINGS,
             ),
             ...memberReceiver(before),
         });

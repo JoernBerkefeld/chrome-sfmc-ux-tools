@@ -2,12 +2,11 @@
  * SFMC UX Tools — errors and warnings of a document, without an editor.
  */
 import {
-    DEFAULT_SETTINGS,
     getScriptRegions,
     sfmcLanguageService,
     validateMixedDocumentSsjs,
 } from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS } from '../shared.js';
+import { AMPSCRIPT, DOCUMENT_URI, SETTINGS, SSJS } from '../shared.js';
 import { askTypescript } from '../typescript.js';
 import { offsetAt } from './text.js';
 
@@ -19,13 +18,12 @@ import { offsetAt } from './text.js';
  * @returns {object[]} diagnostics of the language service
  */
 export function check(text) {
-    const list = sfmcLanguageService.validate({
-        text,
-        languageId: AMPSCRIPT,
-        uri: DOCUMENT_URI,
-    });
+    const list = sfmcLanguageService.validate(
+        { text, languageId: AMPSCRIPT, uri: DOCUMENT_URI },
+        SETTINGS,
+    );
     if (hasSsjs(text)) {
-        list.push(...validateMixedDocumentSsjs(text, DEFAULT_SETTINGS));
+        list.push(...validateMixedDocumentSsjs(text, SETTINGS));
     }
     return list;
 }

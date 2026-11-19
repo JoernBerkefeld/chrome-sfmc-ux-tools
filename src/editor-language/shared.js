@@ -1,11 +1,17 @@
 /*
  * SFMC UX Tools — what the language features of the code editor have in common.
  */
-import { extractScriptBodies, getScriptRegions } from 'sfmc-language-lsp';
+import { DEFAULT_SETTINGS, extractScriptBodies, getScriptRegions } from 'sfmc-language-lsp';
 
-import { JAVASCRIPT_FILE, fileKind } from './editors.js';
+import { IS_NEXT, JAVASCRIPT_FILE, fileKind } from './editors.js';
 
-export { isInMode, report } from './editors.js';
+export { IS_NEXT, isInMode, report } from './editors.js';
+
+// what the language service is told about the page, decided once per page: Marketing Cloud Next
+// has Handlebars and only part of AMPscript; Marketing Cloud Engagement is the service's default
+export const SETTINGS = IS_NEXT
+    ? { ...DEFAULT_SETTINGS, targetPlatform: 'next' }
+    : DEFAULT_SETTINGS;
 
 // an opening or closing script tag
 const SCRIPT_TAG = /<\/?script\b[^>]*>/gi;

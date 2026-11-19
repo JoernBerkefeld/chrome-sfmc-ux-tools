@@ -13,23 +13,29 @@
 import { registerCompletions } from './editor-language/completions.js';
 import { registerDefinition } from './editor-language/definition.js';
 import { registerDiagnostics } from './editor-language/diagnostics.js';
-import { watchEditors } from './editor-language/editors.js';
+import { IS_NEXT, watchEditors } from './editor-language/editors.js';
 import { registerHover } from './editor-language/hover.js';
 import { registerSignature } from './editor-language/signature.js';
 import { requestTypescript } from './editor-language/typescript.js';
 import { watchAceEditors } from './editor-language/ace/script-activity.js';
 import { watchQueryEditors } from './editor-language/ace/query-activity.js';
 
-watchEditors('language', [
-    // a frame with an editor has use for the TypeScript script, which is loaded on demand
-    requestTypescript,
-    registerCompletions,
-    registerHover,
-    registerSignature,
-    registerDiagnostics,
-    registerDefinition,
-]);
-// Automation Studio's script activity has another editor, Ace; it gets its colours and the same features here
-watchAceEditors();
-// its SQL query activity keeps its own SQL colouring and follows the editor theme
-watchQueryEditors();
+if (IS_NEXT) {
+    // Marketing Cloud Next's content editor has suggestions of its own and runs no server-side
+    // JavaScript: it gets explanations, parameter help and what is wrong with the code
+    watchEditors('language', [registerHover, registerSignature, registerDiagnostics]);
+} else {
+    watchEditors('language', [
+        // a frame with an editor has use for the TypeScript script, which is loaded on demand
+        requestTypescript,
+        registerCompletions,
+        registerHover,
+        registerSignature,
+        registerDiagnostics,
+        registerDefinition,
+    ]);
+    // Automation Studio's script activity has another editor, Ace; it gets its colours and the same features here
+    watchAceEditors();
+    // its SQL query activity keeps its own SQL colouring and follows the editor theme
+    watchQueryEditors();
+}

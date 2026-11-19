@@ -11,7 +11,7 @@ import * as html from 'prettier/plugins/html';
 import * as postcss from 'prettier/plugins/postcss';
 import * as sfmc from 'prettier-plugin-sfmc';
 import { format } from 'prettier/standalone';
-import { fileKind, isInMode, report, watchEditors } from './editor-language/editors.js';
+import { IS_NEXT, fileKind, isInMode, report, watchEditors } from './editor-language/editors.js';
 import { watchAceFormat } from './editor-language/ace/format.js';
 
 // the settings the SFMC Language Service extension for VS Code formats with
@@ -372,6 +372,21 @@ function save(cm) {
 }
 
 /**
+ * Formats an editor's content on Shift-Alt-F, as VS Code does; the key goes on to the editor
+ * where there is nothing to format.
+ *
+ * @param {object} cm CodeMirror instance
+ * @returns {unknown} CodeMirror's sign to go on with the key, or nothing
+ */
+function formatOnKey(cm) {
+    if (!canFormat(cm)) {
+        return cm.constructor.Pass;
+    }
+    formatEditor(cm);
+    return;
+}
+
+/**
  * Sets up formatting for one editor: the button, Shift-Alt-F as in VS Code, and Ctrl-S or
  * Cmd-S for saving, which Marketing Cloud's editor does not have.
  *
@@ -379,22 +394,26 @@ function save(cm) {
  */
 function registerFormat(cm) {
     editors.add(cm);
-    cm.addKeyMap({
-        'Shift-Alt-F': (editor) => {
-            if (!canFormat(editor)) {
-                return editor.constructor.Pass;
-            }
-            formatEditor(editor);
-            return;
-        },
-        'Ctrl-S': save,
-        'Cmd-S': save,
-    });
+    cm.addKeyMap({ 'Shift-Alt-F': formatOnKey, 'Ctrl-S': save, 'Cmd-S': save });
     addButton(cm);
 }
 
-// in the capture phase, so that the page has not acted on the click yet
-document.addEventListener('click', onClick, { capture: true });
-watchEditors('format', [registerFormat]);
-// Automation Studio's script activity has another editor, Ace, which is formatted in the same way
-watchAceFormat({ formatContent, createButton, formatBeforeClick, isOnShow });
+/**
+ * Sets up formatting for one editor of Marketing Cloud Next's content editor, which only gets
+ * the key: its page has buttons of its own, and formatting when saving is not offered there.
+ *
+ * @param {object} cm CodeMirror instance
+ */
+function registerFormatKey(cm) {
+    cm.addKeyMap({ 'Shift-Alt-F': formatOnKey });
+}
+
+if (IS_NEXT) {
+    watchEditors('format', [registerFormatKey]);
+} else {
+    // in the capture phase, so that the page has not acted on the click yet
+    document.addEventListener('click', onClick, { capture: true });
+    watchEditors('format', [registerFormat]);
+    // Automation Studio's script activity has another editor, Ace, which is formatted in the same way
+    watchAceFormat({ formatContent, createButton, formatBeforeClick, isOnShow });
+}

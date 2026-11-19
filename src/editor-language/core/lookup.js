@@ -3,12 +3,31 @@
  * editor: its documentation, the call it is in, and where its name is declared.
  */
 import { sfmcLanguageService } from 'sfmc-language-lsp';
-import { AMPSCRIPT, DOCUMENT_URI, SSJS, languageAt, ssjsOnly } from '../shared.js';
+import {
+    AMPSCRIPT,
+    DOCUMENT_URI,
+    IS_NEXT,
+    SETTINGS,
+    SSJS,
+    languageAt,
+    ssjsOnly,
+} from '../shared.js';
 import { lineAt, offsetAt } from './text.js';
 import { askTypescript } from '../typescript.js';
 
 // the name in front of a call's bracket, with the objects it belongs to
 const CALLED_NAME = /(?:[\w$]+\.)*[\w$]+$/;
+
+/**
+ * Tells whether the language service is asked about code of a language. Marketing Cloud Next
+ * does not run server-side JavaScript, so nothing is said about it there.
+ *
+ * @param {string} language language of a place, as `languageAt` names it
+ * @returns {boolean} true for AMPscript, and for SSJS in Marketing Cloud Engagement
+ */
+function isServed(language) {
+    return language === AMPSCRIPT || (language === SSJS && !IS_NEXT);
+}
 
 /**
  * Asks the language service what it knows about a place in the document.
@@ -19,7 +38,7 @@ const CALLED_NAME = /(?:[\w$]+\.)*[\w$]+$/;
  */
 export function hoverAt(text, position) {
     const language = languageAt(text, offsetAt(text, position));
-    if (language !== AMPSCRIPT && language !== SSJS) {
+    if (!isServed(language)) {
         return null;
     }
     const place = { line: position.line, character: position.character };
@@ -36,6 +55,7 @@ export function hoverAt(text, position) {
         },
         lineAt(text, position.line),
         place,
+        SETTINGS,
     );
 }
 
@@ -85,7 +105,7 @@ function isCalled(label, text) {
 export function helpAt(text, position) {
     const offset = offsetAt(text, position);
     const language = languageAt(text, offset);
-    if (language !== AMPSCRIPT && language !== SSJS) {
+    if (!isServed(language)) {
         return null;
     }
     if (language === SSJS) {
@@ -103,6 +123,7 @@ export function helpAt(text, position) {
     const help = sfmcLanguageService.getSignatureHelp(
         { text: source, languageId: language, uri: DOCUMENT_URI },
         before,
+        SETTINGS,
     );
     const signature = help?.signatures?.[help.activeSignature ?? 0];
     return !signature || (language === SSJS && !isCalled(signature.label, before))

@@ -57,6 +57,34 @@ export function hoverAt(text, position) {
     if (IS_NEXT && isInHandlebars(lineAt(text, position.line), position.character)) {
         return null;
     }
+    return explain(text, position, language);
+}
+
+/**
+ * Tells whether a place is AMPscript, which the extension explains itself in Marketing Cloud
+ * Next. Handlebars inside it is not: that is left to the page. The HTML around AMPscript counts
+ * as AMPscript, as it does for the language service.
+ *
+ * @param {string} text whole document, its lines ending with a line feed
+ * @param {{line: number, character: number}} position line and column of a character
+ * @returns {boolean} true for a place in AMPscript or its HTML, outside of a Handlebars expression
+ */
+export function isAmpscriptAt(text, position) {
+    return (
+        languageAt(text, offsetAt(text, position)) === AMPSCRIPT &&
+        !isInHandlebars(lineAt(text, position.line), position.character)
+    );
+}
+
+/**
+ * Asks the language service about a place whose language it serves.
+ *
+ * @param {string} text whole document, its lines ending with a line feed
+ * @param {{line: number, character: number}} position line and column of a character
+ * @param {string} language language of the place, as `languageAt` names it
+ * @returns {object | null} hover of the language service, or null if it has nothing to say
+ */
+function explain(text, position, language) {
     const place = { line: position.line, character: position.character };
     // TypeScript knows the types of the content's own code; the catalogue is the fallback
     const typed = language === SSJS ? askTypescript(text, (service) => service.hover(place)) : null;

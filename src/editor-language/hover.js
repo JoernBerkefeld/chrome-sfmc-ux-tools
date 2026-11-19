@@ -7,7 +7,7 @@ import { applyFix, fixesFor } from './quickfix.js';
 import { checkNow, diagnosticsAt } from './diagnostics.js';
 import { colour } from './colour.js';
 import { createTooltip } from './tooltip.js';
-import { hoverAt as findHover } from './core/lookup.js';
+import { hoverAt as findHover, isAmpscriptAt } from './core/lookup.js';
 import { renderMarkdown } from './markdown.js';
 
 export const SHOW_DELAY = 350;
@@ -15,9 +15,10 @@ export const SHOW_DELAY = 350;
 export const HIDE_DELAY = 250;
 // the rule of the language service for an AMPscript function that Marketing Cloud Next lacks
 const UNSUPPORTED_IN_NEXT = 'sfmc/amp-no-mcn-unsupported';
-// Marketing Cloud Next's own explanation of a place in the code, and the class it has while shown
+// Marketing Cloud Next's own explanation of a place in the code, and the attribute the stylesheet
+// hides it by while the mouse is on AMPscript, which the extension explains itself
 const PAGE_TOOLTIP = 'es_block_builder-codeview-tooltip';
-const PAGE_TOOLTIP_SHOWN = 'is-visible';
+const PAGE_TOOLTIP_MUTED = 'data-sfmc-ux-tools-muted';
 
 /**
  * Asks the language service what it knows about a place in the document.
@@ -127,51 +128,20 @@ export function registerHover(cm) {
     let shown = '';
     // the content the fixes on show were worked out for
     let fixedText = '';
-    // what the box on show was asked for: the parameters of `didShowAt`
-    let lastRequest = null;
-    // Marketing Cloud Next's own explanation, which the box leaves the documentation to
+    // Marketing Cloud Next's own explanation: it explains fewer AMPscript functions and each in
+    // one sentence, so it is hidden while the mouse is on AMPscript
     const pageTooltip = IS_NEXT ? nearbyElement(wrapper, PAGE_TOOLTIP) : null;
-    let watchedTooltip = null;
-    // the page may show its explanation after the box: the box is drawn again, without its own
-    const pageWatcher = pageTooltip
-        ? new MutationObserver(() => {
-              try {
-                  if (lastRequest && tooltip.isShown() && isPageTooltipShown()) {
-                      didShowAt(...lastRequest);
-                  }
-              } catch (ex) {
-                  report(ex);
-              }
-          })
-        : null;
 
     /**
-     * Tells whether Marketing Cloud Next shows its own explanation, and keeps watching it. Without
-     * such an explanation on the page, and wherever that cannot be told, it counts as not shown.
+     * Hides the page's own explanation, or lets it show again.
      *
-     * @returns {boolean} true while the page's own explanation is on show
+     * @param {boolean} isMuted true to hide it
      */
-    function isPageTooltipShown() {
-        if (!pageTooltip) {
-            return false;
-        }
+    function mute(isMuted) {
         try {
-            const element = pageTooltip();
-            // the page may have replaced it
-            if (element !== watchedTooltip) {
-                pageWatcher.disconnect();
-                watchedTooltip = element;
-                if (element) {
-                    pageWatcher.observe(element, {
-                        attributes: true,
-                        attributeFilter: ['class'],
-                    });
-                }
-            }
-            return Boolean(element?.classList.contains(PAGE_TOOLTIP_SHOWN));
+            pageTooltip?.()?.toggleAttribute(PAGE_TOOLTIP_MUTED, isMuted);
         } catch (ex) {
             report(ex);
-            return false;
         }
     }
 
@@ -179,7 +149,6 @@ export function registerHover(cm) {
         clearTimeout(timers.show);
         clearTimeout(timers.hide);
         shown = '';
-        lastRequest = null;
         tooltip.hide();
     };
     const hideSoon = () => {
@@ -211,11 +180,7 @@ export function registerHover(cm) {
         const problems = isUsable ? problemsAt(cm, place) : [];
         // what Marketing Cloud Next cannot run is only said to be so, not explained
         const isUnsupported = IS_NEXT && problems.some(({ code }) => code === UNSUPPORTED_IN_NEXT);
-        // and what the page explains itself is not explained twice
-        const hover =
-            !isUsable || isForFixes || isUnsupported || isPageTooltipShown()
-                ? null
-                : hoverAt(cm, place);
+        const hover = !isUsable || isForFixes || isUnsupported ? null : hoverAt(cm, place);
         const markdown = hover?.contents?.value;
         const hasContent = isForFixes
             ? problems.some((problem) => problem.fixes.length > 0)
@@ -227,7 +192,6 @@ export function registerHover(cm) {
         const start = hover?.range?.start;
         const anchor = start ? { line: start.line, ch: start.character } : place;
         const key = JSON.stringify([anchor, problems, markdown]);
-        lastRequest = [place, isForFixes];
         if (key !== shown || !tooltip.isShown()) {
             shown = key;
             fixedText = cm.getValue();
@@ -265,6 +229,18 @@ export function registerHover(cm) {
             return;
         }
         const point = { clientX: event.clientX, clientY: event.clientY };
+        if (pageTooltip) {
+            // at once, before the page shows its explanation
+            try {
+                const place = characterAt(cm, point);
+                mute(
+                    Boolean(place) &&
+                        isAmpscriptAt(cm.getValue(), { line: place.line, character: place.ch }),
+                );
+            } catch (ex) {
+                report(ex);
+            }
+        }
         timers.show = setTimeout(() => {
             try {
                 didShowAt(characterAt(cm, point));
@@ -273,10 +249,19 @@ export function registerHover(cm) {
             }
         }, SHOW_DELAY);
     });
-    wrapper.addEventListener('mouseleave', hideSoon);
+    wrapper.addEventListener('mouseleave', () => {
+        hideSoon();
+        // the mouse may be on its way into the box, which stands for the page's explanation
+        if (!tooltip.isShown()) {
+            mute(false);
+        }
+    });
     wrapper.addEventListener('mousedown', hide);
     tooltip.element.addEventListener('mouseenter', () => clearTimeout(timers.hide));
-    tooltip.element.addEventListener('mouseleave', hideSoon);
+    tooltip.element.addEventListener('mouseleave', () => {
+        hideSoon();
+        mute(false);
+    });
     // with the keyboard in the box: Escape closes it and hands the focus back
     tooltip.element.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') {
@@ -294,7 +279,6 @@ export function registerHover(cm) {
     cm.addKeyMap({ 'Ctrl-.': showAtCursor, 'Cmd-.': showAtCursor });
     return () => {
         hide();
-        pageWatcher?.disconnect();
-        watchedTooltip = null;
+        mute(false);
     };
 }

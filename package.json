@@ -32,7 +32,7 @@
         "prepare": "husky || true"
     },
     "dependencies": {
-        "ampscript-data": "^4.2.0",
+        "ampscript-data": "^4.3.0",
         "prettier": "^3.10.1",
         "prettier-plugin-sfmc": "^2.3.0",
         "sfmc-language-lsp": "^4.6.0",

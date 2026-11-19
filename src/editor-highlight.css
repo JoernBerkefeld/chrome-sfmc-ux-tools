@@ -464,6 +464,14 @@ html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints::before {
     white-space: normal;
 }
 /*
+ * Marketing Cloud Next's own explanation of a place in the code. The extension marks it while the
+ * mouse is on AMPscript, which it explains itself, in more detail and for more functions; on
+ * Handlebars the page's explanation stays.
+ */
+es_block_builder-codeview-tooltip[data-sfmc-ux-tools-muted] {
+    display: none !important;
+}
+/*
  * The extension's icon in the top right corner of every box, to tell the box from one of
  * Marketing Cloud's own. The page may load this one file (see the manifest).
  */

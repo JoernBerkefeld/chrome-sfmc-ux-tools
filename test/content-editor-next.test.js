@@ -474,63 +474,59 @@ test('Next: the lists of suggestions of the page itself keep their look, and onl
     );
 });
 
-test('Next: the documentation is left to the explanation of the page itself, while problems are still said', async () => {
+test('Next: on AMPscript the extension explains and the explanation of the page itself is hidden; on Handlebars it is the other way round', async () => {
     const { window, editor, tooltip } = await withPageParts(
-        '%%=Uppercase(@a)=%%\n%%[ set @b = Lookup("a") ]%%',
+        '%%=Uppercase(@a)=%%\n%%[ set @b = HTTPGet("a") ]%%\n<p>{{uppercase name}}</p>',
     );
     await checkPause();
     const { document } = window;
+    const isMuted = () => Object.hasOwn(tooltip.dataset, 'sfmcUxToolsMuted');
+    assert.equal(isMuted(), false);
 
-    // the page explains nothing: the documentation is shown
+    // AMPscript: ours is shown, also while the page would show its own
+    tooltip.classList.add(PAGE_TOOLTIP_SHOWN);
     await rest(window, editor, '%%=Upper');
+    assert.equal(isMuted(), true);
     assert.match(document.querySelector(`${HOVER} pre`).textContent, /^\(function\) Uppercase\(/);
+    // what Marketing Cloud Next lacks is said without the documentation, and the page stays hidden
+    await rest(window, editor, 'set @b = HTTP');
+    assert.equal(isMuted(), true);
+    assert.ok(document.querySelector(`${HOVER} .sfmc-problem-error`));
+    assert.equal(document.querySelector(`${HOVER} pre`), null);
 
-    // the page's explanation comes later: the documentation goes
-    tooltip.classList.add(PAGE_TOOLTIP_SHOWN);
-    await scanPause();
+    // Handlebars: the page explains, the extension does not
+    await rest(window, editor, '{{upper');
+    assert.equal(isMuted(), false);
     assert.equal(document.querySelector(HOVER), null);
 
-    // and is not shown while the page explains
+    // back on AMPscript, then off the editor: the page may explain again
     await rest(window, editor, '%%=Upper');
-    assert.equal(document.querySelector(HOVER), null);
-    // what is wrong is said without the documentation
-    await rest(window, editor, 'set @b = Look');
-    let box = document.querySelector(HOVER);
-    assert.match(box.querySelector('.sfmc-problem-error').textContent, /Lookup/);
-    assert.equal(box.querySelector('pre'), null);
+    assert.equal(isMuted(), true);
+    const box = document.querySelector(HOVER);
+    // on the way into the box the page's explanation stays hidden
+    editor.getWrapperElement().dispatchEvent(new window.MouseEvent('mouseleave'));
+    assert.equal(isMuted(), true);
+    box.dispatchEvent(new window.MouseEvent('mouseleave'));
+    assert.equal(isMuted(), false);
 
-    // the page stops explaining: the box on show stays as it is, the next one has it all
-    tooltip.classList.remove(PAGE_TOOLTIP_SHOWN);
-    await scanPause();
-    assert.equal(document.querySelector(HOVER), box);
-    assert.equal(box.querySelector('pre'), null);
-    await rest(window, editor, '%%=Upper');
-    await rest(window, editor, 'set @b = Look');
-    box = document.querySelector(HOVER);
-    assert.ok(box.querySelector('.sfmc-problem-error'));
-    assert.match(box.querySelector('pre').textContent, /^\(function\) Lookup\(/);
-
-    // the page's explanation comes later: the problem stays, the documentation goes
-    tooltip.classList.add(PAGE_TOOLTIP_SHOWN);
-    await scanPause();
-    box = document.querySelector(HOVER);
-    assert.match(box.querySelector('.sfmc-problem-error').textContent, /Lookup/);
-    assert.equal(box.querySelector('pre'), null);
+    // the stylesheet hides what is marked
+    assert.match(
+        read('../src/editor-highlight.css'),
+        /es_block_builder-codeview-tooltip\[data-sfmc-ux-tools-muted\] \{\s+display: none !important;/,
+    );
 });
 
-test('Next: an explanation that the page replaces is found again, and none on the page shows the documentation', async () => {
+test('Next: an explanation that the page replaces is hidden as well, and without one on the page nothing breaks', async () => {
     const { window, editor, tooltip } = await withPageParts('%%=Uppercase(@a)=%%');
     const { document } = window;
     await rest(window, editor, '%%=Upper');
-    assert.ok(document.querySelector(`${HOVER} pre`));
+    assert.equal(Object.hasOwn(tooltip.dataset, 'sfmcUxToolsMuted'), true);
 
     const replacement = document.createElement(PAGE_TOOLTIP);
     tooltip.replaceWith(replacement);
     await rest(window, editor, '%%=Uppe');
+    assert.equal(Object.hasOwn(replacement.dataset, 'sfmcUxToolsMuted'), true);
     assert.ok(document.querySelector(`${HOVER} pre`));
-    replacement.classList.add(PAGE_TOOLTIP_SHOWN);
-    await scanPause();
-    assert.equal(document.querySelector(HOVER), null);
 
     const bare = await withPageParts('%%=Uppercase(@a)=%%', { hasTooltip: false });
     await rest(bare.window, bare.editor, '%%=Upper');

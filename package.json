@@ -34,8 +34,8 @@
     "dependencies": {
         "ampscript-data": "^4.2.0",
         "prettier": "^3.10.1",
-        "prettier-plugin-sfmc": "^2.2.1",
-        "sfmc-language-lsp": "^4.5.1",
+        "prettier-plugin-sfmc": "^2.3.0",
+        "sfmc-language-lsp": "^4.6.0",
         "ssjs-data": "^2.1.2",
         "typescript": "6.0.3"
     },

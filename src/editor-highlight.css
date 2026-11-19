@@ -380,8 +380,10 @@ html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_invalid {
 
 /*
  * Completions popup. It is added to the page body, outside of the editor. Marketing Cloud Next has
- * a list of suggestions of its own and gets none from the extension, so its list is left alone.
+ * lists of suggestions of its own, which are left alone: there, only the extension's list is
+ * styled, which has a class to tell it by.
  */
+.CodeMirror-hints.sfmc-hints,
 html:not([data-sfmc-ux-tools-next]) .CodeMirror-hints {
     position: absolute;
     z-index: 2147483000;
@@ -399,6 +401,7 @@ html:not([data-sfmc-ux-tools-next]) .CodeMirror-hints {
     font-family: monospace;
     font-size: 90%;
 }
+.CodeMirror-hints.sfmc-hints .CodeMirror-hint,
 html:not([data-sfmc-ux-tools-next]) .CodeMirror-hint {
     margin: 0;
     padding: 0 4px;
@@ -407,9 +410,24 @@ html:not([data-sfmc-ux-tools-next]) .CodeMirror-hint {
     white-space: pre;
     cursor: pointer;
 }
+.CodeMirror-hints.sfmc-hints li.CodeMirror-hint-active,
 html:not([data-sfmc-ux-tools-next]) li.CodeMirror-hint-active {
     background: var(--sfmc-widget-active-background);
     color: var(--sfmc-widget-active-foreground);
+}
+/*
+ * The extension's icon in the top right corner of its list in Marketing Cloud Next, to tell the
+ * list from the page's own. It floats, so the entries keep their places and their full width, and
+ * only a long entry of the first lines ends before it.
+ */
+html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints::before {
+    content: '';
+    float: right;
+    width: 16px;
+    height: 16px;
+    margin: 1px 2px 0 8px;
+    background: url('chrome-extension://__MSG_@@extension_id__/icons/icon16.png') center / contain
+        no-repeat;
 }
 .CodeMirror-hint .sfmc-hint-detail {
     margin-left: 1.5em;

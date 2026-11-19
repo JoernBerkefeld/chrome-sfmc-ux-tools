@@ -3,12 +3,40 @@
  *
  * The suggestions come from sfmc-language-lsp; this file connects it to CodeMirror 5's hint popup.
  */
-import { isInMode, report } from './shared.js';
+import { AMPSCRIPT, IS_NEXT, isInMode, languageAt, nearbyElement, report } from './shared.js';
 import { completionsAt, isTypingName } from './core/completions.js';
 
 const TRIGGER_DELAY = 100;
 const TRIGGER_CHARACTER = /[\w@.$]$/;
+// marks the list as the extension's; Marketing Cloud Next shows lists of its own
+const LIST_CLASS = 'sfmc-hints';
+// Marketing Cloud Next's own suggestions for AMPscript; its `isOpen` tells whether they are on show
+const PAGE_PICKER = 'es_block_builder-content-resource-picker';
 const timers = new WeakMap();
+// per editor, what finds the page's own suggestions
+const pickers = new WeakMap();
+
+/**
+ * Tells whether a place is left to Marketing Cloud Next's own suggestions: while they are on
+ * show, and in everything but AMPscript, which includes Handlebars.
+ *
+ * @param {object} cm CodeMirror instance
+ * @param {{line: number, ch: number}} cursor where the cursor is
+ * @returns {boolean} true if the extension suggests nothing there
+ */
+function isLeftToPage(cm, cursor) {
+    if (!pickers.has(cm)) {
+        pickers.set(cm, nearbyElement(cm.getWrapperElement(), PAGE_PICKER));
+    }
+    if (pickers.get(cm)()?.isOpen) {
+        return true;
+    }
+    const before = cm.getValue().slice(0, cm.indexFromPos(cursor));
+    return (
+        languageAt(before, before.length) !== AMPSCRIPT ||
+        before.lastIndexOf('{{') > before.lastIndexOf('}}')
+    );
+}
 
 /**
  * Draws one entry of the popup: the name, followed by a short muted description.
@@ -19,6 +47,7 @@ const timers = new WeakMap();
  */
 function render(element, label, detail) {
     try {
+        element.parentNode?.classList.add(LIST_CLASS);
         element.textContent = label;
         if (detail) {
             const note = element.ownerDocument.createElement('span');
@@ -32,7 +61,9 @@ function render(element, label, detail) {
 }
 
 /**
- * CodeMirror hint function: asks the language service what fits at the cursor.
+ * CodeMirror hint function: asks the language service what fits at the cursor. The hint addon
+ * asks again whenever the content or the cursor changes and closes the popup on an empty answer,
+ * so the popup also goes away once Marketing Cloud Next shows its own suggestions.
  *
  * @param {object} cm CodeMirror instance
  * @returns {object | null} hints and the range they replace, or null if there are none
@@ -40,6 +71,9 @@ function render(element, label, detail) {
 function hint(cm) {
     try {
         const cursor = cm.getCursor();
+        if (IS_NEXT && isLeftToPage(cm, cursor)) {
+            return null;
+        }
         const found = completionsAt(cm.getValue(), { line: cursor.line, character: cursor.ch });
         if (!found) {
             return null;

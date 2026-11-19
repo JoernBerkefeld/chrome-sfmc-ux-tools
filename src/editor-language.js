@@ -21,9 +21,15 @@ import { watchAceEditors } from './editor-language/ace/script-activity.js';
 import { watchQueryEditors } from './editor-language/ace/query-activity.js';
 
 if (IS_NEXT) {
-    // Marketing Cloud Next's content editor has suggestions of its own and runs no server-side
-    // JavaScript: it gets explanations, parameter help and what is wrong with the code
-    watchEditors('language', [registerHover, registerSignature, registerDiagnostics]);
+    // Marketing Cloud Next's content editor runs no server-side JavaScript and has suggestions of
+    // its own: it gets suggestions for AMPscript where the page shows none, explanations,
+    // parameter help and what is wrong with the code
+    watchEditors('language', [
+        registerCompletions,
+        registerHover,
+        registerSignature,
+        registerDiagnostics,
+    ]);
 } else {
     watchEditors('language', [
         // a frame with an editor has use for the TypeScript script, which is loaded on demand

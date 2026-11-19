@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, extractScriptBodies, getScriptRegions } from 'sfmc-la
 
 import { IS_NEXT, JAVASCRIPT_FILE, fileKind } from './editors.js';
 
-export { IS_NEXT, isInMode, report } from './editors.js';
+export { IS_NEXT, isInMode, nearbyElement, report } from './editors.js';
 
 // what the language service is told about the page, decided once per page: Marketing Cloud Next
 // has Handlebars and only part of AMPscript; Marketing Cloud Engagement is the service's default

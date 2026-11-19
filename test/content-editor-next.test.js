@@ -195,7 +195,88 @@ function underlined(editor) {
         .toSorted((a, b) => a.localeCompare(b));
 }
 
-const NEXT_FEATURES = ['hover', 'signature', 'format'];
+const NEXT_FEATURES = ['hover', 'signature', 'format', 'completions'];
+const POPUP = '.CodeMirror-hints';
+// the page's own suggestions for AMPscript and its own explanation of a place in the code
+const PAGE_PICKER = 'es_block_builder-content-resource-picker';
+const PAGE_TOOLTIP = 'es_block_builder-codeview-tooltip';
+const PAGE_TOOLTIP_SHOWN = 'is-visible';
+// longer than typing has to pause for the suggestions, and than the popup takes to follow a change
+const typingPause = () => new Promise((resolve) => setTimeout(resolve, 200));
+
+/**
+ * Creates a page of the content editor like `withEditor`, with stand-ins for the page's own
+ * suggestions and explanation in the shadow trees around the editor.
+ *
+ * @param {string} value editor content
+ * @param {{hasTooltip?: boolean}} [options] whether the page has its own explanation
+ * @returns {Promise.<{window: object, editor: object, picker: HTMLElement, tooltip: HTMLElement | null}>} the page, its editor and the stand-ins
+ */
+async function withPageParts(value, { hasTooltip = true } = {}) {
+    const window = page();
+    loadLibrary(window);
+    const { document } = window;
+    const codeView = addComponent(document.body);
+    const editor = addEditor(window, addComponent(codeView), value);
+    // next to the component of the editor
+    const picker = document.createElement(PAGE_PICKER);
+    picker.isOpen = false;
+    codeView.append(picker);
+    // inside another component
+    const tooltip = hasTooltip ? document.createElement(PAGE_TOOLTIP) : null;
+    if (tooltip) {
+        addComponent(codeView).append(tooltip);
+    }
+    assert.equal(document.querySelector(`${PAGE_PICKER}, ${PAGE_TOOLTIP}`), null, 'out of sight');
+    runExtension(window);
+    await scanPause();
+    return { window, editor, picker, tooltip };
+}
+
+/**
+ * Puts the cursor behind a text of the editor's content.
+ *
+ * @param {object} editor CodeMirror instance
+ * @param {string} before text that ends where the cursor goes
+ */
+function cursorBehind(editor, before) {
+    editor.setCursor(editor.posFromIndex(editor.getValue().indexOf(before) + before.length));
+}
+
+/**
+ * Presses Ctrl-Space the way CodeMirror would: the extension's key map first, and the page's own
+ * binding if that passes the key on.
+ *
+ * @param {object} window page window
+ * @param {object} editor CodeMirror instance
+ * @returns {string} "extension" or "page", whoever took the key
+ */
+function pressCtrlSpace(window, editor) {
+    const [keys] = bound(editor, KEYS.completions);
+    return keys[KEYS.completions](editor) === window.CodeMirror.Pass ? 'page' : 'extension';
+}
+
+/**
+ * Types text at the cursor and tells the editor's listeners about it, like real input does.
+ *
+ * @param {object} window page window
+ * @param {object} editor CodeMirror instance
+ * @param {string} text typed text
+ */
+function type(window, editor, text) {
+    editor.replaceSelection(text, 'end', '+input');
+    window.CodeMirror.signal(editor, 'inputRead', editor, { origin: '+input', text: [text] });
+}
+
+/**
+ * Lists the names of the suggestions that are on offer.
+ *
+ * @param {object} editor CodeMirror instance
+ * @returns {string[]} names; empty if no popup is open
+ */
+function offered(editor) {
+    return (editor.state.completionActive?.data?.list ?? []).map((entry) => entry.displayText);
+}
 
 test('Next: editors in shadow trees are found once the page loads CodeMirror, however late', async () => {
     const window = page();
@@ -252,7 +333,7 @@ test('Next: an editor is set up when it gets the mode, and one that is added to 
     assert.equal(window.document.querySelector(HOVER), null);
 });
 
-test('Next: no suggestions, no save key, no button and nothing of TypeScript are added', async () => {
+test('Next: no save key, no button and nothing of TypeScript are added', async () => {
     const { window, editor } = await withEditor('%%[ set @a = Loo ]%%');
     let wasAsked = false;
     window.document.addEventListener('sfmc-ux-tools:need-typescript', () => {
@@ -266,24 +347,196 @@ test('Next: no suggestions, no save key, no button and nothing of TypeScript are
         assert.equal(cm.getWrapperElement().querySelector('.sfmc-format-button'), null);
     }
     assert.equal(wasAsked, false);
-    // the page's own Ctrl-Space is all there is
+    // the page's own Ctrl-Space stays where it is
     assert.equal(editor.getOption('extraKeys')['Ctrl-Space'], 'autocomplete');
-    editor.setCursor({ line: 0, ch: 16 });
-    window.CodeMirror.signal(editor, 'inputRead', editor, { origin: '+input', text: ['o'] });
-    await scanPause();
-    assert.equal(editor.state.completionActive, undefined);
-    assert.equal(window.document.querySelector('.CodeMirror-hints'), null);
-    // the page's own list keeps its look: the stylesheet styles the list only where this is not set
+});
+
+test('Next: Ctrl-Space and typing suggest the AMPscript that Marketing Cloud Next has, in a list of the extension', async () => {
+    const { window, editor } = await withPageParts(
+        '%%[ set @a = M ]%%\n%%[ set @b = HTTP ]%%\n%%= =%%',
+    );
+    const { document } = window;
+    cursorBehind(editor, 'set @a = M');
+    assert.equal(pressCtrlSpace(window, editor), 'extension');
+    // MD5 came with API version 68
+    assert.ok(offered(editor).includes('MD5'), offered(editor).join(' '));
+    assert.ok(offered(editor).includes('Multiply'));
+    const list = document.querySelector(POPUP);
+    assert.equal(list.parentNode, document.body);
+    assert.ok(list.classList.contains('sfmc-hints'), 'marked as the list of the extension');
+    assert.ok(list.querySelector(':scope > .CodeMirror-hint .sfmc-hint-detail'));
+    // the keyboard moves through the list, and a pick inserts the function
+    const { widget } = editor.state.completionActive;
+    widget.changeActive(offered(editor).indexOf('MD5'));
+    assert.match(list.querySelector('.CodeMirror-hint-active').textContent, /^MD5/);
+    widget.pick();
+    assert.equal(editor.getLine(0), '%%[ set @a = MD5( ]%%');
+
+    // what only Marketing Cloud Engagement has is not offered
+    cursorBehind(editor, 'set @b = HTTP');
+    pressCtrlSpace(window, editor);
+    assert.ok(
+        offered(editor).every((name) => !/^HTTP/i.test(name)),
+        offered(editor).join(' '),
+    );
+    editor.state.completionActive?.close();
+
+    // while typing, also in an inline expression
+    cursorBehind(editor, '%%=');
+    type(window, editor, 'L');
+    type(window, editor, 'o');
+    assert.equal(document.querySelector(POPUP), null, 'waits until typing pauses');
+    await typingPause();
+    assert.ok(offered(editor).includes('Lookup'), offered(editor).join(' '));
+    assert.ok(offered(editor).includes('Lowercase'));
+    assert.ok(offered(editor).includes('LookupOrderedRows'));
+    assert.ok(!offered(editor).includes('LookupOrderedRowsCS'), 'not in Marketing Cloud Next');
+    assert.ok(document.querySelector(`${POPUP}.sfmc-hints`));
+});
+
+test('Next: Handlebars, scripts and the suggestions of the page itself are left to the page', async () => {
+    const { window, editor, picker } = await withPageParts(
+        '<p>{{upp}} {{#if\n a}}</p>\n%%[ set @a = Lo ]%%\n<script>var a = 1; a</script>',
+    );
+    const { document } = window;
+    const places = ['{{upp', ' a', '<script>var a = 1; a'];
+    for (const place of places) {
+        cursorBehind(editor, place);
+        assert.equal(pressCtrlSpace(window, editor), 'page', place);
+        type(window, editor, 'p');
+        await typingPause();
+        assert.equal(document.querySelector(POPUP), null, place);
+    }
+
+    // AMPscript: not while the page shows its own suggestions
+    cursorBehind(editor, 'set @a = Lo');
+    picker.isOpen = true;
+    assert.equal(pressCtrlSpace(window, editor), 'page');
+    type(window, editor, 'o');
+    await typingPause();
+    assert.equal(document.querySelector(POPUP), null);
+    assert.equal(editor.getLine(2), '%%[ set @a = Loo ]%%');
+
+    // the list of the extension goes away when the page opens its own
+    picker.isOpen = false;
+    assert.equal(pressCtrlSpace(window, editor), 'extension');
+    assert.ok(document.querySelector(`${POPUP}.sfmc-hints`));
+    picker.isOpen = true;
+    type(window, editor, 'k');
+    await typingPause();
+    assert.equal(document.querySelector(POPUP), null);
+    editor.state.completionActive?.close();
+
+    // a page that cannot be asked is taken to show its own
+    Object.defineProperty(picker, 'isOpen', {
+        /**
+         *
+         */
+        get() {
+            throw new Error('broken');
+        },
+    });
+    assert.equal(pressCtrlSpace(window, editor), 'page');
+    assert.equal(document.querySelector(POPUP), null);
+});
+
+test('Next: without suggestions of the page itself, AMPscript is suggested all the same', async () => {
+    const { window, editor } = await withEditor('%%[ set @a = Loo ]%%');
+    cursorBehind(editor, 'Loo');
+    assert.equal(pressCtrlSpace(window, editor), 'extension');
+    assert.ok(offered(editor).includes('Lookup'));
+});
+
+test('Next: the lists of suggestions of the page itself keep their look, and only the list of the extension is styled', async () => {
+    const { window } = await withEditor('<p></p>');
     assert.equal(Object.hasOwn(window.document.documentElement.dataset, 'sfmcUxToolsNext'), true);
     const css = read('../src/editor-highlight.css');
-    assert.equal((css.match(/^[^\n{]*\.CodeMirror-hint[^\n{]*\{/gm) ?? []).length, 4);
-    assert.equal(
-        (
-            css.match(
-                /^html:not\(\[data-sfmc-ux-tools-next\]\) [^\n{]*\.CodeMirror-hint[^\n{]*\{/gm,
-            ) ?? []
-        ).length,
-        3,
+    // every rule for the list: by the class of the extension's list, or only where this is not
+    // Marketing Cloud Next
+    const selectors = css
+        .matchAll(/^([^\n{}/*]*\.CodeMirror-hint[^\n{]*?)(?:,| \{)$/gm)
+        .map((match) => match[1])
+        .toArray();
+    assert.deepEqual(selectors, [
+        '.CodeMirror-hints.sfmc-hints',
+        'html:not([data-sfmc-ux-tools-next]) .CodeMirror-hints',
+        '.CodeMirror-hints.sfmc-hints .CodeMirror-hint',
+        'html:not([data-sfmc-ux-tools-next]) .CodeMirror-hint',
+        '.CodeMirror-hints.sfmc-hints li.CodeMirror-hint-active',
+        'html:not([data-sfmc-ux-tools-next]) li.CodeMirror-hint-active',
+        'html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints::before',
+        '.CodeMirror-hint .sfmc-hint-detail',
+    ]);
+    // the list of the extension has its icon, which the page may load
+    assert.match(
+        css,
+        /\.sfmc-hints::before \{[^}]*float: right;[^}]*url\('chrome-extension:\/\/__MSG_@@extension_id__\/icons\/icon16\.png'\)/,
+    );
+});
+
+test('Next: the documentation is left to the explanation of the page itself, while problems are still said', async () => {
+    const { window, editor, tooltip } = await withPageParts(
+        '%%=Uppercase(@a)=%%\n%%[ set @b = Lookup("a") ]%%',
+    );
+    await checkPause();
+    const { document } = window;
+
+    // the page explains nothing: the documentation is shown
+    await rest(window, editor, '%%=Upper');
+    assert.match(document.querySelector(`${HOVER} pre`).textContent, /^\(function\) Uppercase\(/);
+
+    // the page's explanation comes later: the documentation goes
+    tooltip.classList.add(PAGE_TOOLTIP_SHOWN);
+    await scanPause();
+    assert.equal(document.querySelector(HOVER), null);
+
+    // and is not shown while the page explains
+    await rest(window, editor, '%%=Upper');
+    assert.equal(document.querySelector(HOVER), null);
+    // what is wrong is said without the documentation
+    await rest(window, editor, 'set @b = Look');
+    let box = document.querySelector(HOVER);
+    assert.match(box.querySelector('.sfmc-problem-error').textContent, /Lookup/);
+    assert.equal(box.querySelector('pre'), null);
+
+    // the page stops explaining: the box on show stays as it is, the next one has it all
+    tooltip.classList.remove(PAGE_TOOLTIP_SHOWN);
+    await scanPause();
+    assert.equal(document.querySelector(HOVER), box);
+    assert.equal(box.querySelector('pre'), null);
+    await rest(window, editor, '%%=Upper');
+    await rest(window, editor, 'set @b = Look');
+    box = document.querySelector(HOVER);
+    assert.ok(box.querySelector('.sfmc-problem-error'));
+    assert.match(box.querySelector('pre').textContent, /^\(function\) Lookup\(/);
+
+    // the page's explanation comes later: the problem stays, the documentation goes
+    tooltip.classList.add(PAGE_TOOLTIP_SHOWN);
+    await scanPause();
+    box = document.querySelector(HOVER);
+    assert.match(box.querySelector('.sfmc-problem-error').textContent, /Lookup/);
+    assert.equal(box.querySelector('pre'), null);
+});
+
+test('Next: an explanation that the page replaces is found again, and none on the page shows the documentation', async () => {
+    const { window, editor, tooltip } = await withPageParts('%%=Uppercase(@a)=%%');
+    const { document } = window;
+    await rest(window, editor, '%%=Upper');
+    assert.ok(document.querySelector(`${HOVER} pre`));
+
+    const replacement = document.createElement(PAGE_TOOLTIP);
+    tooltip.replaceWith(replacement);
+    await rest(window, editor, '%%=Uppe');
+    assert.ok(document.querySelector(`${HOVER} pre`));
+    replacement.classList.add(PAGE_TOOLTIP_SHOWN);
+    await scanPause();
+    assert.equal(document.querySelector(HOVER), null);
+
+    const bare = await withPageParts('%%=Uppercase(@a)=%%', { hasTooltip: false });
+    await rest(bare.window, bare.editor, '%%=Upper');
+    assert.match(
+        bare.window.document.querySelector(`${HOVER} pre`).textContent,
+        /^\(function\) Uppercase\(/,
     );
 });
 
@@ -360,7 +613,7 @@ test('Engagement: the same content is checked for Marketing Cloud Engagement, an
         [],
         'shadow trees are only searched in Marketing Cloud Next',
     );
-    assert.deepEqual(features(editor), [...NEXT_FEATURES, 'completions']);
+    assert.deepEqual(features(editor), NEXT_FEATURES);
     assert.ok(editor.state.keyMaps.some((map) => 'Ctrl-S' in map));
     assert.ok(editor.getWrapperElement().querySelector('.sfmc-format-button'));
     assert.deepEqual(underlined(editor), [], 'no check for Marketing Cloud Next');

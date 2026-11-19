@@ -37,16 +37,20 @@ Everything below works on its own after installing; there is nothing to set up. 
 - **Setup → Installed Packages**: the dialog with the list of scopes.
 - **Marketing Cloud Next, content editor**: the code of an email made with **Create with HTML**, and the **HTML** component in emails, landing pages and the content blocks for both.
     - **Explanations for every AMPscript function Marketing Cloud Next has:** point at a function to read what it does, with all its parameters, an example and links.
-        - The editor explains 41 functions itself, in one sentence each. Ours shows next to it and says more.
+        - The editor explains 41 functions itself, in one sentence each. While its box is showing, ours stays away, so you never get two explanations at once.
         - 23 functions that came with API version 68 get no explanation from the editor at all. For those, ours is the only one: `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `LookupOrderedRows`, `LookupRows`, `MD5`, `RegExMatch`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
-    - **Help for the functions the editor's own suggestions leave out:** the editor's list, which opens when you type `%%=` or `%%[`, offers 37 AMPscript functions. These 27 are missing from it, so you have to type them by hand. Once typed, you get our explanation and parameter help for each:
+    - **Suggestions for every AMPscript function, also the ones the editor leaves out:** while you type a function name inside `%%[ ]%%` or `%%= =%%`, and on **Ctrl+Space** there, the extension suggests all 64 AMPscript functions Marketing Cloud Next has.
+        - The editor's own list only opens at the moment you type `%%=` or `%%[`. While it is open, ours stays away.
+        - Our list has the extension's icon in its corner.
+        - Inside `{{ }}`, **Ctrl+Space** still opens the editor's own list of Handlebars helpers.
+        - The editor's own list offers 37 AMPscript functions. These 27 are missing from it; with the extension you get them suggested, explained and with parameter help:
         - `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `ContentBlockByID`, `ContentBlockByKey`, `ContentBlockByName`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `MD5`, `RaiseError`, `RegExMatch`, `ReplaceList`, `RetrieveSalesforceObjects`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
         - Counted in the editor of an email content block in November 2026; Salesforce may add to its lists at any time.
     - **Which box is ours:** every box of the extension has its small icon in the top right corner. The editor's own boxes have none.
     - **Parameter help:** while you type a helper or a function, a box lists what it takes.
     - **Checks:** AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why. For such a function you get the reason only, not its description.
     - **Tidying up:** **Shift+Alt+F** formats the code. One **Ctrl+Z** takes it back.
-    - **Left to Salesforce:** the colours, the list of suggestions, and everything about Handlebars. The extension explains and checks no Handlebars helper there, and adds no theme, no suggestions and no formatting on save.
+    - **Left to Salesforce:** the colours and everything about Handlebars. The extension explains, suggests and checks no Handlebars helper there, and adds no theme and no formatting on save.
 
 ### Colours in the code editor
 

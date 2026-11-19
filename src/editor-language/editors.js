@@ -13,6 +13,9 @@ const EDITOR_SELECTOR = '.CodeMirror';
 const SCAN_DELAY = 50;
 // how often Marketing Cloud Next's page is looked at; a look costs next to nothing
 const LIBRARY_INTERVAL = 1000;
+// how long a part of Marketing Cloud Next's page that was not found is not searched for again;
+// the page may add it later, and a search that finds nothing goes through the whole page
+const MISS_PAUSE = 1000;
 // the isolated script editor-file-kind.js writes the kind of file the editor shows to this
 // attribute, if the content is one of CloudPages' code resources
 const KIND_ATTRIBUTE = 'data-sfmc-ux-tools-file-kind';
@@ -160,6 +163,63 @@ function noteEditorsIn(root) {
             noteEditorsIn(element.shadowRoot);
         }
     }
+}
+
+/**
+ * Finds the first element of a name below a node, including the shadow trees below it.
+ *
+ * @param {Document | ShadowRoot | Element} root where to look
+ * @param {string} name name of the element, in lower case
+ * @param {Element} [searched] an element whose shadow tree was searched already
+ * @returns {Element | null} the element, or null if there is none
+ */
+function findIn(root, name, searched) {
+    for (const element of root.querySelectorAll('*')) {
+        if (element.localName === name) {
+            return element;
+        }
+        const found =
+            element !== searched && element.shadowRoot ? findIn(element.shadowRoot, name) : null;
+        if (found) {
+            return found;
+        }
+    }
+    return null;
+}
+
+/**
+ * Prepares the search for a part of the page that belongs to an editor, like the page's own list
+ * of suggestions. A search of the document does not find such a part in Marketing Cloud Next, so
+ * the shadow trees are searched: first the one the editor is in, then those around it, one by
+ * one, and the document last. What was found is kept for as long as it is on the page. A search
+ * that found nothing went through the whole page, so it is not repeated at once.
+ *
+ * @param {Element} start element of the editor
+ * @param {string} name name of the element to find, in lower case
+ * @returns {() => Element | null} gives the element, or null if the page has none
+ */
+export function nearbyElement(start, name) {
+    let found = null;
+    let missedAt = -Infinity;
+    return () => {
+        if (found?.isConnected) {
+            return found;
+        }
+        found = null;
+        const now = Date.now();
+        if (now - missedAt < MISS_PAUSE) {
+            return null;
+        }
+        let searched;
+        for (let root = start.getRootNode(); root && !found; root = searched?.getRootNode()) {
+            found = findIn(root, name, searched);
+            searched = root.host;
+        }
+        if (!found) {
+            missedAt = now;
+        }
+        return found;
+    };
 }
 
 /**

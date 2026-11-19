@@ -2,7 +2,7 @@
  * SFMC UX Tools — the box for a place in the code editor: what is wrong there, how to fix it,
  * and its documentation. It opens where the mouse rests, and at the cursor on Ctrl-. (Cmd-.).
  */
-import { IS_NEXT, isInMode, report } from './shared.js';
+import { IS_NEXT, isInMode, nearbyElement, report } from './shared.js';
 import { applyFix, fixesFor } from './quickfix.js';
 import { checkNow, diagnosticsAt } from './diagnostics.js';
 import { colour } from './colour.js';
@@ -15,6 +15,9 @@ export const SHOW_DELAY = 350;
 export const HIDE_DELAY = 250;
 // the rule of the language service for an AMPscript function that Marketing Cloud Next lacks
 const UNSUPPORTED_IN_NEXT = 'sfmc/amp-no-mcn-unsupported';
+// Marketing Cloud Next's own explanation of a place in the code, and the class it has while shown
+const PAGE_TOOLTIP = 'es_block_builder-codeview-tooltip';
+const PAGE_TOOLTIP_SHOWN = 'is-visible';
 
 /**
  * Asks the language service what it knows about a place in the document.
@@ -124,11 +127,59 @@ export function registerHover(cm) {
     let shown = '';
     // the content the fixes on show were worked out for
     let fixedText = '';
+    // what the box on show was asked for: the parameters of `didShowAt`
+    let lastRequest = null;
+    // Marketing Cloud Next's own explanation, which the box leaves the documentation to
+    const pageTooltip = IS_NEXT ? nearbyElement(wrapper, PAGE_TOOLTIP) : null;
+    let watchedTooltip = null;
+    // the page may show its explanation after the box: the box is drawn again, without its own
+    const pageWatcher = pageTooltip
+        ? new MutationObserver(() => {
+              try {
+                  if (lastRequest && tooltip.isShown() && isPageTooltipShown()) {
+                      didShowAt(...lastRequest);
+                  }
+              } catch (ex) {
+                  report(ex);
+              }
+          })
+        : null;
+
+    /**
+     * Tells whether Marketing Cloud Next shows its own explanation, and keeps watching it. Without
+     * such an explanation on the page, and wherever that cannot be told, it counts as not shown.
+     *
+     * @returns {boolean} true while the page's own explanation is on show
+     */
+    function isPageTooltipShown() {
+        if (!pageTooltip) {
+            return false;
+        }
+        try {
+            const element = pageTooltip();
+            // the page may have replaced it
+            if (element !== watchedTooltip) {
+                pageWatcher.disconnect();
+                watchedTooltip = element;
+                if (element) {
+                    pageWatcher.observe(element, {
+                        attributes: true,
+                        attributeFilter: ['class'],
+                    });
+                }
+            }
+            return Boolean(element?.classList.contains(PAGE_TOOLTIP_SHOWN));
+        } catch (ex) {
+            report(ex);
+            return false;
+        }
+    }
 
     const hide = () => {
         clearTimeout(timers.show);
         clearTimeout(timers.hide);
         shown = '';
+        lastRequest = null;
         tooltip.hide();
     };
     const hideSoon = () => {
@@ -155,12 +206,16 @@ export function registerHover(cm) {
      * @param {boolean} [isForFixes] true to only show it if there is something to fix
      * @returns {boolean} true if the box is shown
      */
-    const didShowAt = (place, isForFixes = false) => {
+    function didShowAt(place, isForFixes = false) {
         const isUsable = place && isInMode(cm) && wrapper.isConnected;
         const problems = isUsable ? problemsAt(cm, place) : [];
         // what Marketing Cloud Next cannot run is only said to be so, not explained
         const isUnsupported = IS_NEXT && problems.some(({ code }) => code === UNSUPPORTED_IN_NEXT);
-        const hover = !isUsable || isForFixes || isUnsupported ? null : hoverAt(cm, place);
+        // and what the page explains itself is not explained twice
+        const hover =
+            !isUsable || isForFixes || isUnsupported || isPageTooltipShown()
+                ? null
+                : hoverAt(cm, place);
         const markdown = hover?.contents?.value;
         const hasContent = isForFixes
             ? problems.some((problem) => problem.fixes.length > 0)
@@ -172,6 +227,7 @@ export function registerHover(cm) {
         const start = hover?.range?.start;
         const anchor = start ? { line: start.line, ch: start.character } : place;
         const key = JSON.stringify([anchor, problems, markdown]);
+        lastRequest = [place, isForFixes];
         if (key !== shown || !tooltip.isShown()) {
             shown = key;
             fixedText = cm.getValue();
@@ -183,7 +239,7 @@ export function registerHover(cm) {
             );
         }
         return true;
-    };
+    }
     const showAtCursor = () => {
         try {
             const cursor = cm.getCursor();
@@ -236,5 +292,9 @@ export function registerHover(cm) {
     cm.on('swapDoc', hide);
     // the key of VS Code for quick fixes; it goes on to the editor where there is nothing to fix
     cm.addKeyMap({ 'Ctrl-.': showAtCursor, 'Cmd-.': showAtCursor });
-    return hide;
+    return () => {
+        hide();
+        pageWatcher?.disconnect();
+        watchedTooltip = null;
+    };
 }

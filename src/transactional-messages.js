@@ -35,6 +35,9 @@
     const MOBILE_APPS = 'a[href$="#app/MobileConnect"], a[href$="#app/MobilePush"]';
     // the longest key of a transactional email; taken for these messages too, which nobody measured
     const KEY_MAX = 36;
+    // the kind of Content Builder asset that holds a mobile message ("jsonmessage"); it is what
+    // SFMC DevTools takes the content of a push message to be
+    const MOBILE_MESSAGE = 230;
     // what a new message is asked for, whatever its kind
     const COMMON = [
         { path: 'name', label: 'Name', isRequired: true },
@@ -64,6 +67,25 @@
                     value: item.id,
                     label: item.name,
                 })),
+        },
+        contents: {
+            path: 'asset/v1/content/assets',
+            query: `$filter=assetType.id%20eq%20${MOBILE_MESSAGE}&$fields=name,customerKey,availableViews`,
+            // comes in pages, under this name
+            pages: 'items',
+            // a mobile message is written for one use, which it names as its view: push, sms or
+            // inApp, in whatever case. Seen on a business unit with push definitions: every one of
+            // them holds a message written for push
+            read: (items) =>
+                items
+                    .filter(
+                        (item) =>
+                            Array.isArray(item.availableViews) &&
+                            item.availableViews.some(
+                                (view) => String(view).toLowerCase() === 'push',
+                            ),
+                    )
+                    .map((item) => ({ value: item.customerKey, label: item.name })),
         },
     };
     const KINDS = [
@@ -121,6 +143,7 @@
                     label: 'Content',
                     // seen live: without content the API refuses the message
                     isRequired: true,
+                    suggest: 'contents',
                     help: 'The customer key of the push message in Content Builder.',
                 },
                 { path: 'options.sound', label: 'Sound' },
@@ -255,20 +278,21 @@
     }
 
     /**
-     * Reads all definitions of a kind, page by page.
+     * Reads a list the API hands out in pages, page by page.
      *
-     * @param {string} kind sms, push or ott
-     * @param {() => boolean} isWanted false once something else was asked for or the panel was closed
-     * @returns {Promise.<object[]>} the definitions
+     * @param {string} path where the list is
+     * @param {string} query what else to ask for, such as a filter
+     * @param {string} field name the rows of a page come under
+     * @param {() => boolean} isWanted false once nobody waits for the rest any more
+     * @returns {Promise.<object[]>} the rows
      */
-    async function readList(kind, isWanted) {
+    async function readPages(path, query, field, isWanted) {
         const rows = [];
         let before;
-        for (let page = 1; isWanted(); page++) {
-            const answer = await ask(
-                `${MESSAGES}${kind}/definitions?$page=${page}&$pageSize=${PAGE_SIZE}&${NOT_DELETED}`,
-            );
-            const found = Array.isArray(answer.definitions) ? answer.definitions : [];
+        // asked between the pages only: the first one is always read
+        for (let page = 1; page === 1 || isWanted(); page++) {
+            const answer = await ask(`${path}?$page=${page}&$pageSize=${PAGE_SIZE}&${query}`);
+            const found = Array.isArray(answer[field]) ? answer[field] : [];
             const first = JSON.stringify(found[0]);
             // the same rows again: the page asked for was ignored, and would be for ever
             if (first === before || found.length === 0) {
@@ -283,6 +307,17 @@
             }
         }
         return rows;
+    }
+
+    /**
+     * Reads all definitions of a kind.
+     *
+     * @param {string} kind sms, push or ott
+     * @param {() => boolean} isWanted false once something else was asked for or the panel was closed
+     * @returns {Promise.<object[]>} the definitions
+     */
+    function readList(kind, isWanted) {
+        return readPages(`${MESSAGES}${kind}/definitions`, NOT_DELETED, 'definitions', isWanted);
     }
 
     /**
@@ -425,11 +460,15 @@
      * Fills the list a field offers to choose from; a list that cannot be read is done without.
      *
      * @param {HTMLDataListElement} list the list of the field
-     * @param {{path: string, read: (answer: object) => {value: unknown, label: unknown}[]}} from where its entries come from
+     * @param {{path: string, query?: string, pages?: string, read: (answer: object) => {value: unknown, label: unknown}[]}} from where its entries come from
      */
     async function suggest(list, from) {
         try {
-            const entries = from.read(await ask(from.path));
+            const answer = from.pages
+                ? // the rest is not read for a form that was closed meanwhile
+                  await readPages(from.path, from.query, from.pages, () => list.isConnected)
+                : await ask(from.path);
+            const entries = from.read(answer);
             for (const { value, label } of entries) {
                 if (!(typeof value === 'string' && value)) {
                     continue;

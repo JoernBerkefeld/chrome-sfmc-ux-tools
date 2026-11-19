@@ -904,6 +904,96 @@ test('a message sent twice in a row goes out once, and one without an answer is 
     assert.equal(at.asked.at(-1), 'ott/definitions?$page=1&$pageSize=50');
 });
 
+// where the mobile messages of Content Builder are read, and what is asked of them
+const CONTENTS = 'asset/v1/content/assets';
+const OF_CONTENTS =
+    '$pageSize=50&$filter=assetType.id%20eq%20230&$fields=name,customerKey,availableViews';
+
+test('the content of a push message is offered from the mobile messages of Content Builder, page by page', async () => {
+    const full = Array.from({ length: 50 }, (item, index) => ({
+        customerKey: `key-${index}`,
+        name: `Message ${index}`,
+        availableViews: ['push'],
+    }));
+    const last = [
+        // the view is spelled in more than one way
+        { customerKey: 'capital', name: 'Written <i>Push</i>', availableViews: ['Push'] },
+        // only what was written for push is offered
+        { customerKey: 'sms', name: 'A text message', availableViews: ['sMS'] },
+        { customerKey: 'inapp', name: 'In the app', availableViews: ['inApp'] },
+        { customerKey: 'plain', name: 'No views' },
+        // nothing to choose without a key
+        { name: 'No key', availableViews: ['push'] },
+    ];
+    const at = await form('push', (path) => {
+        if (!path.startsWith(CONTENTS)) {
+            return { body: path.startsWith('push/v1/') ? [] : { definitions: [] } };
+        }
+        return { body: { count: 55, items: path.includes('$page=1&') ? full : last } };
+    });
+    await tick();
+    assert.deepEqual(
+        at.looked.filter((path) => path.startsWith(CONTENTS)),
+        [`${CONTENTS}?$page=1&${OF_CONTENTS}`, `${CONTENTS}?$page=2&${OF_CONTENTS}`],
+    );
+    const offered = options(at, 'content.customerKey');
+    assert.equal(offered.length, 51);
+    assert.deepEqual(offered[0], ['key-0', 'Message 0']);
+    assert.deepEqual(offered.slice(50), [['capital', 'Written <i>Push</i>']]);
+    assert.equal(at.panel().querySelector('i'), null);
+    // the field still takes a key that is not in the list
+    at.type('content.customerKey', 'another-key');
+    assert.equal(at.field('content.customerKey').value, 'another-key');
+    // the other kinds of message have no such list
+    const ott = await form('ott');
+    await tick();
+    assert.deepEqual(ott.looked, []);
+    assert.equal(ott.field('content.customerKey').list, null);
+});
+
+test('the content field works without its list, and the rest of the list is not read for a form that is gone', async () => {
+    const down = await form('push', (path) =>
+        path.startsWith(CONTENTS) ? { status: 403, body: { message: 'No' } } : { body: [] },
+    );
+    await tick();
+    assert.deepEqual(options(down, 'content.customerKey'), []);
+    down.type('content.customerKey', 'typed');
+    assert.equal(down.field('content.customerKey').value, 'typed');
+
+    const full = Array.from({ length: 50 }, (item, index) => ({
+        customerKey: `key-${index}`,
+        name: `Message ${index}`,
+        availableViews: ['push'],
+    }));
+    const at = page(MENU, (path) => {
+        if (path.startsWith(CONTENTS)) {
+            return { body: { count: 100, items: full } };
+        }
+        return { body: path.startsWith('push/v1/') ? [] : { definitions: [] } };
+    });
+    await at.open();
+    await tab(at, 'push');
+    // the first page waits to be let through
+    const pending = Promise.withResolvers();
+    const answering = at.window.fetch;
+    at.window.fetch = async (url, options) => {
+        const response = await answering(url, options);
+        if (url.includes(CONTENTS)) {
+            await pending.promise;
+        }
+        return response;
+    };
+    at.panel().querySelector('.sfmc-ux-tools-transactional-new').click();
+    await tick();
+    const read = () => at.looked.filter((path) => path.startsWith(CONTENTS));
+    assert.equal(read().length, 1);
+    at.panel().querySelector('form').remove();
+    pending.resolve();
+    await tick();
+    await tick();
+    assert.equal(read().length, 1);
+});
+
 test('the form offers the codes, keywords and apps of the business unit, and works without them', async () => {
     const lists = {
         'legacy/v1/beta/mobile/code/': {
@@ -923,7 +1013,7 @@ test('the form offers the codes, keywords and apps of the business unit, and wor
     assert.deepEqual(options(sms, 'subscriptions.keyword'), [['ORDER', '4912312345678']]);
     const push = await form('push', answer);
     await tick();
-    assert.deepEqual(push.looked, ['push/v1/application']);
+    assert.deepEqual(push.looked, ['push/v1/application', `${CONTENTS}?$page=1&${OF_CONTENTS}`]);
     // names are shown as text, whatever they contain
     assert.deepEqual(options(push, 'applicationId'), [['app-1', 'Shop <b>app</b>']]);
     assert.equal(push.panel().querySelector('b'), null);

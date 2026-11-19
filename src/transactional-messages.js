@@ -2,9 +2,10 @@
  * SFMC UX Tools — content script for the Marketing Cloud page that holds the app menu.
  *
  * Transactional SMS, push and OTT (WhatsApp and the like) messages exist in Marketing Cloud's
- * API only; no app shows them. This adds an entry "Transactional Messages" to the Mobile Studio
- * menu, which opens a panel that lists those definitions, shows the details of one, creates and
- * changes one from a form and deletes one on request. The lists and the details come from
+ * API only; no app shows them. When switched on in the options, where it is a preview feature
+ * that is off, this adds an entry "Transactional Messages" to the Mobile Studio menu, which
+ * opens a panel that lists those definitions, shows the details of one, creates and changes one
+ * from a form and deletes one on request. The lists and the details come from
  * Marketing Cloud's own server, through the page's session. A new or changed message goes there
  * when its form is sent, and a delete only after a question that names the message. Before a
  * change or a delete, the message is read again and left alone if it is no longer the one shown.
@@ -13,6 +14,9 @@
     'use strict';
 
     const TITLE = 'Transactional Messages';
+    // the setting that shows the entry; it is off until someone switches it on in the options
+    const SETTING = 'transactionalMessages';
+    const ON = 'on';
     // said wherever this script adds something, so that nobody takes it for Marketing Cloud's own
     const MADE_BY = 'SFMC UX Tools';
     const ICON = chrome.runtime.getURL('icons/icon16.png');
@@ -1120,10 +1124,41 @@
         list.append(item);
     }
 
-    addEntry();
     // the menu is drawn after the page has loaded, and drawn again when the business unit changes
-    new MutationObserver(addEntry).observe(document.documentElement, {
-        childList: true,
-        subtree: true,
+    const menu = new MutationObserver(addEntry);
+
+    /**
+     * Shows the entry, or takes it away; anything but "on" hides it. A panel that is open stays
+     * until it is closed.
+     *
+     * @param {unknown} value the setting
+     */
+    function apply(value) {
+        if (value === ON) {
+            addEntry();
+            menu.observe(document.documentElement, { childList: true, subtree: true });
+        } else {
+            menu.disconnect();
+            document.querySelector(`[${CSS.escape(MARK)}]`)?.remove();
+        }
+    }
+
+    /**
+     * Reads whether the entry is switched on.
+     */
+    async function readSetting() {
+        try {
+            const values = await chrome.storage.sync.get({ [SETTING]: 'off' });
+            apply(values[SETTING]);
+        } catch {
+            // without the setting the entry stays hidden
+        }
+    }
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'sync' && Object.hasOwn(changes, SETTING)) {
+            apply(changes[SETTING].newValue);
+        }
     });
+    readSetting();
 })();

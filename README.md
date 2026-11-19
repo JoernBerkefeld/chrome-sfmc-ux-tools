@@ -13,7 +13,6 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Tidy code with one click:** the **{ }** button or **Shift+Alt+F**, and **Ctrl+S** saves.
 - **Readable keys instead of random ones:** new automations, activities, data extensions, journeys, API events, sender profiles, send classifications, file locations, roles and users get a key made from their name, such as `Welcome_series`.
 - **No more "New Journey - 18 November…":** Journey Builder asks you for a real name before a new journey is saved.
-- **Transactional SMS, push and OTT messages you can see:** Marketing Cloud has no screen for them; a new entry in the Mobile Studio menu lists them and lets you create, change and delete them.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
 
@@ -34,7 +33,6 @@ Everything below works on its own after installing; there is nothing to set up. 
 - **Email Studio**: the page that creates a triggered send, for readable keys.
 - **Journey Builder**: new journeys and their API events, for readable keys and for [a real name before saving](#journey-builder-a-real-name-before-saving).
 - **Setup**: the pages for a new sender profile, send classification, delivery profile, file location, role or user, for readable keys.
-- **The Mobile Studio menu** at the top of Marketing Cloud: the entry [Transactional Messages](#transactional-messages-sms-push-and-ott).
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
 - **Setup → Installed Packages**: the dialog with the list of scopes.
 
@@ -229,32 +227,6 @@ When you create or edit a user under **Setup → Users**, the page has a usernam
 - If a password manager writes a saved login into the **External Key** anyway, the extension puts back the key made from the username. A key you typed yourself stays.
 - You can switch this off in the options, under **Saved logins on Setup's user pages**.
 
-### Transactional messages: SMS, push and OTT
-
-Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers WhatsApp and similar channels). They are set up through the API only: no app of Marketing Cloud shows which ones exist.
-
-- **A new entry in the menu:** point at **Mobile Studio** at the top of Marketing Cloud. Below MobileConnect, MobilePush and GroupConnect you find **Transactional Messages**. The small icon behind it is this extension's, to show who added the entry.
-- **A list per channel:** the panel that opens has the tabs **SMS**, **Push** and **OTT**. Each lists the messages of the business unit you are in, with name, key, status and the dates they were created and last changed.
-- **The details of one message:** click a row to see everything Marketing Cloud stores for it, such as the text, the code and keyword, or the app. **← All … messages** takes you back.
-- **Create a message:** every list has a **New … message** button. It opens a form with the fields of that channel:
-    - **SMS:** name, key, description, status, the text of the message, the code and keyword it is sent with, the country code of a short code, and whether the recipient is added or updated as a subscriber.
-    - **Push:** name, key, description, status, the app, the content (the customer key of the push message in Content Builder), sound and badge.
-    - **OTT:** name, key, description, status, the sender (WhatsApp and its phone number) and the content.
-- **The key follows the name** while you type, as with [readable keys](#readable-keys) elsewhere, until you type a key yourself. The **Readable keys** option switches this off.
-- **Code, keyword and app are suggested:** these fields offer what the business unit has, and still take any text.
-- **The content of a push message is suggested:** the field offers the push messages of Content Builder by their name. Picking one fills in its customer key. Messages written for SMS or for in-app are left out: on an account with push messages, every transactional one held a message written for push. The field still takes any other key.
-- **What Marketing Cloud refuses is shown:** if a message cannot be created, the form says why in Marketing Cloud's words and keeps what you typed.
-- **A new message starts as Active** unless you choose Inactive in the form. An active message can be sent at once by anything that knows its key.
-- **Change a message:** the details have an **Edit** button. It opens the same form, filled in. The key cannot be changed.
-    - Only what you changed is sent. If you change nothing, nothing is sent.
-    - Right before saving, the panel reads the message again. If someone changed it meanwhile, or you changed the business unit in another browser tab, nothing is saved and the form says so.
-    - After saving, the panel reads the message once more and compares it with what you sent. If Marketing Cloud answered "saved" but holds something else, the panel names the fields that differ.
-- **Delete a message:** the details have a **Delete** button. The panel then asks once more, with the name, key and status of the message, and only **Delete it** deletes. Marketing Cloud cannot bring a deleted message back, and whatever still sends with its key will fail.
-- **A safeguard against the wrong business unit:** right before deleting, the panel reads the message again. If it is no longer the one on screen, for example because you changed the business unit in another browser tab, nothing is deleted.
-- **Creating, changing and deleting are untested on a real message:** our test account has no SMS code, push app or OTT channel, so Marketing Cloud refuses every new message there, and there is none to change or delete. We saw that the requests arrive and are checked. For changing an SMS message even that could not be seen clearly. They are the ones Marketing Cloud's API documents and [mcdev](https://github.com/Accenture/sfmc-devtools) uses. If it does not work for you, please tell us in the [issues on GitHub](https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues).
-- **Always marked as ours:** the panel shows the icon and **SFMC UX Tools** at its top, so nobody takes it for a part of Marketing Cloud.
-- **OTT is untested:** it was built from Salesforce's documentation, because we have no account with WhatsApp or a similar channel. If you have one, please tell us whether it works, in the [issues on GitHub](https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues). The tab says so too.
-
 ### Select all scopes of an installed package
 
 When you add or edit an API integration under **Setup → Platform Tools → Apps → Installed Packages**, the dialog lists around a hundred checkboxes.
@@ -316,7 +288,7 @@ The extension runs on eight places of Marketing Cloud Engagement:
 - Email Studio (`https://*.exacttarget.com/C12/Default.aspx`), where it also does only that, in the dialog that creates a data extension, and on the page that creates a triggered send (`https://*.exacttarget.com/Content/Interactions/TriggeredSendConfiguration.aspx`). Chrome asks you to accept the wider site access when the extension is updated.
 - Setup (`https://*.exacttarget.com/Content/Administration/SendManagement/`), where it does the same on the pages for a new sender profile, send classification, delivery profile or file location, and on the pages for a new role (`…/Roles/RoleDetails.aspx`) and a new user (`…/EmployeeDetails.aspx`).
 - Journey Builder (`https://jbinteractions.<stack>.marketingcloudapps.com`), where it reads the name of the journey and of its API event, changes the key in the request that Journey Builder sends when a new journey or API event is saved, and holds a save back while the journey has its made-up name. Before it uses a key, it asks Journey Builder's own server, the one the page is talking to anyway, whether that key is free.
-- the Marketing Cloud page around the apps (`https://mc.<stack>.exacttarget.com/cloud/`), where it adds the entry **Transactional Messages** to the Mobile Studio menu. When you open that panel, it asks Marketing Cloud's own server, through the page you are logged in to, for the list of transactional SMS, push and OTT messages, and for the details of the one you click. It shows them to you and keeps nothing. When you open the form for a new message, it asks the same server for the SMS codes and keywords, or the push apps and the names and keys of the mobile messages in Content Builder with what each was written for, of the business unit, to offer them in the form. When you send that form, it sends the new message, or what you changed of an existing one, to that server, and when you delete a message and confirm it, it sends that one delete request. Before a change or a delete it reads the message again, and after a change once more. The page loads one file of the extension, its icon.
+- the Marketing Cloud page around the apps (`https://mc.<stack>.exacttarget.com/cloud/`), where it adds nothing and makes no requests unless the preview feature **Transactional Messages** was switched on in the options. That feature is off after installing. Switched on, it adds an entry to the Mobile Studio menu. When you open its panel, it asks Marketing Cloud's own server, through the page you are logged in to, for the list of transactional SMS, push and OTT messages, and for the details of the one you click. It shows them to you and keeps nothing. When you open the form for a new message, it asks the same server for the SMS codes and keywords, or the push apps and the names and keys of the mobile messages in Content Builder with what each was written for, of the business unit, to offer them in the form. When you send that form, it sends the new message, or what you changed of an existing one, to that server, and when you delete a message and confirm it, it sends that one delete request. Before a change or a delete it reads the message again, and after a change once more. The page loads one file of the extension, its icon.
 
 The questions about a free key in Journey Builder and Content Builder, the lists and details of transactional messages with the lists their form offers, a new or changed transactional message that you sent and the delete of one that you confirmed, are the only requests the extension ever makes. They go to Marketing Cloud's own servers and nowhere else.
 

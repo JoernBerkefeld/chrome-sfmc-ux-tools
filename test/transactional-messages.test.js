@@ -49,14 +49,29 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), st
             this.dispatchEvent(new Event('close'));
         };
     `);
+    // the entry is a preview feature that is off; the tests run with it switched on
+    // a setting given as undefined was never saved, and Chrome then hands out the default
+    const settings = Object.fromEntries(
+        Object.entries({ transactionalMessages: 'on', ...stored }).filter(
+            ([, value]) => value !== undefined,
+        ),
+    );
+    const listeners = [];
     window.chrome = {
         runtime: { getURL: (path) => `chrome-extension://id/${path}` },
         storage: {
             sync: {
+                // isBroken fails the settings a form reads, isUnreadable every setting
                 get: (defaults) =>
-                    stored.isBroken
+                    stored.isUnreadable ||
+                    (stored.isBroken && Object.hasOwn(defaults, 'readableKeys'))
                         ? Promise.reject(new Error('broken'))
-                        : Promise.resolve({ ...defaults, ...stored }),
+                        : Promise.resolve({ ...defaults, ...settings }),
+            },
+            onChanged: {
+                addListener: (listener) => {
+                    listeners.push(listener);
+                },
             },
         },
     };
@@ -108,7 +123,17 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), st
         calls,
         entry,
         panel,
+        change: (values, area = 'sync') => {
+            const changes = Object.fromEntries(
+                Object.entries(values).map(([key, newValue]) => [key, { newValue }]),
+            );
+            for (const listener of listeners) {
+                listener(changes, area);
+            }
+        },
         open: async () => {
+            // the entry is added once the setting was read
+            await tick();
             entry().dispatchEvent(
                 new window.MouseEvent('click', { bubbles: true, cancelable: true }),
             );
@@ -143,6 +168,7 @@ async function tab(at, kind) {
 
 test('the Mobile Studio menu gets one entry, built like its own', async () => {
     const at = page(MENU);
+    await tick();
     const items = [...at.document.querySelector('#mobile').children];
     assert.equal(items.length, 3);
     assert.equal(items[2].className, 'mc-app-group-dropdown-app');
@@ -158,6 +184,7 @@ test('the Mobile Studio menu gets one entry, built like its own', async () => {
 
 test('the entry comes back when the menu is drawn again, and waits for a menu that comes late', async () => {
     const at = page('<div id="shell"></div>');
+    await tick();
     assert.equal(at.entry(), null);
     at.document.querySelector('#shell').innerHTML = MENU;
     await tick();
@@ -175,8 +202,94 @@ test('a page without the Mobile Studio menu is left alone', async () => {
     assert.equal(at.panel(), null);
 });
 
+test('the entry is a preview feature: off until it is switched on, and gone when switched off', async () => {
+    const at = page(MENU, undefined, { transactionalMessages: 'off' });
+    await tick();
+    assert.equal(at.entry(), null);
+    // a menu that is drawn again does not bring it
+    at.document.body.append(at.document.createElement('div'));
+    await tick();
+    assert.equal(at.entry(), null);
+    // another setting, or the same one somewhere else, changes nothing
+    at.change({ readableKeys: 'off' });
+    at.change({ transactionalMessages: 'on' }, 'local');
+    assert.equal(at.entry(), null);
+    at.change({ transactionalMessages: 'on' });
+    assert.ok(at.entry());
+    at.change({ transactionalMessages: 'off' });
+    assert.equal(at.entry(), null);
+    at.document.body.append(at.document.createElement('div'));
+    await tick();
+    assert.equal(at.entry(), null);
+    assert.deepEqual(at.calls, []);
+});
+
+test('the entry stays hidden when the setting was never saved or cannot be read', async () => {
+    const fresh = page(MENU, undefined, { transactionalMessages: undefined });
+    const unreadable = page(MENU, undefined, { isUnreadable: true });
+    await tick();
+    assert.equal(fresh.entry(), null);
+    assert.equal(unreadable.entry(), null);
+});
+
+/**
+ * Opens the options page with the given saved settings.
+ *
+ * @param {Object.<string, string>} stored saved settings
+ * @returns {Promise.<{window: Window, preview: Element, saved: object[]}>} the page, the group of preview features and what was saved
+ */
+async function optionsPage(stored) {
+    const { window } = new JSDOM(read('../src/options.html'), { runScripts: 'outside-only' });
+    const saved = [];
+    window.chrome = {
+        storage: {
+            sync: {
+                get: async (defaults) => ({ ...defaults, ...stored }),
+                set: (values) => {
+                    saved.push({ ...values });
+                },
+            },
+        },
+    };
+    window.eval(read('../src/options.js'));
+    await tick();
+    return { window, preview: window.document.querySelector('#preview'), saved };
+}
+
+test('the options keep the preview features out of sight until asked for', async () => {
+    const fresh = await optionsPage({});
+    const click = (altKey) =>
+        fresh.window.document
+            .querySelector('#copyright')
+            .dispatchEvent(new fresh.window.MouseEvent('click', { bubbles: true, altKey }));
+    const radios = [...fresh.preview.querySelectorAll('input[name="transactionalMessages"]')];
+    assert.deepEqual(
+        radios.map((radio) => [radio.value, radio.checked]),
+        [
+            ['off', true],
+            ['on', false],
+        ],
+    );
+    assert.equal(fresh.preview.hidden, true);
+    click(false);
+    assert.equal(fresh.preview.hidden, true);
+    click(true);
+    assert.equal(fresh.preview.hidden, false);
+    radios[1].click();
+    assert.deepEqual(fresh.saved, [{ transactionalMessages: 'on' }]);
+
+    // switched on, it shows by itself, so that it can be switched off again
+    const on = await optionsPage({ transactionalMessages: 'on' });
+    assert.equal(on.preview.hidden, false);
+    assert.equal(on.preview.querySelector('input[value="on"]').checked, true);
+    // other settings off their default do not show it
+    const other = await optionsPage({ readableKeys: 'off', editorTheme: 'dark' });
+    assert.equal(other.preview.hidden, true);
+});
+
 test('a click opens the panel on the SMS list and does not reach the page', async () => {
     const at = page(MENU);
+    await tick();
     let reached = 0;
     at.document.body.addEventListener('click', () => reached++);
     const click = new at.window.MouseEvent('click', { bubbles: true, cancelable: true });

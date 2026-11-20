@@ -1,0 +1,36 @@
+<!doctype html>
+<!--
+    SFMC UX Tools: demo page of the dialog of an installed package with its scopes, for the
+    pictures of the README. It loads the built script for Setup > Installed Packages from
+    dist/extension around a dialog drawn here with made-up content only. Open it through
+    `npm run screenshots`, which serves the repository locally.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>SFMC UX Tools: installed package demo (made-up content)</title>
+        <link rel="icon" href="data:," />
+        <link rel="stylesheet" href="demo.css" />
+    </head>
+    <body class="page-dialog">
+        <div class="slds-modal">
+            <div class="demo-dialog mc-packages--components_demo-modal">
+                <header class="demo-dialog-header">
+                    <h1>Add Component</h1>
+                    <p>API Integration: Demo Integration</p>
+                </header>
+                <div class="demo-dialog-body demo-scopes-body">
+                    <div class="demo-scope-bar">Scope</div>
+                    <div id="scopes"></div>
+                </div>
+                <footer class="demo-dialog-footer">
+                    <button type="button" class="demo-button">Cancel</button>
+                    <button type="button" class="demo-button demo-button-brand">Save</button>
+                </footer>
+            </div>
+        </div>
+        <script src="packages.js"></script>
+        <script src="pointer.js"></script>
+        <script src="/dist/extension/content.js"></script>
+    </body>
+</html>

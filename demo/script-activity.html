@@ -1,0 +1,49 @@
+<!doctype html>
+<!--
+    SFMC UX Tools: demo page of a dialog that creates a script activity, for the pictures of the
+    README. It loads the built scripts for readable keys from dist/extension the way an Automation
+    Studio page gets them, in a dialog drawn here with made-up content only. Open it through
+    `npm run screenshots`, which serves the repository locally.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>SFMC UX Tools: readable keys demo (made-up content)</title>
+        <link rel="icon" href="data:," />
+        <link rel="stylesheet" href="demo.css" />
+        <script src="chrome-stub.js"></script>
+        <script src="/dist/extension/key-rule.js"></script>
+        <script src="/dist/extension/readable-keys.js"></script>
+    </head>
+    <body class="page-dialog">
+        <div class="modal demo-dialog" role="dialog" aria-labelledby="dialog-title">
+            <header class="demo-dialog-header">
+                <h1 id="dialog-title">New Script Activity</h1>
+                <p>Properties</p>
+            </header>
+            <div class="demo-dialog-body">
+                <label class="demo-field">
+                    <span>Name</span>
+                    <input id="scriptName" type="text" autocomplete="off" spellcheck="false" />
+                </label>
+                <label class="demo-field">
+                    <span>External Key</span>
+                    <input
+                        id="scriptExternalKey"
+                        type="text"
+                        autocomplete="off"
+                        spellcheck="false"
+                    />
+                </label>
+                <label class="demo-field">
+                    <span>Description</span>
+                    <textarea id="scriptDescription" rows="3"></textarea>
+                </label>
+            </div>
+            <footer class="demo-dialog-footer">
+                <button type="button" class="demo-button">Cancel</button>
+                <button type="button" class="demo-button demo-button-brand">Next</button>
+            </footer>
+        </div>
+    </body>
+</html>

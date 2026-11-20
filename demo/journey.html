@@ -1,0 +1,23 @@
+<!doctype html>
+<!--
+    SFMC UX Tools: demo page of a new journey in Journey Builder, for the pictures of the README.
+    It loads the built Journey Builder scripts from dist/extension the way a Journey Builder page
+    gets them, around a journey header drawn here with made-up content only. Open it through
+    `npm run screenshots`, which serves the repository locally.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>SFMC UX Tools: Journey Builder demo (made-up content)</title>
+        <link rel="icon" href="data:," />
+        <link rel="stylesheet" href="demo.css" />
+        <script src="chrome-stub.js"></script>
+        <script src="/dist/extension/journey-settings.js"></script>
+        <script src="/dist/extension/key-rule.js"></script>
+        <script src="/dist/extension/journey-builder.js"></script>
+    </head>
+    <body class="page-journey">
+        <main id="app"></main>
+        <script src="journey.js"></script>
+    </body>
+</html>

@@ -179,6 +179,8 @@ The extension checks your AMPscript and SSJS while you type.
 
 When you create something and leave its **External Key** empty, Marketing Cloud invents a random one such as `77E29FD6-6E4B-42EB-AA34-E4D6F91DCCCD`. With the extension, the key is filled in from the name while you type it: `Welcome series - step 2` becomes `Welcome_series_-_step_2`.
 
+![Animation: in the dialog of a new script activity, the name "Nightly import: Café & Bäckerei #2" is typed, and the External Key below it fills in by itself as "Nightly_import_Cafe_Backerei_2"](images/readable-keys.gif)
+
 Where it works:
 
 - **Automation Studio**: the dialogs that create an **SQL query**, **script**, **filter**, **import**, **data extract**, **file transfer** or **Contact to Business Unit Mapping** activity.
@@ -195,6 +197,9 @@ In Journey Builder:
 
 - **Journeys have no key field at all.** Journey Builder makes up a random key when you save a new journey, and the key of a journey can never be changed afterwards. With the extension, the journey is saved with a key made from its name instead.
 - **You can see and change the key before you save.** The details below the journey's name (Description, Status, Version, …) get a **Key** field. It opens by itself for a new journey, shows the key made from the name, and follows the name while you type. Type your own key there if you want another one.
+
+    ![The header of a new journey named "Spring Sale – Café Newsletter"; its details below the name are open and show, next to Description, a Key field with "Spring_Sale_Cafe_Newsletter"](images/journey-key.png)
+
 - **You can read the key of a saved journey.** Once the journey is saved, the same place shows its key as text. Click it to mark the whole key, then copy it. Open the details with the small arrow next to the journey's name. This also works with readable keys switched off.
 - **API events show their key but do not let you change it.** With the extension, the **Event Definition Key** of a new API event is a field you can type in, with the same look as the **Activity Name** field next to it. It starts with a key made from the event's name.
 - **Transactional journeys ask for an Event Definition Key.** The extension fills it in from the journey's name. You can change it before you save.
@@ -231,6 +236,8 @@ Good to know:
 ### Journey Builder: a real name before saving
 
 Every new journey starts with a name like "New Journey - 18 November 2026 at 11.03". It is easy to save it that way by accident, and the name is also handed on to the journey's API event.
+
+![After a click on Save, the name "New Journey - 20 November 2026 at 10.30" is an open field with the name selected, and a message below it says: give the journey a name of its own before you save it](images/journey-name.png)
 
 - **Save is held back** while the journey still has that made-up name. The name field opens with the old name selected, so you can type the new one right away.
 - This applies to **Save**, **Validate**, **Test** and **Activate**.
@@ -271,6 +278,8 @@ When you create or edit a user under **Setup → Users**, the page has a usernam
 ### Select all scopes of an installed package
 
 When you add or edit an API integration under **Setup → Platform Tools → Apps → Installed Packages**, the dialog lists around a hundred checkboxes.
+
+![Animation: the mouse clicks Select all in the Scope bar of a package dialog; every box is ticked, the button now says Deselect all, and the list scrolls down to show that the scopes further down are ticked too](images/scopes.gif)
 
 - A **Select all** button in the **Scope** bar ticks every scope, including the ones scrolled out of view.
 - Once everything is ticked, the button turns into **Deselect all**.
@@ -491,7 +500,7 @@ npm run build
 - `node scripts/measure-typescript.mjs` (after a build) prints the size of the TypeScript bundle and how long it takes to start and to answer for a 1,500-line document.
 - `npm test` runs the build first, because the completion tests run the built bundle.
 - `npm run icons` redraws the icons in `src/icons/`.
-- **The pictures in this README** come from two demo pages in `demo/`, not from Marketing Cloud: they load the built extension and show made-up content only (`Demo App`, `Jane Doe`, the code `00000`, …). `npm run screenshots` builds the extension and writes them again to `images/`, using the Edge installed on Windows without opening a window; set `SCREENSHOT_BROWSER` to the path of another Chromium browser to use that one. `node scripts/screenshots.js hover format` takes only the named pictures. The run fails if a feature is not on screen or if a page tries to reach anything but the local demo server. `puppeteer-core` drives the browser and `gifenc` writes the animations; both are only used for this.
+- **The pictures in this README** come from demo pages in `demo/`, not from Marketing Cloud: they load the built extension and show made-up content only (`Demo App`, `Jane Doe`, the code `00000`, …). `npm run screenshots` builds the extension and writes them again to `images/`, using the Edge installed on Windows without opening a window; set `SCREENSHOT_BROWSER` to the path of another Chromium browser to use that one. `node scripts/screenshots.js hover format` takes only the named pictures. The run fails if a feature is not on screen or if a page tries to reach anything but the local demo server. `puppeteer-core` drives the browser and `gifenc` writes the animations; both are only used for this.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.
 - In `package.json`, `dependencies` are the packages whose code or data ends up in the shipped extension; `devDependencies` are tools for building, linting and testing. The package is never installed from npm, so the split is for clarity only.
 - `codemirror` is fixed to the exact version Content Builder ships (5.65.21), so that the tests run against the editor the extension meets in the page. Change it only when Marketing Cloud updates its editor. The same version is bundled for the code editor of a transactional SMS, so it is listed under `dependencies`.

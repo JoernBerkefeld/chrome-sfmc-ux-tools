@@ -6,7 +6,8 @@
  * browser in the environment variable SCREENSHOT_BROWSER) opens them without a window. Every
  * request that does not go to that local server is refused. Each picture is cut to the feature it
  * shows, and each capture checks first that the feature is on screen; if one is not, the run fails
- * and names it. Hover, suggestions and parameter help become animated GIFs.
+ * and names it. What moves (hover, suggestions, parameter help, readable keys, Select all) becomes an
+ * animated GIF.
  */
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -850,6 +851,173 @@ async function options(context) {
     await page.close();
 }
 
+/**
+ * Moves the mouse in steps from one place to another, with a frame after each step.
+ *
+ * @param {object} page the page
+ * @param {{x: number, y: number}} from where the mouse starts
+ * @param {{x: number, y: number}} to where it stops
+ * @param {() => Promise.<void>} frame what takes a frame
+ */
+async function glide(page, from, to, frame) {
+    const steps = 10;
+    await page.mouse.move(from.x, from.y);
+    await frame();
+    for (let step = 1; step <= steps; step++) {
+        await page.mouse.move(
+            from.x + ((to.x - from.x) * step) / steps,
+            from.y + ((to.y - from.y) * step) / steps,
+        );
+        await frame();
+    }
+}
+
+/**
+ * The middle of an element, in window coordinates.
+ *
+ * @param {object} page the page
+ * @param {string} selector the element
+ * @returns {Promise.<{x: number, y: number}>} its middle
+ */
+async function middleOf(page, selector) {
+    return page.$eval(selector, (element) => {
+        const { left, top, width, height } = element.getBoundingClientRect();
+        return { x: left + width / 2, y: top + height / 2 };
+    });
+}
+
+/**
+ * Readable keys, as an animation: a name with spaces, accents and other characters is typed into
+ * the dialog of a new script activity, and the key follows it.
+ *
+ * @param {object} context browser, origin, problems and the helper page
+ */
+async function readableKeys(context) {
+    const name = 'Nightly import: Café & Bäckerei #2';
+    const key = 'Nightly_import_Cafe_Backerei_2';
+    const page = await openPage(context.browser, context.origin, context.problems, PLAIN);
+    await page.goto(`${context.origin}/demo/script-activity.html`);
+    const { frames, frame } = recorder(page, await regionOf(page, ['.demo-dialog']));
+    await page.focus('#scriptName');
+    await frame();
+    for (const character of name) {
+        await page.keyboard.type(character);
+        await pause(100);
+        await frame();
+    }
+    await expect(
+        page,
+        'the key made from the name',
+        (wanted) => document.querySelector('#scriptExternalKey').value === wanted,
+        key,
+    );
+    await frame();
+    await animation(context.helper, 'readable-keys.gif', frames);
+    await page.close();
+}
+
+// where Journey Builder draws a journey that was never saved
+const NEW_JOURNEY = '#00000000-0000-0000-0000-000000000000/';
+const JOURNEY_HEADER = ['.demo-journey-header', '.slds-page-header__detail-row'];
+
+/**
+ * Journey Builder: the key field among the details of a new journey, filled from its name.
+ *
+ * @param {object} context browser, origin and problems
+ */
+async function journeyKey(context) {
+    const page = await openPage(context.browser, context.origin, context.problems, SHARP);
+    const name = 'Spring Sale – Café Newsletter';
+    await page.goto(
+        `${context.origin}/demo/journey.html?${new URLSearchParams({ name })}${NEW_JOURNEY}`,
+    );
+    await expect(
+        page,
+        'the key field among the opened details of the journey',
+        () =>
+            document.querySelector('.slds-page-header__detail-row.detail-visible') &&
+            document.querySelector('.sfmc-ux-tools-journey-key input')?.value ===
+                'Spring_Sale_Cafe_Newsletter',
+    );
+    await picture(page, 'journey-key.png', await regionOf(page, JOURNEY_HEADER, { margin: 0 }));
+    await page.close();
+}
+
+/**
+ * Journey Builder: Save is held back while the journey has the name Journey Builder made up.
+ *
+ * @param {object} context browser, origin and problems
+ */
+async function journeyName(context) {
+    const page = await openPage(context.browser, context.origin, context.problems, SHARP);
+    await page.goto(`${context.origin}/demo/journey.html${NEW_JOURNEY}`);
+    await expect(page, 'the journey with its made-up name', () =>
+        document
+            .querySelector('.name-editor .readonly-text')
+            ?.textContent.startsWith('New Journey'),
+    );
+    await page.click('.control-save');
+    await expect(page, 'the name field with the message of the extension', () =>
+        document
+            .querySelector('.name-editor input.editable-text')
+            ?.validationMessage.startsWith('SFMC UX Tools'),
+    );
+    await pause(300);
+    await picture(
+        page,
+        'journey-name.png',
+        // the message opens over the details
+        await regionOf(page, JOURNEY_HEADER, { margin: 0, below: 8 }),
+    );
+    await page.close();
+}
+
+/**
+ * Installed packages, as an animation: Select all ticks every scope, also those further down.
+ *
+ * @param {object} context browser, origin, problems and the helper page
+ */
+async function scopes(context) {
+    const page = await openPage(context.browser, context.origin, context.problems, PLAIN);
+    await page.goto(`${context.origin}/demo/packages.html?pointer=on`);
+    const button = '[data-sfmc-ux-tools-scope-toggle]';
+    await expect(
+        page,
+        'the button Select all',
+        (selector) => document.querySelector(selector)?.textContent === 'Select all',
+        button,
+    );
+    const { frames, frame } = recorder(page, await regionOf(page, ['.demo-dialog']));
+    const target = await middleOf(page, button);
+    await glide(page, { x: target.x - 260, y: target.y + 200 }, target, frame);
+    await page.mouse.click(target.x, target.y);
+    await expect(
+        page,
+        'every scope ticked and the button Deselect all',
+        (selector) =>
+            document.querySelector(selector).textContent === 'Deselect all' &&
+            [...document.querySelectorAll('#scopes input')].every((box) => box.checked),
+        button,
+    );
+    await frame();
+    await frame();
+    await frame();
+    // down the list, to the scopes that were out of view
+    const steps = 12;
+    for (let step = 1; step <= steps; step++) {
+        await page.$eval(
+            '.demo-scopes-body',
+            (body, part) => {
+                body.scrollTop = (body.scrollHeight - body.clientHeight) * part;
+            },
+            step / steps,
+        );
+        await frame();
+    }
+    await animation(context.helper, 'scopes.gif', frames);
+    await page.close();
+}
+
 const CAPTURES = {
     colours,
     completion,
@@ -862,6 +1030,10 @@ const CAPTURES = {
     smsForm,
     pushForm,
     pushDetails,
+    readableKeys,
+    journeyKey,
+    journeyName,
+    scopes,
     options,
 };
 

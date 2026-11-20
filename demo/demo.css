@@ -47,3 +47,259 @@ html .sfmc-tooltip::before {
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='24' viewBox='0 0 16 24'%3E%3Cpath d='M1 1 L1 19 L5.5 14.5 L8.5 22 L11 21 L8 13.5 L14 13.5 Z' fill='white' stroke='black' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E")
         no-repeat;
 }
+
+/* dialogs: a script activity and an installed package */
+.page-dialog {
+    padding: 32px;
+}
+
+.demo-dialog {
+    box-sizing: border-box;
+    width: 560px;
+    overflow: hidden;
+    color: #181818;
+    background: #ffffff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 16%);
+    font-size: 14px;
+}
+
+.demo-dialog-header {
+    padding: 16px 24px;
+    text-align: center;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.demo-dialog-header h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 400;
+}
+
+.demo-dialog-header p {
+    margin: 4px 0 0;
+    color: #5c5c5c;
+    font-size: 13px;
+}
+
+.demo-dialog-body {
+    padding: 16px 24px;
+}
+
+.demo-dialog-footer {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding: 12px 24px;
+    background: #f3f3f3;
+    border-top: 1px solid #e5e5e5;
+}
+
+.demo-field {
+    display: block;
+    margin-bottom: 14px;
+}
+
+.demo-field span {
+    display: block;
+    margin-bottom: 4px;
+    color: #3e3e3c;
+    font-size: 12px;
+}
+
+.demo-field input,
+.demo-field textarea,
+.slds-input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 6px 10px;
+    font: inherit;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+}
+
+.demo-field input:focus,
+.demo-field textarea:focus,
+.slds-input:focus,
+.editable-text:focus {
+    outline: none;
+    border-color: #0176d3;
+    box-shadow: 0 0 3px #0176d3;
+}
+
+.demo-button,
+.slds-button {
+    padding: 4px 14px;
+    color: #0176d3;
+    font: inherit;
+    font-size: 13px;
+    line-height: 22px;
+    background: #ffffff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.demo-button-brand {
+    color: #ffffff;
+    background: #0176d3;
+    border-color: #0176d3;
+}
+
+/* the scopes of an installed package: a list that scrolls */
+.demo-scopes-body {
+    height: 360px;
+    padding-top: 0;
+    overflow-y: auto;
+}
+
+.demo-scope-bar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 8px 0;
+    font-weight: 600;
+    background: #ffffff;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.demo-scope-group h2 {
+    margin: 14px 0 6px;
+    color: #5c5c5c;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.demo-scope-row {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.demo-scope-row span {
+    width: 170px;
+}
+
+.demo-scope-row label {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    width: 76px;
+}
+
+/* a new journey in Journey Builder */
+.page-journey #app {
+    box-sizing: border-box;
+    width: 1100px;
+    color: #181818;
+    background: #ffffff;
+    border-bottom: 1px solid #c9c9c9;
+    font-size: 14px;
+}
+
+.demo-journey-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: #f3f3f3;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.demo-journey-title {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.demo-journey-icon {
+    width: 32px;
+    height: 32px;
+    background: #ff538a;
+    border-radius: 4px;
+}
+
+.demo-journey-kind {
+    margin: 0;
+    color: #5c5c5c;
+    font-size: 12px;
+}
+
+.name-editor {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-width: 360px;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.edit-icon,
+.toggle-detail-icon {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* a pencil */
+.edit-icon {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M2 11.5 L2 14 L4.5 14 L12 6.5 L9.5 4 Z M10.5 3 L13 5.5 L14 4.5 L11.5 2 Z' fill='%23747474'/%3E%3C/svg%3E");
+}
+
+/* an arrow down */
+.toggle-detail-icon {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M3 6 L8 11 L13 6' fill='none' stroke='%23747474' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.editable-text {
+    width: 420px;
+    padding: 2px 6px;
+    font: inherit;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+}
+
+.demo-journey-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.slds-page-header__detail-row {
+    display: none;
+    gap: 40px;
+    margin: 0;
+    padding: 12px 16px 16px 60px;
+    list-style: none;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.slds-page-header__detail-row.detail-visible {
+    display: flex;
+}
+
+.slds-text-title {
+    margin: 0 0 4px;
+    color: #5c5c5c;
+    font-size: 12px;
+}
+
+.slds-text-body_regular {
+    margin: 0;
+}
+
+.demo-journey-canvas {
+    height: 160px;
+    background: radial-gradient(#d8d8d8 1px, transparent 1px) 0 0 / 16px 16px;
+}
+
+.demo-hidden {
+    display: none;
+}

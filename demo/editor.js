@@ -3,8 +3,8 @@
  * Cloud's own editors, which the built scripts of the extension that load after this one take for
  * one of Content Builder. All the code below is made up for the pictures of the README.
  *
- * `?sample=` picks the code to show (see SAMPLES); `?pointer=on` draws a mouse pointer, which a
- * screenshot leaves out otherwise.
+ * `?sample=` picks the code to show (see SAMPLES); pointer.js draws a mouse pointer with
+ * `?pointer=on`.
  */
 (() => {
     'use strict';
@@ -67,17 +67,4 @@ SET @firstName = AttributeValue("FirstName")
     });
     // eslint-disable-next-line unicorn/no-global-object-property-assignment -- where the capture script finds the editor
     globalThis.demoEditor = editor;
-
-    if (parameters.get('pointer') !== 'on') {
-        return;
-    }
-    const pointer = document.createElement('div');
-    pointer.className = 'demo-pointer';
-    pointer.hidden = true;
-    document.body.append(pointer);
-    addEventListener('mousemove', (event) => {
-        pointer.hidden = false;
-        pointer.style.left = `${event.clientX}px`;
-        pointer.style.top = `${event.clientY}px`;
-    });
 })();

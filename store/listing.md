@@ -119,7 +119,7 @@ SFMC UX Tools improves the user interface of Salesforce Marketing Cloud for the 
 ### Permission justification: storage
 
 ```text
-Stores the user's choices from the extension's options page (editor theme, format on save, readable keys, journey names, context menu) in chrome.storage.sync. Nothing else is stored.
+Stores the user's choices from the extension's options page (editor theme, format on save, readable keys, journey names, context menu) in chrome.storage.sync. In chrome.storage.local it keeps a short list (at most 200 entries of kind, key and two dates) of transactional messages that Marketing Cloud lists but cannot open, so that the panel leaves them out without requesting them again. Nothing else is stored, and nothing leaves the browser.
 ```
 
 ### Permission justification: scripting

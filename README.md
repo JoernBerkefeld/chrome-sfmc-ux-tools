@@ -294,6 +294,7 @@ Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers Wh
 
 The folder names of contents, the texts of a push content, the list for personalization and saving custom keys were seen answering on a real account. They were tried with the same requests the panel sends, not by clicking through the panel itself.
 
+- **Closing the panel:** only the **×** in its corner closes it. **Esc** closes an open list or box inside the panel, but never the panel itself, so that nothing typed is lost by accident.
 - **A new entry in the menu:** point at **Mobile Studio** at the top of Marketing Cloud. Below MobileConnect, MobilePush and GroupConnect you find **Transactional Messages**. The small icon behind it is this extension's, to show who added the entry.
 - **A list per channel:** the panel that opens has the tabs **SMS**, **Push** and **OTT**. Each lists the messages of the business unit you are in.
     - **Columns:** name, key, status, and the dates a message was created and last changed, in your local date and time. SMS also shows **Code** and **Keyword**, push shows **App** and **Content** by their names.
@@ -315,6 +316,11 @@ The folder names of contents, the texts of a push content, the list for personal
 - **Code, keyword, app and content come a moment later:** Marketing Cloud's list does not contain them, so the panel reads each message once in the background, a few at a time, and says how far it is ("details 120 of 312").
     - What was read is kept for as long as the page is open. After a refresh, only messages that are new or were changed are read again.
     - Until all are read, sorting by these columns is switched off, and a search finds them only in the messages already read.
+    - If some details cannot be read, the note says how many, such as "2 of 312 details could not be read", and sorting works anyway. Those messages sort as if the column were empty. They are asked for again the next time the list is shown.
+    - **Messages Marketing Cloud lists but cannot open are left out.** Marketing Cloud sometimes lists an SMS message whose details it cannot find, for example after the mobile message behind it was deleted. The panel then reads the list once more to make sure, and hides the message.
+        - The extension remembers it in its own storage, so the next time the list is shown without asking for it again.
+        - If the message is changed later, or a new one gets the same key, it is shown again.
+        - A message that cannot be read for any other reason, such as a server error, stays in the list.
     - On the first opening of a list with several hundred messages, that many requests go out once.
 - **The details of one message:** click a row to see everything Marketing Cloud stores for it, with plain labels such as **Key**, **Message** or **Code**. Point at a label to see the name of the field in the API. **← All … messages** takes you back.
     - **Names first:** for a push message, the name of its app and of its content comes first, and the ID or key after it in small grey letters. The same goes for the content of an OTT message. If the name is not known, only the ID or key is shown.
@@ -337,7 +343,7 @@ The folder names of contents, the texts of a push content, the list for personal
     - **SMS:** name, key, description, status, the text of the message, the code and keyword it is sent with, the country code of a short code, and whether the recipient is added or updated as a subscriber.
     - **Push:** name, key, description, status, the app, the custom keys of that app, the content (the customer key of the push message in Content Builder), sound and badge.
     - **OTT:** name, key, description, status, the sender (WhatsApp and its phone number) and the content.
-    - **No saved logins in these forms:** the fields have names that password managers do not take for a login or a person's name, and the browser is asked not to fill them in.
+    - **No saved logins in these forms:** the fields have names that password managers do not take for a login or a person's name, so that they leave the forms alone.
 - **The text of an SMS is written in a code editor**, like the code view of Content Builder:
 
     ![The message of a made-up SMS in the code editor, with %%FirstName%% in colour; below it the person button, the line "43 characters · length depends on personalization" and the open list with FirstName, City and FavouriteColour](images/sms-editor.png)
@@ -504,7 +510,7 @@ The extension runs on eight places of Marketing Cloud Engagement and on one of M
 
 The questions about a free key in Journey Builder and Content Builder, the lists and details of transactional messages with the lists their form offers, a new or changed transactional message that you sent and the delete of one that you confirmed, are the only requests the extension ever makes. They go to Marketing Cloud's own servers and nowhere else.
 
-It does not collect any data and sends nothing to anyone but Marketing Cloud itself: apart from the requests described above, it makes no network requests. The only thing it stores is your choice on the options page, in Chrome's extension storage (synced with your Chrome profile if sync is on).
+It does not collect any data and sends nothing to anyone but Marketing Cloud itself: apart from the requests described above, it makes no network requests. It stores two things, both in Chrome's extension storage: your choice on the options page (synced with your Chrome profile if sync is on), and, on this computer only, a short list of transactional messages that Marketing Cloud lists but cannot open (their kind, key and two dates, at most 200), so that the panel leaves them out without asking for them again.
 
 ## Development
 

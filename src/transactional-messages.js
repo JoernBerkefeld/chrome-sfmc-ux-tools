@@ -40,6 +40,9 @@
     const ROWS_SHOWN = 50;
     // details that are read at the same time, to leave Marketing Cloud's server to the page
     const DETAILS_AT_ONCE = 4;
+    // where the extension's storage keeps the rows left out of the lists, and how many it keeps
+    const UNREADABLE = 'transactionalUnreadable';
+    const UNREADABLE_KEPT = 200;
     // Marketing Cloud keeps a deleted definition in its lists, with the status "Deleted"
     const NOT_DELETED = '$filter=status%20neq%20deleted';
     const MARK = 'data-sfmc-ux-tools-transactional';
@@ -523,6 +526,17 @@
     const reading = new Map();
     // lets the list on show go on reading details when one of them has come
     let wake = () => {};
+    // rows of a list whose details Marketing Cloud answered with 404 on this page, by their
+    // signature. Seen on a real account: an SMS definition whose mobile message was deleted is
+    // still listed, but cannot be read ("Unable to find Definition", errorcode 30003)
+    const notFound = new Set();
+    // the kinds whose list is being read again to make sure of such rows
+    const confirming = new Set();
+    // lets the list on show take out rows that are left out from now on, where they stand
+    let dropped = () => {};
+    // rows made sure of are kept in the extension's storage, so that they are left out of the
+    // lists of later pages without asking for them again; read once per page
+    let unreadable;
     // counts what may have made a list another one than the one being read: every request that
     // changes a message, when it goes out and when it is over, and every menu that is drawn again
     let changed = 0;
@@ -623,7 +637,11 @@
         // what was read must be there; what was changed is told by the status alone
         const isUnreadable = method === 'GET' && !isObject;
         if (isUnreadable || !response.ok) {
-            throw new Error(answer?.message || `Marketing Cloud answered with ${response.status}.`);
+            const error = new Error(
+                answer?.message || `Marketing Cloud answered with ${response.status}.`,
+            );
+            error.status = response.status;
+            throw error;
         }
         return isObject ? answer : {};
     }
@@ -675,7 +693,108 @@
         for (const kept of details.values()) {
             kept.clear();
         }
+        notFound.clear();
         changed++;
+    }
+
+    /**
+     * Tells a row of a list from all others, also from a later definition under the same key and
+     * from the same one after a change.
+     *
+     * @param {string} kind sms, push or ott
+     * @param {object} row the row
+     * @returns {string} what the row is known by
+     */
+    function signature(kind, row) {
+        return JSON.stringify([kind, row?.definitionKey, row?.createdDate, row?.modifiedDate]);
+    }
+
+    /**
+     * Reads the rows that are left out of the lists because they cannot be read, once per page.
+     *
+     * @returns {Promise.<Set.<string>>} their signatures; none when the storage cannot be read
+     */
+    function unreadableRows() {
+        unreadable ??= (async () => {
+            try {
+                const stored = await chrome.storage.local.get({ [UNREADABLE]: [] });
+                const kept = stored[UNREADABLE];
+                return new Set(
+                    Array.isArray(kept) ? kept.filter((item) => typeof item === 'string') : [],
+                );
+            } catch {
+                return new Set();
+            }
+        })();
+        return unreadable;
+    }
+
+    /**
+     * Makes sure that rows whose details answered 404 are listed by the business unit the list
+     * is of, and leaves them out from then on. The request for details names the key alone, so a
+     * 404 may also come from another business unit, chosen in another tab: the list is read once
+     * more, and only rows it still holds are left out. The list on show loses them where it stands.
+     *
+     * @param {{id: string}} kind kind of message
+     * @param {object[]} lost the rows whose details answered 404
+     */
+    async function leaveOut(kind, lost) {
+        if (confirming.has(kind.id)) {
+            return;
+        }
+        confirming.add(kind.id);
+        const before = changed;
+        let fresh;
+        try {
+            fresh = await readList(kind.id, () => before === changed);
+        } catch {
+            // asked again the next time the list is shown
+        } finally {
+            confirming.delete(kind.id);
+        }
+        if (!fresh || before !== changed) {
+            return;
+        }
+        const listed = new Set(fresh.map((row) => signature(kind.id, row)));
+        const sure = lost.filter((row) => listed.has(signature(kind.id, row)));
+        if (sure.length === 0) {
+            return;
+        }
+        const kept = await unreadableRows();
+        try {
+            // what another tab has kept meanwhile is kept too
+            const stored = await chrome.storage.local.get({ [UNREADABLE]: [] });
+            const others = Array.isArray(stored[UNREADABLE]) ? stored[UNREADABLE] : [];
+            for (const item of others) {
+                if (typeof item === 'string' && !kept.has(item)) {
+                    kept.add(item);
+                }
+            }
+        } catch {
+            // what this page knows is kept
+        }
+        for (const row of sure) {
+            // the newest last, so that the oldest go first once there are too many
+            const known = signature(kind.id, row);
+            kept.delete(known);
+            kept.add(known);
+        }
+        try {
+            await chrome.storage.local.set({ [UNREADABLE]: [...kept].slice(-UNREADABLE_KEPT) });
+        } catch {
+            // left out on this page all the same
+        }
+        // out of the list that is kept, and out of the one on show, without drawing it anew
+        const rows = lists.get(kind.id)?.rows ?? [];
+        for (const row of sure) {
+            const at = rows.findIndex(
+                (item) => signature(kind.id, item) === signature(kind.id, row),
+            );
+            if (at !== -1) {
+                rows.splice(at, 1);
+            }
+        }
+        dropped(kind, sure);
     }
 
     /**
@@ -1196,8 +1315,12 @@
                 if (before === changed) {
                     keep(kind, key, definition, row.modifiedDate);
                 }
-            } catch {
-                // the row stays without them until its list is shown next
+            } catch (ex) {
+                // the row stays without them until its list is shown next; one that Marketing
+                // Cloud cannot find is made sure of once the list has read what it can
+                if (before === changed && ex?.status === 404) {
+                    notFound.add(signature(kind.id, row));
+                }
             }
             reading.delete(id);
             wake();
@@ -1848,9 +1971,6 @@
         // with its kind before it: a bare "name" is what a password manager takes for the
         // name of a person, and offers to fill in
         input.name = `${kind.id}_${spec.path}`;
-        if (input.type === 'text' || spec.input === 'textarea') {
-            input.autocomplete = 'off';
-        }
         input.required = Boolean(spec.isRequired);
         if (spec.max) {
             input.maxLength = spec.max;
@@ -1930,7 +2050,6 @@
             const row = make('label', 'field');
             const input = make('input');
             input.type = 'text';
-            input.autocomplete = 'off';
             input.dataset.customKey = key;
             const value = from?.value;
             const isFixed = typeof value === 'object' && value !== null;
@@ -3269,8 +3388,9 @@
         const turn = isReversed ? -1 : 1;
         const text = column.isDetail
             ? (row) => {
+                  // a row whose details could not be read is sorted as empty
                   const shown = detail(kind, row, column);
-                  return shown.name ?? shown.text;
+                  return String(shown.name ?? shown.text ?? '');
               }
             : (row) => String(row?.[column.field] ?? '');
         // a date is sorted as the API writes it, which puts the earlier one first
@@ -3319,10 +3439,14 @@
         const drawn = new Map();
         // the details this table waits for
         let awaited = 0;
-        // a column of details puts the rows in order only when every row has them
+        // nothing is asked for any more: what is missing now could not be read
+        const isDone = () => awaited === 0 && waiting.size === 0;
+        // whether the table was told so
+        let hasEnded = isDone();
+        // a column of details puts the rows in order once all details that can be had are there
         const sorted = () => {
             const column = columns.find((item) => item.field === view.field);
-            return column?.isDetail && missing.size > 0 ? undefined : column;
+            return column?.isDetail && !isDone() ? undefined : column;
         };
         const mark = () => {
             const by = sorted();
@@ -3333,7 +3457,7 @@
                     cell.dataset.field === by?.field ? direction : 'none',
                 );
                 const sort = cell.firstChild;
-                sort.disabled = 'detail' in cell.dataset && missing.size > 0;
+                sort.disabled = 'detail' in cell.dataset && !isDone();
                 sort.title = sort.disabled ? SORT_LATER : SORT;
             }
         };
@@ -3385,9 +3509,13 @@
         };
         const tell = () => {
             progress.hidden = missing.size === 0;
-            progress.textContent = `details ${keyed.size - missing.size} of ${keyed.size}`;
-            // nothing is asked for any more, and still some are not there
-            progress.title = awaited === 0 && waiting.size === 0 ? UNREAD : '';
+            if (isDone()) {
+                progress.textContent = `${missing.size} of ${keyed.size} details could not be read`;
+                progress.title = UNREAD;
+            } else {
+                progress.textContent = `details ${keyed.size - missing.size} of ${keyed.size}`;
+                progress.title = '';
+            }
         };
         const arrived = (key) => {
             if (!detailsOf(kind, keyed.get(key))) {
@@ -3435,6 +3563,16 @@
                 follow();
             }
             tell();
+            if (hasEnded || !isDone()) {
+                return;
+            }
+            hasEnded = true;
+            // the columns of details can be sorted by now, and may be the order on show
+            fill(view.search.trim() || sorted()?.isDetail, []);
+            const lost = rows.filter((row) => notFound.has(signature(kind.id, row)));
+            if (lost.length > 0) {
+                leaveOut(kind, lost);
+            }
         };
         for (const { title, field, isDetail } of columns) {
             const cell = make('th');
@@ -3469,29 +3607,33 @@
             view.page = 0;
             draw();
         });
-        // how many messages have each status that occurs, the known ones first
-        const counts = new Map();
-        for (const { status: name } of rows) {
-            if (typeof name === 'string' && name) {
-                counts.set(name, (counts.get(name) || 0) + 1);
-            }
-        }
         const status = make('select', 'status');
         status.setAttribute('aria-label', 'Show by status');
-        status.append(
-            choice('', `All (${rows.length})`),
-            ...[
-                ...STATUSES.filter((name) => counts.has(name)),
-                ...counts
-                    .keys()
-                    .filter((name) => !STATUSES.includes(name))
-                    .toArray()
-                    .toSorted((one, other) => one.localeCompare(other)),
-            ].map((name) => choice(name, `${name} (${counts.get(name)})`)),
-        );
-        // a status that no message has any more is not asked for any longer
-        view.status = counts.has(view.status) ? view.status : '';
-        status.value = view.status;
+        // how many messages have each status that occurs, the known ones first; counted again
+        // when rows are left out
+        const count = () => {
+            const counts = new Map();
+            for (const { status: name } of rows) {
+                if (typeof name === 'string' && name) {
+                    counts.set(name, (counts.get(name) || 0) + 1);
+                }
+            }
+            status.replaceChildren(
+                choice('', `All (${rows.length})`),
+                ...[
+                    ...STATUSES.filter((name) => counts.has(name)),
+                    ...counts
+                        .keys()
+                        .filter((name) => !STATUSES.includes(name))
+                        .toArray()
+                        .toSorted((one, other) => one.localeCompare(other)),
+                ].map((name) => choice(name, `${name} (${counts.get(name)})`)),
+            );
+            // a status that no message has any more is not asked for any longer
+            view.status = counts.has(view.status) ? view.status : '';
+            status.value = view.status;
+        };
+        count();
         status.addEventListener('change', () => {
             view.status = status.value;
             view.page = 0;
@@ -3522,6 +3664,32 @@
             name();
         }
         wake = more;
+        dropped = (other, gone) => {
+            if (other.id !== kind.id || !isShown()) {
+                return;
+            }
+            // the kept list lost them already when it is this one; otherwise they go here
+            for (const row of gone) {
+                const at = rows.findIndex(
+                    (item) => signature(kind.id, item) === signature(kind.id, row),
+                );
+                if (at !== -1) {
+                    rows.splice(at, 1);
+                }
+                // a row under the same key that was changed since is another one, and stays
+                const key = row.definitionKey;
+                if (signature(kind.id, keyed.get(key)) !== signature(kind.id, row)) {
+                    continue;
+                }
+
+                keyed.delete(key);
+                missing.delete(key);
+                waiting.delete(key);
+            }
+            count();
+            tell();
+            draw();
+        };
         more();
         // the rows scroll under the names of their columns; what is around the table stays
         const scroll = make('div', 'rows');
@@ -3616,12 +3784,15 @@
         fill(...said, make('p', 'hint', 'Loading …'));
         const before = changed;
         try {
-            const rows = await readList(kind.id, () => mine === asked);
+            const all = await readList(kind.id, () => mine === asked);
+            // what was made sure of before cannot be read: it is left out without asking
+            const left = await unreadableRows();
             // whoever went elsewhere stopped the reading, maybe before its last page: what came
             // of it is neither shown nor kept
             if (mine !== asked) {
                 return;
             }
+            const rows = all.filter((row) => !left.has(signature(kind.id, row)));
             const list = { rows, readAt: new Date() };
             if (before === changed) {
                 lists.set(kind.id, list);
@@ -3665,6 +3836,16 @@
         dialog.addEventListener('close', () => {
             asked++;
         });
+        // Escape does not close the panel: only its × does. What Escape closes inside it, a list
+        // or a box of the code editor, takes the key first and keeps it from coming here. Kept
+        // on the window, because the key comes from the body when nothing in the panel has the
+        // focus, and Chrome closes the dialog all the same
+        addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && dialog.open) {
+                event.preventDefault();
+            }
+        });
+        dialog.addEventListener('cancel', (event) => event.preventDefault());
         document.body.append(dialog);
     }
 

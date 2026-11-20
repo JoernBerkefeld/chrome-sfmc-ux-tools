@@ -49,9 +49,15 @@ const DEFINITION = {
  * @param {string} html content of the page
  * @param {(path: string, method: string) => {status?: number, body?: unknown, isDown?: boolean}} [answer] what the API answers to a path below the API of transactional messages; isDown lets the request fail without an answer
  * @param {Object.<string, string>} [stored] saved settings of the extension
+ * @param {object} [kept] what the extension's local storage holds; changed by the script
  * @returns {{window: Window, document: Document, asked: string[], looked: string[], written: string[], calls: object[], entry: () => Element, open: () => Promise.<void>, panel: () => Element, text: () => string}} the page, what was read of the messages, what was read for the lists of a form, what was sent to change something, and every request as it was made
  */
-function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), stored = {}) {
+function page(
+    html,
+    answer = () => ({ body: { definitions: [], count: 0 } }),
+    stored = {},
+    kept = {},
+) {
     const { window } = new JSDOM(`<!doctype html><body>${html}</body>`, {
         runScripts: 'outside-only',
         url: 'https://mc.s7.exacttarget.com/cloud/',
@@ -91,6 +97,14 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), st
                     return stored.isBroken
                         ? Promise.reject(new Error('broken'))
                         : Promise.resolve({ ...defaults, ...stored });
+                },
+            },
+            // what the panel keeps of its own; area holds it, as the tests find it
+            local: {
+                area: kept,
+                get: async (defaults) => structuredClone({ ...defaults, ...kept }),
+                set: async (values) => {
+                    Object.assign(kept, structuredClone(values));
                 },
             },
         },
@@ -529,13 +543,13 @@ test('a row opens the details of its definition, and the way back shows the list
 test('details that cannot be read say why', async () => {
     const at = page(MENU, (path) =>
         path.includes('/definitions/')
-            ? { status: 404, body: { message: 'Unable to find Definition gone', errorcode: 30003 } }
+            ? { status: 500, body: { message: 'Internal error reading gone' } }
             : { body: { definitions: [ROW('gone')], count: 1 } },
     );
     await at.open();
     rows(at)[0].click();
     await tick();
-    assert.match(at.text(), /did not work: Unable to find Definition gone/);
+    assert.match(at.text(), /did not work: Internal error reading gone/);
 });
 
 test('an answer that comes after another tab was chosen is not shown', async () => {
@@ -592,6 +606,31 @@ test('the panel closes with its button and opens again on the first tab', async 
         'sms/definitions?$page=1&$pageSize=100',
         'push/definitions?$page=1&$pageSize=100',
     ]);
+});
+
+test('Escape does not close the panel, wherever the focus is', async () => {
+    const at = page(MENU);
+    await at.open();
+    const escape = (target) => {
+        const event = new at.window.KeyboardEvent('keydown', {
+            key: 'Escape',
+            bubbles: true,
+            cancelable: true,
+        });
+        target.dispatchEvent(event);
+        return event;
+    };
+    // from the panel, and from the page around it when nothing in the panel has the focus
+    assert.equal(escape(at.panel().querySelector('[role="tab"]')).defaultPrevented, true);
+    assert.equal(escape(at.document.body).defaultPrevented, true);
+    // what Chrome sends to close a modal dialog is refused as well
+    const cancel = new at.window.Event('cancel', { cancelable: true });
+    at.panel().dispatchEvent(cancel);
+    assert.equal(cancel.defaultPrevented, true);
+    assert.equal(at.panel().hasAttribute('open'), true);
+    // a closed panel leaves the key to the page
+    at.panel().querySelector('.sfmc-ux-tools-transactional-close').click();
+    assert.equal(escape(at.document.body).defaultPrevented, false);
 });
 
 /**
@@ -3238,6 +3277,12 @@ const CODED = (key, code) => {
     definition.subscriptions.shortCode = code;
     return definition;
 };
+// what Marketing Cloud answers for a listed SMS definition whose mobile message was deleted
+const NOT_FOUND = (key) => ({
+    message: `MCMS_UTM_Runtime_ObjectNotFound: Unable to find Definition ${key}`,
+    errorcode: 30_003,
+    documentation: '',
+});
 const NUMBERED = (count) =>
     Array.from({ length: count }, (_, index) => SMS(`m-${String(index).padStart(3, '0')}`));
 
@@ -3249,32 +3294,41 @@ const NUMBERED = (count) =>
  *
  * @param {string} kind sms, push or ott
  * @param {object[]} definitions the definitions the API holds
- * @param {{isHeld?: boolean, down?: string[]}} [options] whether a read of a definition waits to be let through, and the lists of names that cannot be read
+ * @param {{isHeld?: boolean, down?: string[], kept?: object}} [options] whether a read of a definition waits to be let through, the lists of names that cannot be read, and what the extension's local storage holds
  * @returns {Promise.<object>} the page, with: held (the definitions by key) and list (the rows of the list), both to be changed; failing (keys that cannot be read); wanted (the keys of the definitions asked for, in that order); flying and most (reads of definitions on their way now, and at most); release (lets held reads through); and ways to look at the list
  */
-async function messages(kind, definitions, { isHeld = false, down = [] } = {}) {
+async function messages(kind, definitions, { isHeld = false, down = [], kept = {} } = {}) {
     const lists = offering(undefined, down);
-    const at = page(MENU, (path, method) => {
-        if (!path.startsWith(`${kind}/definitions`)) {
-            return path.includes('/definitions')
-                ? { body: { definitions: [] } }
-                : lists(path, method);
-        }
-        if (path.includes('?')) {
-            const number = Number(/\$page=(\d+)/.exec(path)[1]);
-            const found = at.list.slice((number - 1) * LARGEST, number * LARGEST);
-            return { body: { definitions: found, count: found.length } };
-        }
-        const key = decodeURIComponent(path.split('/').at(-1));
-        if (method !== 'GET') {
-            at.onWrite(key);
-            return { status: 200, body: {} };
-        }
-        return at.failing.has(key) || !at.held.has(key)
-            ? { status: 500, body: { message: 'No' } }
-            : { body: { requestId: 'r', ...at.held.get(key) } };
-    });
+    const at = page(
+        MENU,
+        (path, method) => {
+            if (!path.startsWith(`${kind}/definitions`)) {
+                return path.includes('/definitions')
+                    ? { body: { definitions: [] } }
+                    : lists(path, method);
+            }
+            if (path.includes('?')) {
+                const number = Number(/\$page=(\d+)/.exec(path)[1]);
+                const found = at.list.slice((number - 1) * LARGEST, number * LARGEST);
+                return { body: { definitions: found, count: found.length } };
+            }
+            const key = decodeURIComponent(path.split('/').at(-1));
+            if (method !== 'GET') {
+                at.onWrite(key);
+                return { status: 200, body: {} };
+            }
+            if (at.gone.has(key)) {
+                return { status: 404, body: NOT_FOUND(key) };
+            }
+            return at.failing.has(key) || !at.held.has(key)
+                ? { status: 500, body: { message: 'No' } }
+                : { body: { requestId: 'r', ...at.held.get(key) } };
+        },
+        {},
+        kept,
+    );
     Object.assign(at, {
+        gone: new Set(),
         held: new Map(definitions.map((definition) => [definition.definitionKey, definition])),
         list: definitions.map((definition) => LISTED(definition)),
         failing: new Set(),
@@ -3721,9 +3775,24 @@ test('details that cannot be read leave their cells empty, keep the others comin
         ['', ''],
         ['code-c', 'KW-c'],
     ]);
-    assert.equal(down.progress(), 'details 2 of 3');
+    // once nothing is on its way, the bar says so, and the columns of details can be sorted
+    assert.equal(down.progress(), '1 of 3 details could not be read');
     assert.match(down.part('progress').title, /could not be read/);
+    assert.equal(down.head('Code').disabled, false);
+    down.head('Keyword').click();
+    assert.deepEqual(
+        down.cells(...DETAILS).map(([, keyword]) => keyword),
+        ['', 'KW-a', 'KW-c'],
+    );
+    down.head('Keyword').click();
+    assert.deepEqual(
+        down.cells(...DETAILS).map(([, keyword]) => keyword),
+        ['KW-c', 'KW-a', ''],
+    );
     assert.deepEqual(down.wanted, ['a', 'b', 'c']);
+    // a 500 is not a message that is gone: it stays in the list and nothing is kept of it
+    assert.equal(rows(down).length, 3);
+    assert.deepEqual(down.window.chrome.storage.local.area, {});
     down.failing.clear();
     down.isHeld = false;
     await tab(down, 'push');
@@ -3731,6 +3800,143 @@ test('details that cannot be read leave their cells empty, keep the others comin
     assert.deepEqual(down.wanted, ['a', 'b', 'c', 'b']);
     assert.deepEqual(down.cells(...DETAILS)[1], ['code-b', 'KW-b']);
     assert.equal(down.progress(), null);
+});
+
+test('a message that is listed but cannot be found is left out once the list confirms it, and kept out on later pages without asking', async () => {
+    const kept = {};
+    const at = await messages('sms', [SMS('a'), SMS('b'), SMS('c')], { isHeld: true, kept });
+    at.gone.add('b');
+    at.isHeld = false;
+    await at.release();
+    await settle();
+    // the list was read once more, still holds it, and so it is left out from now on
+    assert.equal(listReads(at), 2);
+    assert.deepEqual(at.names(), ['name of a', 'name of c']);
+    assert.equal(at.progress(), null);
+    assert.deepEqual(kept.transactionalUnreadable, [
+        JSON.stringify(['sms', 'b', SMS('b').createdDate, SMS('b').modifiedDate]),
+    ]);
+    // shown again on this page: without it and without asking
+    await tab(at, 'push');
+    await tab(at, 'sms');
+    assert.deepEqual(at.names(), ['name of a', 'name of c']);
+    assert.equal(at.times('b'), 1);
+
+    // a later page leaves it out before asking for anything
+    const later = await messages('sms', [SMS('a'), SMS('b'), SMS('c')], { kept });
+    assert.deepEqual(later.names(), ['name of a', 'name of c']);
+    assert.deepEqual(later.wanted, ['a', 'c']);
+    // another definition under the same key, or the same one after a change, is shown
+    const again = { ...SMS('b'), createdDate: '2026-05-06T07:08:00' };
+    const renewed = await messages('sms', [SMS('a'), again], { kept });
+    assert.deepEqual(renewed.names(), ['name of a', 'name of b']);
+});
+
+test('a message that answers 404 but is gone from the list read again is not kept: the business unit may have changed in another tab', async () => {
+    const kept = {};
+    const at = await messages('sms', [SMS('a'), SMS('b')], { isHeld: true, kept });
+    at.gone.add('b');
+    // what the list says now is that of another business unit
+    at.list = [LISTED(SMS('x'))];
+    at.isHeld = false;
+    await at.release();
+    await settle();
+    assert.equal(listReads(at), 2);
+    assert.deepEqual(kept, {});
+    // the list on show is still the one that was read for the menu
+    assert.deepEqual(at.names(), ['name of a', 'name of b']);
+    assert.equal(at.progress(), '1 of 2 details could not be read');
+});
+
+test('a message that is left out goes from the list on show where it stands: the search keeps the focus and the counts follow', async () => {
+    const at = await messages('sms', [SMS('a'), SMS('b'), SMS('c')], { isHeld: true });
+    at.gone.add('b');
+    const search = at.part('search');
+    search.focus();
+    at.look('name');
+    at.isHeld = false;
+    await at.release();
+    await settle();
+    assert.deepEqual(at.names(), ['name of a', 'name of c']);
+    assert.equal(at.part('search'), search);
+    assert.equal(at.document.activeElement, search);
+    assert.equal(search.value, 'name');
+    assert.equal(at.part('status').options[0].textContent, 'All (2)');
+    assert.equal(at.progress(), null);
+});
+
+test('a message that is left out after the list was left and shown again goes from the list on show too', async () => {
+    const at = await messages('sms', [SMS('a'), SMS('b')], { isHeld: true });
+    at.gone.add('b');
+    // the list is read again to make sure: held back until the list was left and shown again
+    const { promise: later, resolve: letThrough } = Promise.withResolvers();
+    const quick = at.window.fetch;
+    at.window.fetch = async (url, options) => {
+        if (url.includes('/sms/definitions?') && listReads(at) === 1) {
+            await later;
+        }
+        return quick(url, options);
+    };
+    at.isHeld = false;
+    await at.release();
+    await tab(at, 'push');
+    await tab(at, 'sms');
+    await settle();
+    letThrough();
+    await settle();
+    assert.deepEqual(at.names(), ['name of a']);
+});
+
+test('the rows kept out are at most 200, the oldest go first, and what another tab kept stays', async () => {
+    const old = Array.from({ length: 200 }, (_, index) => `old-${index}`);
+    const kept = { transactionalUnreadable: [...old] };
+    const at = await messages('sms', [SMS('a'), SMS('b')], { isHeld: true, kept });
+    // another tab keeps one meanwhile
+    kept.transactionalUnreadable = [...old, 'other-tab'];
+    at.gone.add('b');
+    at.isHeld = false;
+    await at.release();
+    await settle();
+    const stored = kept.transactionalUnreadable;
+    assert.equal(stored.length, 200);
+    assert.equal(stored.includes('old-0'), false);
+    assert.equal(stored.includes('old-1'), false);
+    assert.equal(stored.at(-2), 'other-tab');
+    assert.equal(
+        stored.at(-1),
+        JSON.stringify(['sms', 'b', SMS('b').createdDate, SMS('b').modifiedDate]),
+    );
+});
+
+test('a storage that cannot be read leaves every message in the list it reads', async () => {
+    const kept = {};
+    const at = page(
+        MENU,
+        (path) => ({
+            body: path.includes('/definitions/')
+                ? { requestId: 'r', ...DEFINITION }
+                : { definitions: path.startsWith('sms') ? [ROW('a')] : [], count: 1 },
+        }),
+        {},
+        kept,
+    );
+    at.window.chrome.storage.local.get = async () => {
+        throw new Error('broken');
+    };
+    await at.open();
+    assert.equal(rows(at).length, 1);
+});
+
+test('without the extension storage, a message that cannot be found is still left out on this page', async () => {
+    const at = await messages('sms', [SMS('a'), SMS('b')], { isHeld: true });
+    at.window.chrome.storage.local.set = async () => {
+        throw new Error('quota');
+    };
+    at.gone.add('b');
+    at.isHeld = false;
+    await at.release();
+    await settle();
+    assert.deepEqual(at.names(), ['name of a']);
 });
 
 test('the bar says how many details are read while they come, and the cells fill in where they stand', async () => {
@@ -4213,9 +4419,10 @@ test('the arrow keys move through the list, Enter chooses without sending the fo
     assert.equal(app.isOpen(), false);
     assert.equal(at.panel().hasAttribute('open'), true);
     assert.ok(at.form().isConnected);
-    // with the list closed, Escape is the panel's again
-    assert.equal(app.key('Escape').defaultPrevented, false);
+    // with the list closed, Escape reaches the panel, which stays open
+    assert.equal(app.key('Escape').defaultPrevented, true);
     assert.equal(escapes, 1);
+    assert.equal(at.panel().hasAttribute('open'), true);
     // Enter in an open list with nothing chosen closes it and keeps what was typed
     at.type(APP_FIELD, 'my-own');
     assert.equal(app.isOpen(), true);
@@ -4332,8 +4539,10 @@ test('a field whose list cannot be read is a plain text field with a note', asyn
             cancelable: true,
         });
         input.dispatchEvent(event);
-        assert.equal(event.defaultPrevented, false, key);
+        // Escape is kept from closing the panel, nothing more
+        assert.equal(event.defaultPrevented, key === 'Escape', key);
     }
+    assert.equal(at.panel().hasAttribute('open'), true);
     assert.equal(row.querySelector('[role="option"]'), null);
     // the other field has its list
     assert.deepEqual(picker(at, 'content.customerKey').shown(), [
@@ -4800,8 +5009,9 @@ test('the code editor of a message has the colours and language features of ever
     assert.equal(reached, 0);
     // without a list the key is the panel's, as in every other field
     const leaving = press(at, { key: 'Escape', keyCode: 27 });
-    assert.equal(leaving.defaultPrevented, false);
+    assert.equal(leaving.defaultPrevented, true);
     assert.equal(reached, 1);
+    assert.equal(at.panel().open, true);
     // Ctrl+S and Cmd+S do nothing: no dialog of the browser, nothing sent
     assert.equal(press(at, { key: 's', keyCode: 83, ctrlKey: true }).defaultPrevented, true);
     assert.equal(typeof editor.getOption('extraKeys')['Cmd-S'], 'function');
@@ -4860,9 +5070,10 @@ test('Escape closes an open box of the code editor and not the panel, which keep
     assert.equal(at.field('name').value, 'Order shipped');
     assert.equal(editor.getValue(), '%%=Lookup(=%%');
     assert.equal(at.field(MESSAGE).value, '%%=Lookup(=%%');
-    // with nothing open the key is the panel's again
-    assert.equal(press(at, escape).defaultPrevented, false);
+    // with nothing open the key reaches the panel, which stays open
+    assert.equal(press(at, escape).defaultPrevented, true);
     assert.equal(reached, 1);
+    assert.equal(at.panel().open, true);
 });
 
 test('a page that has something else under the name of the way the tests load a script loads the code editor as ever', async (t) => {
@@ -6636,7 +6847,7 @@ test('the stylesheet greys an app that cannot be chosen, and styles the helpers 
     assert.match(css, /\.sfmc-ux-tools-transactional-non-gsm \{/);
 });
 
-test('no control of a form has a bare name, and no text field is filled in by the browser', async () => {
+test('no control of a form has a bare name, and only a field with a list to choose from turns the suggestions of the browser off', async () => {
     // a password manager takes "name" for the name of a person
     for (const kind of ['sms', 'push', 'ott']) {
         const at = await form(kind, offering());
@@ -6651,9 +6862,14 @@ test('no control of a form has a bare name, and no text field is filled in by th
             kind,
         );
         for (const control of controls) {
-            if (control.type === 'text' || control.tagName === 'TEXTAREA') {
-                assert.equal(control.getAttribute('autocomplete'), 'off', control.name);
-            }
+            // the names keep password managers away; the browser's suggestions would only cover
+            // the list of a field that has one
+            const isCombo = control.getAttribute('role') === 'combobox';
+            assert.equal(
+                control.getAttribute('autocomplete'),
+                isCombo ? 'off' : null,
+                control.name || control.id,
+            );
         }
     }
     const ott = await form('ott', offering());
@@ -7171,11 +7387,12 @@ test('the details show the message of an SMS in the code editor of the form, to 
     // the colours of every code editor
     await pause();
     assert.equal(editor.getTokenTypeAt({ line: 0, ch: 8 }), 'sfmc-function');
-    // with nothing of the editor open, Escape is the panel's
+    // with nothing of the editor open, Escape reaches the panel, which stays open
     let reached = 0;
     at.panel().addEventListener('keydown', () => reached++);
-    assert.equal(press(at, { key: 'Escape', keyCode: 27 }).defaultPrevented, false);
+    assert.equal(press(at, { key: 'Escape', keyCode: 27 }).defaultPrevented, true);
     assert.equal(reached, 1);
+    assert.equal(at.panel().open, true);
     assert.equal(editor.getValue(), coded.content.message);
     // a suggestion or a quick fix that is clicked changes it through the API: refused too
     editor.replaceRange('x', { line: 0, ch: 0 });

@@ -1,6 +1,6 @@
 # SFMC UX Tools
 
-A Chrome extension with small usability helpers for Salesforce Marketing Cloud Engagement, and for the content editor of Marketing Cloud Next.
+A Chrome extension with usability helpers for Salesforce Marketing Cloud Engagement, and for the content editor of Marketing Cloud Next.
 
 Brought to you by Jörn Berkefeld, the developer behind [SFMC DevTools (mcdev)](https://github.com/Accenture/sfmc-devtools).
 
@@ -25,6 +25,8 @@ Everything below works on its own after installing; there is nothing to set up. 
 
 ### Where it works
 
+#### Marketing Cloud Engagement
+
 - **Content Builder**: the code view of emails, templates and content blocks, and new content blocks and emails for [readable keys](#readable-keys).
 - **Email Studio and CloudPages**: both open Content Builder's code view, so everything said about Content Builder applies there too.
 - **CloudPages code resources**: files of one kind, such as JavaScript, CSS, JSON, XML, RSS or text.
@@ -39,7 +41,10 @@ Everything below works on its own after installing; there is nothing to set up. 
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
 - **Setup → Installed Packages**: the dialog with the list of scopes.
 - **The Mobile Studio menu** at the top of Marketing Cloud: the entry for [transactional messages](#transactional-messages-sms-push-and-ott).
-- **Marketing Cloud Next, content editor**: the code of an email made with **Create with HTML**, and the **HTML** component in emails, landing pages and the content blocks for both.
+
+#### Marketing Cloud Next
+
+- **CMS content editor**: the code of an email made with **Create with HTML**, and the **HTML** component in emails, landing pages and the content blocks for both.
     - **Explanations for every AMPscript function Marketing Cloud Next has:** point at a function to read what it does, with all its parameters, an example and links.
         - The editor explains 41 functions itself, in one sentence each. While the mouse is on AMPscript, the extension hides that box and shows its own, so you never get two explanations at once. On a Handlebars helper it is the other way round: the editor's box shows and ours does not.
         - 23 functions that came with API version 68 get no explanation from the editor at all. For those, ours is the only one: `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `LookupOrderedRows`, `LookupRows`, `MD5`, `RegExMatch`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
@@ -52,11 +57,13 @@ Everything below works on its own after installing; there is nothing to set up. 
         - Counted in the editor of an email content block in November 2026; Salesforce may add to its lists at any time.
     - **Which box is ours:** every box of the extension has its small icon in the top right corner. The editor's own boxes have none.
     - **Parameter help:** while you type a helper or a function, a box lists what it takes.
-    - **Checks:** AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why. For such a function you get the reason only, not its description.
+    - **Checks:** AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why.
     - **Tidying up:** **Shift+Alt+F** formats the code. One **Ctrl+Z** takes it back.
     - **Left to Salesforce:** the colours and everything about Handlebars. The extension explains, suggests and checks no Handlebars helper there, and adds no theme and no formatting on save.
 
 ### Colours in the code editor
+
+![A code editor with made-up AMPscript, HTML and server-side JavaScript in colour: keywords, functions, variables, texts and comments each have their own colour](images/colours.png)
 
 Marketing Cloud colours HTML but shows AMPscript as plain black text. The extension colours it, which makes code much easier to read.
 
@@ -69,6 +76,8 @@ Marketing Cloud colours HTML but shows AMPscript as plain black text. The extens
 
 ### Light and dark theme
 
+![The same made-up code in the dark theme: light text and colours on a dark background](images/theme-dark.png)
+
 - The editor follows your computer: dark if your computer is in dark mode, light otherwise. It switches along when your computer does.
 - You can fix it to **Light Modern** or **Dark Modern** in the options. These are the colour schemes of the code editor Visual Studio Code.
 - The theme covers the whole editor: background, line numbers, selection and all code.
@@ -76,6 +85,8 @@ Marketing Cloud colours HTML but shows AMPscript as plain black text. The extens
 - The SQL query activity follows the theme too and keeps Marketing Cloud's colours for SQL.
 
 ### Suggestions while you type
+
+![Animation: while "SET @lastName = Look" is typed, a list offers Lookup, LookupOrderedRows, LookupRows and more, each with a short description; Lookup is picked and a box shows what it needs](images/completion.gif)
 
 While you type code, a small list offers what fits. Pick an entry and it is written for you.
 
@@ -93,6 +104,8 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 
 ### Explanations when you point at code
 
+![Animation: the mouse comes to rest on the function AttributeValue and a box opens that explains it, with its input, links, an example and whether Marketing Cloud Next has it](images/hover.gif)
+
 - **Rest the mouse** on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions. A box explains what it does, what you have to give it, what you get back, shows an example and links to the full documentation.
 - **Your own SSJS code is explained too**: point at one of your variables or functions and the box says what it is.
 - **You can move the mouse into the box** to scroll it or click a link.
@@ -100,12 +113,16 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 
 ### Help with a function's inputs
 
+![Animation: while DateAdd( is typed, a box above the line lists its three inputs and marks the one being typed, with a sentence about it](images/signature.gif)
+
 - While your cursor is inside the brackets of a function, a box above the line lists the inputs the function expects and marks the one you are typing.
 - It also works when you click into a call that is already written.
 - It works for AMPscript functions, Marketing Cloud's SSJS functions and your own SSJS functions.
 - **Esc** closes it.
 
 ### Mistakes are underlined
+
+![A misspelt function, ProperCse, is underlined in red; the box above it says that AMPscript has no such function](images/diagnostics.png)
 
 The extension checks your AMPscript and SSJS while you type.
 
@@ -120,6 +137,8 @@ The extension checks your AMPscript and SSJS while you type.
 
 ### One-click fixes
 
+![A comment written with // in AMPscript is underlined in yellow; the box above it explains why and offers the button "Convert to AMPscript block comment"](images/quick-fix.png)
+
 - Where the extension knows a remedy, the box of a problem offers it as a button.
 - **Ctrl+.** (**Cmd+.** on a Mac) opens the fixes for the problem at your cursor. **Enter** applies the first one, **Esc** closes the box.
 - **Ctrl+Z** undoes a fix in one step.
@@ -131,6 +150,8 @@ The extension checks your AMPscript and SSJS while you type.
 - Does not work for Marketing Cloud's own names or for AMPscript.
 
 ### Tidy up your code (formatting)
+
+![Made-up code before and after a click on { }: first crammed onto a few long lines, then neatly indented, one statement and one HTML tag per line](images/format.png)
 
 - Click the **{ }** button in the editor's toolbar, or press **Shift+Alt+F**. The whole content is tidied: indentation, line breaks and spacing.
 - Covers AMPscript, SSJS, HTML, CSS and browser JavaScript.
@@ -258,6 +279,8 @@ When you add or edit an API integration under **Setup → Platform Tools → App
 
 ### Transactional messages: SMS, push and OTT
 
+![The panel Transactional Messages on its SMS tab: six made-up messages with name, key, status, code, keyword and dates, a search box and the list "All (6)" to show one status only](images/panel-list.png)
+
 Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers WhatsApp and similar channels). They are set up through the API only: no app of Marketing Cloud shows which ones exist. The extension adds a place to see, create, change and delete them.
 
 The folder names of contents, the texts of a push content, the list for personalization and saving custom keys were seen answering on a real account. They were tried with the same requests the panel sends, not by clicking through the panel itself.
@@ -285,6 +308,9 @@ The folder names of contents, the texts of a push content, the list for personal
     - Until all are read, sorting by these columns is switched off, and a search finds them only in the messages already read.
     - On the first opening of a list with several hundred messages, that many requests go out once.
 - **The details of one message:** click a row to see everything Marketing Cloud stores for it, with plain labels such as **Key**, **Message** or **Code**. Point at a label to see the name of the field in the API. For a push message the name of its app and of its content stands next to their IDs. **← All … messages** takes you back.
+
+    ![The details of a made-up push message: its app by name with a link to its settings, the title, subtitle and message of its content, and its two custom keys with their values](images/push-details.png)
+
     - **What a push message says:** under the content key, the details show the **Title**, **Subtitle** and **Message** of the chosen content, read from Content Builder. They are shown as they are written there, AMPscript included, and cannot be changed here. A text that is empty is left out; if the content cannot be read, the lines are simply missing.
     - **Custom keys of a push message** are listed by their name, each with its value.
     - **A warning for custom keys the app no longer has:** if a push message holds custom keys that its app does not define, a warning box at the top names them and says that saving the message here removes them. The keys are marked in the list below it.
@@ -297,6 +323,9 @@ The folder names of contents, the texts of a push content, the list for personal
     - **Push:** name, key, description, status, the app, the custom keys of that app, the content (the customer key of the push message in Content Builder), sound and badge.
     - **OTT:** name, key, description, status, the sender (WhatsApp and its phone number) and the content.
 - **The text of an SMS is written in a code editor**, like the code view of Content Builder:
+
+    ![The message of a made-up SMS in the code editor, with %%FirstName%% in colour; below it the person button, the line "43 characters · length depends on personalization" and the open list with FirstName, City and FavouriteColour](images/sms-editor.png)
+
     - **Colours** for AMPscript and personalisation strings, in the light or dark theme chosen in the options.
     - **Suggestions** while you type and on **Ctrl+Space**, **explanations** when you point at a function, **help with a function's inputs**, and **underlined mistakes**.
     - **Keys:** **Tab** moves on to the next field. **Esc** closes an open list of suggestions and leaves the form open. **Ctrl+S** does nothing here; the message is saved with the button of the form.
@@ -331,11 +360,17 @@ The folder names of contents, the texts of a push content, the list for personal
     - **Keys:** the arrow keys move through the list, **Enter** takes the marked entry, **Esc** closes the list and leaves the form open.
     - **The field still takes any ID or key you type**, also one that is not in the list.
     - **App:** the list has the apps of the business unit, sorted by name. The name of the app you chose stands under the field.
+
+        ![The open list of the App field: "Demo App" can be chosen, "Demo App (test)" is greyed out with "no push credentials set up"](images/push-app.png)
+
         - **An app without push credentials is greyed out** and says "no push credentials set up". It cannot be chosen, with the mouse or with the keys. These are the apps that MobilePush greys out too: apps with neither Android credentials nor a working iOS key or certificate.
         - **The app a message already has stays.** When you edit a message whose app has no credentials, that app is still chosen, can be kept and can be chosen again.
         - **A typed or pasted ID of such an app is refused:** a line under the field says why, and the form is not sent until you choose another app.
         - If the panel cannot find out which apps have credentials, no app is greyed out or refused.
     - **Content:** the list has the push messages of Content Builder, sorted by name. Choosing one fills in its customer key.
+
+        ![The open list of the Content field: three made-up push messages, each with its folder, when and by whom it was last changed, and its key](images/push-content.png)
+
         - Every entry also names its **folder**, **when it was last changed** (in your local date and time) and **by whom**.
         - Typing the name of a folder keeps the messages in that folder.
         - If the folders cannot be read, the entries are shown without them.
@@ -360,6 +395,9 @@ The folder names of contents, the texts of a push content, the list for personal
 - **A new message starts as Active** unless you choose another status in the form. An active message can be sent at once by anything that knows its key.
     - **Push has three statuses:** Active, Inactive and Draft. Marketing Cloud stores a new push message as Draft unless it is Active, also when you choose Inactive.
 - **Links in an SMS:** two optional boxes switch on Marketing Cloud's link shortening and its tracking of the shortened links per subscriber.
+
+    ![The two boxes for link shortening and tracking, greyed out, with the line "Link shortening is switched off for this account (Setup > MobileConnect)."](images/sms-links.png)
+
     - **Switched off for the account:** if your account has "Salesforce Link Shortening and Tracking" switched off in MobileConnect's setup, the two boxes cannot be ticked, and a line below them says so.
     - A box that is already ticked on a message stays usable, so that you can untick it.
     - A box that cannot be ticked changes nothing in what is sent.
@@ -377,6 +415,8 @@ The folder names of contents, the texts of a push content, the list for personal
 - **OTT is untested:** it was built from Salesforce's documentation, because we have no account with WhatsApp or a similar channel. If you have one, please tell us whether it works, in the [issues on GitHub](https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues). The tab says so too.
 
 ### Options
+
+![The options page with its six groups: theme, menu of the code editor, format on save, readable keys, journey names and saved logins, each with its default ticked](images/options.png)
 
 Click the extension's icon in Chrome's toolbar. Every change applies at once; no reload is needed.
 
@@ -451,6 +491,7 @@ npm run build
 - `node scripts/measure-typescript.mjs` (after a build) prints the size of the TypeScript bundle and how long it takes to start and to answer for a 1,500-line document.
 - `npm test` runs the build first, because the completion tests run the built bundle.
 - `npm run icons` redraws the icons in `src/icons/`.
+- **The pictures in this README** come from two demo pages in `demo/`, not from Marketing Cloud: they load the built extension and show made-up content only (`Demo App`, `Jane Doe`, the code `00000`, …). `npm run screenshots` builds the extension and writes them again to `images/`, using the Edge installed on Windows without opening a window; set `SCREENSHOT_BROWSER` to the path of another Chromium browser to use that one. `node scripts/screenshots.js hover format` takes only the named pictures. The run fails if a feature is not on screen or if a page tries to reach anything but the local demo server. `puppeteer-core` drives the browser and `gifenc` writes the animations; both are only used for this.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.
 - In `package.json`, `dependencies` are the packages whose code or data ends up in the shipped extension; `devDependencies` are tools for building, linting and testing. The package is never installed from npm, so the split is for clarity only.
 - `codemirror` is fixed to the exact version Content Builder ships (5.65.21), so that the tests run against the editor the extension meets in the page. Change it only when Marketing Cloud updates its editor. The same version is bundled for the code editor of a transactional SMS, so it is listed under `dependencies`.

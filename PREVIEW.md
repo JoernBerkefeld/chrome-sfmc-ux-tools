@@ -3,7 +3,6 @@
 Preview features are features of SFMC UX Tools that are built but not finished. They are switched off after installing and the options do not show them.
 
 - **There are no preview features at the moment.**
-- **Transactional Messages** was one. It is a normal feature now, always on, and described in the [README](README.md#transactional-messages-sms-push-and-ott).
 
 ## How to see the preview features
 

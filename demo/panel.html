@@ -1,0 +1,36 @@
+<!doctype html>
+<!--
+    SFMC UX Tools: demo page of the panel "Transactional Messages", for the pictures of the
+    README. It loads the built scripts from dist/extension the way Marketing Cloud's page gets
+    them; demo/panel.js answers the panel's requests with made-up messages. Open it through
+    `npm run screenshots`, which serves the repository locally.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>SFMC UX Tools: Transactional Messages demo (made-up content)</title>
+        <link rel="icon" href="data:," />
+        <link rel="stylesheet" href="/dist/extension/editor-codemirror.css" />
+        <link rel="stylesheet" href="/dist/extension/editor-highlight.css" />
+        <link rel="stylesheet" href="/dist/extension/transactional-messages.css" />
+        <link rel="stylesheet" href="demo.css" />
+        <script src="chrome-stub.js"></script>
+        <script src="panel.js"></script>
+    </head>
+    <body>
+        <!-- the Mobile Studio menu, as far as the panel looks at it -->
+        <nav class="demo-menu">
+            <ul class="mc-app-group-dropdown-apps">
+                <li class="mc-app-group-dropdown-app">
+                    <a href="#app/MobileConnect"><span class="mc-app-name">MobileConnect</span></a>
+                </li>
+                <li class="mc-app-group-dropdown-app">
+                    <a href="#app/MobilePush"><span class="mc-app-name">MobilePush</span></a>
+                </li>
+            </ul>
+        </nav>
+        <script src="/dist/extension/key-rule.js"></script>
+        <script src="/dist/extension/editor-theme.js"></script>
+        <script src="/dist/extension/transactional-messages.js"></script>
+    </body>
+</html>

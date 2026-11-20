@@ -164,6 +164,28 @@ export default [
         },
     },
     {
+        // the demo pages for the pictures of the README: classic scripts in a browser page
+        files: ['demo/**/*.js'],
+
+        languageOptions: {
+            globals: {
+                ...globals.browser,
+            },
+
+            sourceType: 'script',
+        },
+    },
+    {
+        // the capture script hands functions to the demo pages, which run them in the browser
+        files: ['scripts/screenshots.js'],
+
+        languageOptions: {
+            globals: {
+                ...globals.browser,
+            },
+        },
+    },
+    {
         // sources of the bundles; esbuild turns them into a classic script
         files: [
             'src/editor-language.js',

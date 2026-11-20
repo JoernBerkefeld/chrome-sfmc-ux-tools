@@ -1,0 +1,27 @@
+<!doctype html>
+<!--
+    SFMC UX Tools: demo page of the code editor, for the pictures of the README.
+    It loads the built scripts from dist/extension the way a Content Builder page gets them, with
+    made-up code only. Open it through `npm run screenshots`, which serves the repository locally.
+-->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>SFMC UX Tools: code editor demo (made-up content)</title>
+        <link rel="icon" href="data:," />
+        <link rel="stylesheet" href="/dist/extension/editor-codemirror.css" />
+        <link rel="stylesheet" href="/dist/extension/editor-highlight.css" />
+        <link rel="stylesheet" href="demo.css" />
+        <script src="chrome-stub.js"></script>
+        <script src="/dist/extension/editor-codemirror.js"></script>
+    </head>
+    <body>
+        <main id="stage"></main>
+        <script src="editor.js"></script>
+        <script src="/dist/extension/editor-theme.js"></script>
+        <script src="/dist/extension/language-data.js"></script>
+        <script src="/dist/extension/editor-highlight.js"></script>
+        <script src="/dist/extension/editor-language.js"></script>
+        <script src="/dist/extension/editor-format.js"></script>
+    </body>
+</html>

@@ -165,6 +165,18 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), st
 }
 
 /**
+ * Finds a control of a form by the path of its field, whatever kind of message the form is for:
+ * the name of a control is that path with the kind before it.
+ *
+ * @param {HTMLFormElement} form the form
+ * @param {string} path path of the field in a definition
+ * @returns {HTMLElement|undefined} the control
+ */
+function named(form, path) {
+    return [...form.elements].find((item) => item.name.replace(/^(?:sms|push|ott)_/, '') === path);
+}
+
+/**
  * Lists the rows of the table the panel shows.
  *
  * @param {{panel: () => Element}} at the page
@@ -1318,6 +1330,20 @@ function listOf(input) {
 }
 
 /**
+ * Finds the field a user sees and types into: for a field with a list below it, the one that
+ * shows the name, in place of the field of the form, which is out of sight.
+ *
+ * @param {HTMLElement} input the field of the form
+ * @returns {HTMLElement} the field on show; the field itself when it is on show
+ */
+function face(input) {
+    return input.classList.contains('sfmc-ux-tools-transactional-coded') &&
+        input.localName === 'input'
+        ? input.closest(FIELD).querySelector('.sfmc-ux-tools-transactional-combo-input')
+        : input;
+}
+
+/**
  * Opens the form for a new message of a kind.
  *
  * @param {string} kind sms, push or ott
@@ -1332,11 +1358,13 @@ async function form(kind, answer, stored) {
     at.panel().querySelector('.sfmc-ux-tools-transactional-new').click();
     await tick();
     at.form = () => at.panel().querySelector('form');
-    at.field = (path) => at.form().elements[path];
+    at.field = (path) => named(at.form(), path);
     at.button = (text) => [...at.form().elements].find((item) => item.textContent === text);
     at.type = (path, text) => {
-        at.field(path).value = text;
-        at.field(path).dispatchEvent(new at.window.Event('input', { bubbles: true }));
+        // as a user types: into the field on show
+        const typed = face(at.field(path));
+        typed.value = text;
+        typed.dispatchEvent(new at.window.Event('input', { bubbles: true }));
     };
     at.tick = (path) => {
         at.field(path).click();
@@ -1380,18 +1408,18 @@ test('a new SMS message is sent with what the form holds, and its details open',
     assert.deepEqual(
         [...at.form().elements].filter((item) => item.name).map((item) => item.name),
         [
-            'name',
-            'definitionKey',
-            'description',
-            'status',
-            'content.message',
-            'subscriptions.shortCode',
-            'subscriptions.keyword',
-            'subscriptions.countryCode',
-            'subscriptions.autoAddSubscriber',
-            'subscriptions.updateSubscriber',
-            'options.urlShortenerOptions.isLinkShorteningEnabled',
-            'options.urlShortenerOptions.isSubscriberTrackingEnabled',
+            'sms_name',
+            'sms_definitionKey',
+            'sms_description',
+            'sms_status',
+            'sms_content.message',
+            'sms_subscriptions.shortCode',
+            'sms_subscriptions.keyword',
+            'sms_subscriptions.countryCode',
+            'sms_subscriptions.autoAddSubscriber',
+            'sms_subscriptions.updateSubscriber',
+            'sms_options.urlShortenerOptions.isLinkShorteningEnabled',
+            'sms_options.urlShortenerOptions.isSubscriberTrackingEnabled',
         ],
     );
     at.type('name', '  Order shipped ');
@@ -1503,11 +1531,11 @@ test('a form with a required field left empty is not sent', async () => {
     assert.deepEqual(
         [...at.form().elements].filter((item) => item.required).map((item) => item.name),
         [
-            'name',
-            'definitionKey',
-            'content.message',
-            'subscriptions.shortCode',
-            'subscriptions.keyword',
+            'sms_name',
+            'sms_definitionKey',
+            'sms_content.message',
+            'sms_subscriptions.shortCode',
+            'sms_subscriptions.keyword',
         ],
     );
     at.type('subscriptions.keyword', 'ORDER');
@@ -1617,12 +1645,13 @@ test('the content of a push message is offered from the mobile messages of Conte
     // the field still takes a key that is not in the list
     at.type('content.customerKey', 'another-key');
     assert.equal(at.field('content.customerKey').value, 'another-key');
-    // the other kinds of message have no such list
-    const ott = await form('ott');
+    // an SMS message has no content of Content Builder
+    const sms = await form('sms');
     await tick();
-    assert.deepEqual(ott.looked, []);
-    assert.equal(listOf(ott.field('content.customerKey')), null);
-    assert.equal(ott.field('content.customerKey').hasAttribute('role'), false);
+    assert.deepEqual(
+        sms.looked.filter((path) => path.startsWith(CONTENTS)),
+        [],
+    );
 });
 
 test('the content field works without its list, and the rest of the list is not read for a form that is gone', async () => {
@@ -1883,7 +1912,7 @@ test('what was typed before the lists came is kept when the fields become lists'
         return response;
     };
     await click(at, 'new');
-    const field = (path) => at.panel().querySelector('form').elements[path];
+    const field = (path) => named(at.panel().querySelector('form'), path);
     assert.equal(field('subscriptions.shortCode').tagName, 'INPUT');
     field('subscriptions.shortCode').value = ' 8850 ';
     field('subscriptions.keyword').value = 'MINE';
@@ -2107,18 +2136,31 @@ async function pushDetails(definition = PUSH, down = []) {
     return at;
 }
 
-test('the details of a push message name its app and its content next to their id and key', async () => {
+/**
+ * Lists what the details show for a field of a definition, in the order it stands there.
+ *
+ * @param {{panel: () => Element}} from the page with the details
+ * @param {string} path path of the field
+ * @returns {string[]} the texts on show, without the links
+ */
+function parts(from, path) {
+    const cell = [...from.panel().querySelectorAll('dt')].find(
+        (item) => item.title === path,
+    ).nextElementSibling;
+    return [...cell.children]
+        .filter((item) => !item.hidden && item.localName === 'span')
+        .map((item) => item.textContent);
+}
+
+test('the details of a push message name its app and its content first, and their id and key after the name', async () => {
     const at = await pushDetails();
     assert.deepEqual(at.named(), {
         applicationId: 'Staff app',
         'content.customerKey': 'Receipt',
     });
-    // the id and the key stay as they are
-    const value = (path) =>
-        [...at.panel().querySelectorAll('dt')].find((item) => item.title === path)
-            .nextElementSibling.firstElementChild.textContent;
-    assert.equal(value('applicationId'), 'app-2');
-    assert.equal(value('content.customerKey'), 'receipt_push');
+    // the name first, then the id or the key as it is
+    assert.deepEqual(parts(at, 'applicationId'), ['Staff app', 'app-2']);
+    assert.deepEqual(parts(at, 'content.customerKey'), ['Receipt', 'receipt_push']);
     assert.equal(
         [...at.panel().querySelectorAll('dt')].find((item) => item.title === 'applicationId')
             .textContent,
@@ -2127,6 +2169,15 @@ test('the details of a push message name its app and its content next to their i
     // what the lists do not hold has no name
     const unknown = await pushDetails({ ...PUSH, applicationId: 'app-9' });
     assert.deepEqual(unknown.named(), { applicationId: null, 'content.customerKey': 'Receipt' });
+    // just the id, as before
+    assert.deepEqual(parts(unknown, 'applicationId'), ['app-9']);
+    // the stylesheet sets the id back only behind a name
+    const { css } = stylesheet();
+    assert.match(
+        css,
+        /\.sfmc-ux-tools-transactional-resolved:not\(\[hidden\]\) \+ \.sfmc-ux-tools-transactional-value \{/,
+    );
+    assert.doesNotMatch(css, /font-style: italic;\s*\}\s*\.sfmc-ux-tools-transactional-field \./);
 });
 
 test('details are shown without the names when a list cannot be read, and the list is asked for again the next time', async () => {
@@ -2158,7 +2209,7 @@ test('the lists of names are read once for the details and the forms, until "Ref
         await tick();
     };
     await press('Edit');
-    const field = (path) => at.panel().querySelector('form').elements[path];
+    const field = (path) => named(at.panel().querySelector('form'), path);
     assert.deepEqual(
         [...listOf(field('applicationId')).children].map((item) => item.textContent),
         ['Shop appapp-1', 'Staff appapp-2'],
@@ -2218,43 +2269,55 @@ test('a list of names that was read keeps nothing of those who ask for it later'
     assert.deepEqual(Array.from(at.window.kept, String), []);
 });
 
-test('the form names the app and the content under their fields, while typing and for what is stored', async () => {
+test('the form shows the app and the content by name in their fields, and says below what is sent', async () => {
     const at = await form('push', offering());
     await tick();
-    const named = (path) => {
-        const place = at.field(path).closest(FIELD).querySelector(RESOLVED);
-        return place.hidden ? null : place.textContent;
-    };
-    assert.equal(named('applicationId'), null);
-    assert.equal(named('content.customerKey'), null);
-    at.type('applicationId', 'app-1');
-    assert.equal(named('applicationId'), 'Shop app');
-    at.type('applicationId', 'app-');
-    assert.equal(named('applicationId'), null);
-    at.type('applicationId', ' app-2 ');
-    assert.equal(named('applicationId'), 'Staff app');
-    at.type('content.customerKey', 'receipt_push');
-    assert.equal(named('content.customerKey'), 'Receipt');
-    // only the fields that hold an id or a key have such a place
-    assert.equal(at.form().querySelectorAll(RESOLVED).length, 2);
-    // the form of a message that exists names what it holds
-    const stored = await pushDetails();
-    [...stored.panel().querySelectorAll('button')]
-        .find((item) => item.textContent === 'Edit')
-        .click();
-    await tick();
-    await tick();
-    const places = [...stored.panel().querySelectorAll(`form ${RESOLVED}`)];
+    const app = picker(at);
+    const content = picker(at, 'content.customerKey');
+    assert.equal(app.sent(), null);
+    assert.equal(content.sent(), null);
+    // an id that is typed stands for its entry, and gives way to the name when the field is left
+    app.input.focus();
+    app.type('app-1');
+    assert.equal(app.field.value, 'app-1');
+    assert.equal(app.sent(), 'app-1');
+    assert.equal(app.input.value, 'app-1');
+    app.input.blur();
+    assert.equal(app.input.value, 'Shop app');
+    assert.equal(app.field.value, 'app-1');
+    // part of an id is no entry
+    app.type('app-');
+    assert.equal(app.sent(), NOT_LISTED);
+    app.type(' app-2 ');
+    assert.equal(app.field.value, 'app-2');
+    assert.equal(app.sent(), 'app-2');
+    content.pick('receipt_push');
+    assert.equal(content.input.value, 'Receipt');
+    assert.equal(content.field.value, 'receipt_push');
+    assert.equal(content.sent(), 'receipt_push');
+    // emptied, nothing is sent and nothing is said
+    content.type('');
+    assert.equal(content.field.value, '');
+    assert.equal(content.sent(), null);
+    // the name is not said a second time under the field
+    assert.equal(at.form().querySelector(RESOLVED), null);
+    // the form of a message that exists shows the names of what it holds, and the id and key below
+    const stored = await editingPush();
+    const kept = [picker(stored), picker(stored, 'content.customerKey')];
     assert.deepEqual(
-        places.map((item) => item.textContent),
-        ['Staff app', 'Receipt'],
+        kept.map((one) => [one.input.value, one.field.value, one.sent()]),
+        [
+            ['Staff app', 'app-2', 'app-2'],
+            ['Receipt', 'receipt_push', 'receipt_push'],
+        ],
     );
-    // without the lists the form works, and names nothing
+    // without the lists the field shows and takes the id itself, and says nothing below
     const down = await form('push', offering(DEFINITION, [APPS, CONTENTS]));
     await tick();
     down.type('applicationId', 'app-1');
     assert.equal(down.field('applicationId').value, 'app-1');
-    assert.equal(down.form().querySelector(`${RESOLVED}:not([hidden])`), null);
+    assert.equal(face(down.field('applicationId')).value, 'app-1');
+    assert.equal(down.form().querySelector(`${SENT}:not([hidden])`), null);
 });
 
 /**
@@ -2285,8 +2348,8 @@ test('only push has the status Draft, and only its new form says what becomes of
         .find((item) => item.textContent === 'Edit')
         .click();
     await tick();
-    assert.equal(stored.panel().querySelector('form').elements.status.value, 'Draft');
-    assert.equal(stored.panel().querySelector('form').elements.status.options.length, 3);
+    assert.equal(named(stored.panel().querySelector('form'), 'status').value, 'Draft');
+    assert.equal(named(stored.panel().querySelector('form'), 'status').options.length, 3);
     assert.doesNotMatch(stored.text(), note);
 });
 
@@ -2591,10 +2654,12 @@ async function editing(definition = DEFINITION, answer = () => ({ body: definiti
     }, definition);
     await at.press('Edit');
     at.form = () => at.panel().querySelector('form');
-    at.field = (path) => at.form().elements[path];
+    at.field = (path) => named(at.form(), path);
     at.type = (path, text) => {
-        at.field(path).value = text;
-        at.field(path).dispatchEvent(new at.window.Event('input', { bubbles: true }));
+        // as a user types: into the field on show
+        const typed = face(at.field(path));
+        typed.value = text;
+        typed.dispatchEvent(new at.window.Event('input', { bubbles: true }));
     };
     at.send = async () => {
         at.form().dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -3382,8 +3447,8 @@ test('the statuses are counted again after a change through the panel and on Ref
     await tick();
     await at.press('Edit');
     const form = at.panel().querySelector('form');
-    form.elements.status.value = 'Active';
-    form.elements.status.dispatchEvent(new at.window.Event('change', { bubbles: true }));
+    named(form, 'status').value = 'Active';
+    named(form, 'status').dispatchEvent(new at.window.Event('change', { bubbles: true }));
     form.dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
     await tick();
     await tick();
@@ -3513,7 +3578,7 @@ test('a message that was changed here is read again, although the list has the s
     await tick();
     await at.press('Edit');
     const form = at.panel().querySelector('form');
-    form.elements['subscriptions.keyword'].value = 'NEW';
+    named(form, 'subscriptions.keyword').value = 'NEW';
     // within the minute of the change before: the date of the list stays as it is
     at.onWrite = (key) => {
         const stored = SMS(key);
@@ -3903,6 +3968,8 @@ test('the entry and the panel carry the icon of the extension, which names it', 
 const APP_FIELD = 'applicationId';
 const ACTIVE = 'sfmc-ux-tools-transactional-combo-active';
 const STATUS = '.sfmc-ux-tools-transactional-combo-status';
+const SENT = '.sfmc-ux-tools-transactional-combo-sent';
+const NOT_LISTED = 'not in the list – sent as typed';
 
 /**
  * Sends an event to an element.
@@ -3924,12 +3991,24 @@ function fire(target, event) {
  * @returns {object} the field, and ways to read and to use its list
  */
 function picker(at, path = APP_FIELD) {
-    const input = at.field(path);
+    // the field of the form, which holds the id or key, and the one on show in its place
+    const field = at.field(path);
+    const input = face(field);
     const list = listOf(input);
     const drop = list?.parentElement;
     return {
+        field,
         input,
         list,
+        // what is said below the field of what is sent
+        sent: () => {
+            const place = field.closest(FIELD).querySelector(SENT);
+            return place.hidden ? null : place.textContent;
+        },
+        type: (text) => {
+            input.value = text;
+            input.dispatchEvent(new at.window.Event('input', { bubbles: true }));
+        },
         isOpen: () => !drop.hidden && input.getAttribute('aria-expanded') === 'true',
         // the entries on show: id or key, name, whether it is what the field holds
         shown: () =>
@@ -3975,7 +4054,7 @@ async function editingPush() {
     await tick();
     await tick();
     at.form = () => at.panel().querySelector('form');
-    at.field = (path) => at.form().elements[path];
+    at.field = (path) => named(at.form(), path);
     at.send = async () => {
         at.form().dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
         await tick();
@@ -4117,7 +4196,8 @@ test('the arrow keys move through the list, Enter chooses without sending the fo
     assert.equal(app.input.value, '');
     const enter = app.key('Enter');
     assert.equal(enter.defaultPrevented, true);
-    assert.equal(app.input.value, 'app-1');
+    assert.equal(app.field.value, 'app-1');
+    assert.equal(app.input.value, 'Shop app');
     assert.equal(app.isOpen(), false);
     assert.equal(app.input.hasAttribute('aria-activedescendant'), false);
     // with the list closed, Enter is the form's again
@@ -4151,7 +4231,7 @@ test('the arrow keys move through the list, Enter chooses without sending the fo
     assert.deepEqual(at.written, []);
 });
 
-test('an entry is chosen with the mouse before the field loses the focus, and the form and the name under the field hear of it', async () => {
+test('an entry is chosen with the mouse before the field loses the focus, the field shows its name, and the form hears of its id', async () => {
     const at = await form('push', offering());
     await tick();
     const app = picker(at);
@@ -4161,17 +4241,15 @@ test('an entry is chosen with the mouse before the field loses the focus, and th
             heard.push(`${type} ${event.target.name}`);
         });
     }
-    const named = () => {
-        const place = app.input.closest(FIELD).querySelector(RESOLVED);
-        return place.hidden ? null : place.textContent;
-    };
+    const named = () => app.input.value;
     app.input.focus();
     const down = app.pick('app-2');
     // the focus stays in the field, so the list is still there when the click lands
     assert.equal(down.defaultPrevented, true);
     assert.equal(at.document.activeElement, app.input);
-    assert.equal(app.input.value, 'app-2');
-    assert.deepEqual(heard, [`input ${APP_FIELD}`, `change ${APP_FIELD}`]);
+    assert.equal(app.field.value, 'app-2');
+    assert.equal(app.sent(), 'app-2');
+    assert.deepEqual(heard, [`input push_${APP_FIELD}`, `change push_${APP_FIELD}`]);
     assert.equal(named(), 'Staff app');
     assert.equal(app.isOpen(), false);
     // the next click offers everything again, the chosen one marked
@@ -4218,8 +4296,8 @@ test('looking at the lists of a message that exists changes nothing, and a chose
         one.key('Escape');
         one.input.blur();
     }
-    assert.equal(app.input.value, 'app-2');
-    assert.equal(content.input.value, 'receipt_push');
+    assert.equal(app.field.value, 'app-2');
+    assert.equal(content.field.value, 'receipt_push');
     await at.send();
     assert.deepEqual(at.changes(), []);
     assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
@@ -4287,7 +4365,7 @@ test('a list that is still being read says so, and keeps what was typed and stay
     };
     await click(at, 'new');
     at.form = () => at.panel().querySelector('form');
-    at.field = (path) => at.form().elements[path];
+    at.field = (path) => named(at.form(), path);
     const app = picker(at);
     app.input.focus();
     assert.equal(app.isOpen(), true);
@@ -4799,7 +4877,7 @@ test('a page that has something else under the name of the way the tests load a 
     assert.equal(warn.mock.callCount(), 1);
     assert.doesNotMatch(String(warn.mock.calls[0].arguments[1]), /is not a function/);
     assert.deepEqual(at.imported, []);
-    assert.equal(at.panel().querySelector('form').elements[MESSAGE].className, '');
+    assert.equal(named(at.panel().querySelector('form'), MESSAGE).className, '');
 });
 
 test('the manifest lets the page of the panel load the code editor, and styles it', () => {
@@ -4909,10 +4987,12 @@ async function pushing({
         await settle();
     };
     at.form = () => at.panel().querySelector('form');
-    at.field = (path) => at.form().elements[path];
+    at.field = (path) => named(at.form(), path);
     at.type = (path, text) => {
-        at.field(path).value = text;
-        at.field(path).dispatchEvent(new at.window.Event('input', { bubbles: true }));
+        // as a user types: into the field on show
+        const typed = face(at.field(path));
+        typed.value = text;
+        typed.dispatchEvent(new at.window.Event('input', { bubbles: true }));
     };
     // the fields of the custom keys on show, by their key, and the one of a key
     at.keys = () =>
@@ -5314,6 +5394,33 @@ test('the form of a push message shows its stored custom keys at once, also with
         ['deeplink', 'shop://a'],
         ['count', '5'],
     ]);
+});
+
+test('the app of a message stays chosen when its name, which another app has too, is typed back', async () => {
+    const apps = [
+        { id: 'app-2', name: 'staff app' },
+        { id: 'app-9', name: 'Staff App' },
+    ];
+    const at = await pushing({ apps });
+    await at.details();
+    await at.press('Edit');
+    const app = picker(at);
+    assert.equal(app.input.value, 'staff app');
+    app.input.focus();
+    app.type('staff ap');
+    app.type('staff app');
+    assert.equal(app.field.value, 'app-2');
+    assert.equal(app.sent(), 'app-2');
+    const before = at.calls.length;
+    await at.send();
+    assert.equal(at.calls.length, before);
+    assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+    // the other app of that name is still chosen from the list only
+    app.type('STAFF APP');
+    assert.equal(app.field.value, 'app-2');
+    app.type('nothing');
+    app.type('Staff App');
+    assert.equal(app.field.value, 'app-2');
 });
 
 /**
@@ -5756,7 +5863,7 @@ test('"Reload keywords" reads the codes and keywords again, shows a keyword that
     await settle();
     // both lists were read again, not taken from what was kept
     assert.deepEqual([reads(at, CODES), reads(at, KEYWORDS)], [before[0] + 1, before[1] + 1]);
-    assert.deepEqual(keywords(), ['', 'ORDER', 'STOP', 'FRESH']);
+    assert.deepEqual(keywords(), ['', 'FRESH', 'ORDER', 'STOP']);
     assert.equal(at.field('subscriptions.shortCode').value, '3197010240');
     assert.equal(at.field('subscriptions.keyword').value, 'STOP');
     assert.equal(failed.hidden, true);
@@ -5770,7 +5877,7 @@ test('"Reload keywords" reads the codes and keywords again, shows a keyword that
     has.keywords = [];
     reload.click();
     await settle();
-    assert.deepEqual(keywords(), ['', 'ORDER', 'STOP', 'FRESH']);
+    assert.deepEqual(keywords(), ['', 'FRESH', 'ORDER', 'STOP']);
     assert.equal(at.field('subscriptions.keyword').value, 'STOP');
     assert.equal(failed.hidden, false);
     assert.equal(failed.textContent, 'The lists could not be read again. They are as they were.');
@@ -6118,14 +6225,14 @@ test('an app without push credentials is greyed in the list and taken by neither
     app.key('ArrowUp');
     assert.equal(app.at(), 'app-1');
     app.key('Enter');
-    assert.equal(app.input.value, 'app-1');
+    assert.equal(app.field.value, 'app-1');
     assert.equal(at.form().querySelector(REFUSED).hidden, true);
     // typed, it is not where the keys start from, and Enter takes nothing
     app.input.focus();
     at.type('applicationId', 'app-3');
     assert.equal(app.at(), null);
     app.key('Enter');
-    assert.equal(app.input.value, 'app-3');
+    assert.equal(app.field.value, 'app-3');
 });
 
 test('the rule for an app without push credentials is the one of MobilePush', async () => {
@@ -6165,7 +6272,7 @@ test('the app a push message already has can be kept and chosen again, also with
     await at.press('Edit');
     await settle();
     const app = picker(at);
-    assert.equal(app.input.value, 'app-2');
+    assert.equal(app.field.value, 'app-2');
     app.input.focus();
     // it says what is wrong with it, and stays an entry like any other
     assert.deepEqual(barred(app), ['app-3']);
@@ -6179,10 +6286,10 @@ test('the app a push message already has can be kept and chosen again, also with
     assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
     // away from it and back
     app.pick('app-1');
-    assert.equal(app.input.value, 'app-1');
+    assert.equal(app.field.value, 'app-1');
     app.click();
     app.pick('app-2');
-    assert.equal(app.input.value, 'app-2');
+    assert.equal(app.field.value, 'app-2');
     assert.equal(refused.hidden, true);
     // another one without credentials is refused, typed or pasted
     at.type('applicationId', ' app-3 ');
@@ -6245,7 +6352,7 @@ test('without the list that tells which apps lack credentials, no app is greyed 
         assert.deepEqual(barred(app), []);
         assert.equal(app.list.querySelector(MORE), null);
         app.pick('app-2');
-        assert.equal(app.input.value, 'app-2');
+        assert.equal(app.field.value, 'app-2');
         at.type('name', 'Receipt two');
         at.type('content.customerKey', 'receipt_push');
         await at.send();
@@ -6527,4 +6634,608 @@ test('the stylesheet greys an app that cannot be chosen, and styles the helpers 
     assert.match(css, /\.sfmc-ux-tools-transactional-refused\[hidden\] \{\s*display: none;/);
     assert.match(css, /\.sfmc-ux-tools-transactional-tools button\[hidden\] \{\s*display: none;/);
     assert.match(css, /\.sfmc-ux-tools-transactional-non-gsm \{/);
+});
+
+test('no control of a form has a bare name, and no text field is filled in by the browser', async () => {
+    // a password manager takes "name" for the name of a person
+    for (const kind of ['sms', 'push', 'ott']) {
+        const at = await form(kind, offering());
+        await tick();
+        const controls = [...at.form().elements].filter((item) => item.tagName !== 'BUTTON');
+        const names = controls.map((item) => item.name).filter(Boolean);
+        assert.ok(names.includes(`${kind}_name`), kind);
+        assert.ok(names.includes(`${kind}_definitionKey`), kind);
+        assert.deepEqual(
+            names.filter((name) => !name.startsWith(`${kind}_`)),
+            [],
+            kind,
+        );
+        for (const control of controls) {
+            if (control.type === 'text' || control.tagName === 'TEXTAREA') {
+                assert.equal(control.getAttribute('autocomplete'), 'off', control.name);
+            }
+        }
+    }
+    const ott = await form('ott', offering());
+    assert.equal(ott.field('senderId').name, 'ott_senderId');
+    // the lists that take the place of the code and the keyword keep the names of their fields
+    const sms = await form('sms', offering());
+    await tick();
+    assert.equal(sms.field('subscriptions.shortCode').tagName, 'SELECT');
+    assert.equal(sms.field('subscriptions.shortCode').name, 'sms_subscriptions.shortCode');
+    assert.equal(sms.field('subscriptions.keyword').name, 'sms_subscriptions.keyword');
+});
+
+test('what a form sends is named as before, whatever its controls are called', async () => {
+    const at = await form('ott', offering());
+    at.type('name', 'Order shipped');
+    at.type('senderId', '4912312345678');
+    at.type('content.customerKey', 'order_whatsapp');
+    await at.send();
+    assert.deepEqual(at.sent(), [
+        {
+            name: 'Order shipped',
+            definitionKey: 'Order_shipped',
+            status: 'Active',
+            senderType: 'WhatsApp',
+            senderId: '4912312345678',
+            content: { customerKey: 'order_whatsapp' },
+        },
+    ]);
+});
+
+test('the codes and the keywords of a form stand in the order of the alphabet, whatever order they are read in', async () => {
+    const lists = {
+        [CODES]: {
+            entry: [
+                { code: '8850', countryCode: 'NL', isShortCode: true, codeType: 'SHARED' },
+                { code: '3197010240', countryCode: 'NL', isShortCode: false, codeType: 'PRIVATE' },
+                { code: '12345', countryCode: 'US', isShortCode: true, codeType: 'PRIVATE' },
+            ],
+        },
+        [KEYWORDS]: {
+            entry: [
+                { keyword: 'stop', code: { code: '8850' } },
+                { keyword: 'PROMO', code: { code: '8850' } },
+                { keyword: 'Order', code: { code: '8850' } },
+                { keyword: 'ZEBRA', code: { code: '12345' } },
+                { keyword: 'alpha', code: { code: '8850' } },
+            ],
+        },
+    };
+    const at = await form('sms', (path, method) => {
+        const list = Object.keys(lists).find((name) => path.startsWith(name));
+        if (list) {
+            return { body: lists[list] };
+        }
+        return method === 'GET' ? { body: { definitions: [] } } : { status: 200, body: {} };
+    });
+    await tick();
+    assert.deepEqual(
+        chosen(at, 'subscriptions.shortCode').map(([value]) => value),
+        ['', '12345', '3197010240', '8850'],
+    );
+    // the keywords still follow the code that is chosen
+    choose(at, 'subscriptions.shortCode', '8850');
+    assert.deepEqual(
+        chosen(at, 'subscriptions.keyword').map(([value]) => value),
+        ['', 'alpha', 'Order', 'PROMO', 'stop'],
+    );
+    choose(at, 'subscriptions.shortCode', '12345');
+    assert.deepEqual(
+        chosen(at, 'subscriptions.keyword').map(([value]) => value),
+        ['', 'ZEBRA'],
+    );
+});
+
+test('the notes on the settings of the account lead to the administration of MobileConnect on the same stack', async () => {
+    const at = await form(
+        'sms',
+        withAccount({
+            optedInForSmslinktracking: false,
+            mobileBlackoutWindow: { isEnabled: true },
+        }),
+    );
+    await tick();
+    // what they say is what they said
+    assert.deepEqual(accountNotes(at), [BLOCKOUT, SHORTENING_OFF]);
+    const links = [
+        ...at.panel().querySelectorAll(':scope .sfmc-ux-tools-transactional-account-note a'),
+    ];
+    assert.equal(links.length, 2);
+    for (const link of links) {
+        assert.equal(link.textContent, 'Setup > MobileConnect');
+        // from the address of the page, not from a stack that is written down
+        assert.equal(
+            link.href,
+            `${at.window.location.origin}/cloud/#app/MobileConnect/MobileConnectFuel3/%23!/administration`,
+        );
+        assert.equal(link.target, '_blank');
+        assert.equal(link.rel, 'noopener');
+    }
+    assert.equal(at.window.location.origin, 'https://mc.s7.exacttarget.com');
+    assert.doesNotMatch(read('../src/transactional-messages.js'), /https:\/\/mc\./);
+});
+
+// mobile messages of Content Builder for every use, in the cases the API was seen to write them
+const MIXED = [
+    {
+        customerKey: 'wa_order',
+        name: 'Order update',
+        availableViews: ['whatsApp'],
+        modifiedDate: MODIFIED,
+        category: { id: 12 },
+    },
+    { customerKey: 'line_hi', name: 'Hello', availableViews: ['Line', 'push'] },
+    { customerKey: 'receipt_push', name: 'Receipt', availableViews: ['push'] },
+    { customerKey: 'sms_1', name: 'Text', availableViews: ['SMS'] },
+    { customerKey: 'inapp_1', name: 'In app', availableViews: ['InApp'] },
+    { customerKey: 'none', name: 'No views' },
+];
+const OTT = {
+    ...ROW('wa'),
+    senderType: 'WhatsApp',
+    senderId: '4912312345678',
+    content: { customerKey: 'wa_order' },
+};
+
+/**
+ * Opens the panel on the details of the one message a business unit has of a kind.
+ *
+ * @param {string} kind sms, push or ott
+ * @param {object} definition the message
+ * @param {{folders?: object[]}} [has] the folders of Content Builder; its mobile messages are those of every use
+ * @returns {Promise.<object>} the page, with ways to click a button, to reach the form and its fields, to send it and to read what was sent
+ */
+async function stored(kind, definition, { folders = [] } = {}) {
+    const at = page(MENU, (path, method) => {
+        if ([APPS, CODES, KEYWORDS].includes(path)) {
+            return { body: OFFERED[path] };
+        }
+        if (path.startsWith(`${CONTENTS}?$page=`)) {
+            return { body: { items: MIXED } };
+        }
+        if (path.startsWith(FOLDERS)) {
+            return { body: { items: folders } };
+        }
+        if (path.startsWith(`${kind}/definitions?`)) {
+            return { body: { definitions: [ROW(definition.definitionKey)] } };
+        }
+        if (path.endsWith(`definitions/${definition.definitionKey}`)) {
+            return method === 'GET' ? { body: definition } : { status: 200, body: {} };
+        }
+        // the other lists have nothing
+        return { body: { items: [], definitions: [] } };
+    });
+    await at.open();
+    await tab(at, kind);
+    rows(at)[0].click();
+    await settle();
+    at.press = async (text) => {
+        [...at.panel().querySelectorAll('button')]
+            .find((item) => item.textContent === text)
+            .click();
+        await settle();
+    };
+    at.form = () => at.panel().querySelector('form');
+    at.field = (path) => named(at.form(), path);
+    at.send = async () => {
+        at.form().dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
+        await settle();
+    };
+    at.changes = () =>
+        at.calls.filter((call) => call.method !== 'GET').map((call) => JSON.parse(call.body));
+    return at;
+}
+
+test('a field with a list keeps the field of the form for what is sent, out of sight, and shows another one', async () => {
+    const at = await form('push', offering());
+    await tick();
+    const app = picker(at);
+    // the field of the form: what is read, checked and sent
+    assert.notEqual(app.field, app.input);
+    assert.equal(app.field.type, 'text');
+    assert.equal(app.field.name, 'push_applicationId');
+    assert.equal(app.field.required, true);
+    assert.equal(app.field.tabIndex, -1);
+    assert.equal(app.field.classList.contains('sfmc-ux-tools-transactional-coded'), true);
+    assert.equal(app.field.hasAttribute('role'), false);
+    // the field on show: nothing of the form reads it
+    assert.equal(app.input.name, '');
+    assert.equal(app.input.required, false);
+    assert.equal(app.input.getAttribute('aria-required'), 'true');
+    assert.equal(app.input.getAttribute('autocomplete'), 'off');
+    assert.equal(app.input.getAttribute('role'), 'combobox');
+    assert.equal(app.input.tabIndex, 0);
+    assert.equal(app.field.closest(FIELD).querySelector('label').htmlFor, app.input.id);
+    // one field of the form for each: no second one of the same name
+    assert.equal(
+        [...at.form().elements].filter((item) => item.name === 'push_applicationId').length,
+        1,
+    );
+    // the cursor stays in the field of the form while the browser says that it is empty …
+    app.field.focus();
+    assert.equal(at.document.activeElement, app.field);
+    // … and what is typed there goes to the field on show, with the cursor
+    app.field.value = 'app-2';
+    app.field.dispatchEvent(new at.window.Event('input', { bubbles: true }));
+    assert.equal(app.input.value, 'Staff app');
+    assert.equal(app.field.value, 'app-2');
+    assert.equal(app.sent(), 'app-2');
+    assert.equal(at.document.activeElement, app.input);
+    // a field of the form that holds something passes the cursor on
+    app.input.blur();
+    app.field.focus();
+    assert.equal(at.document.activeElement, app.input);
+    // out of sight like the field behind the code editor, and the one on show marked in its place
+    const { css, rule } = stylesheet();
+    assert.match(
+        rule(
+            ".sfmc-ux-tools-transactional-field input[type='text'].sfmc-ux-tools-transactional-coded",
+        ),
+        /opacity:\s*0/,
+    );
+    assert.match(
+        css,
+        /input\.sfmc-ux-tools-transactional-coded:focus\)\s*\.sfmc-ux-tools-transactional-combo-input \{/,
+    );
+    assert.match(rule('.sfmc-ux-tools-transactional-combo-sent'), /font-size:/);
+});
+
+test('a name that is typed in full stands for its entry; a name that two entries have, or none, is sent as typed and marked', async () => {
+    const apps = [
+        { id: 'id-1', name: 'Shop app' },
+        { id: 'id-2', name: 'Same' },
+        { id: 'id-3', name: 'same' },
+    ];
+    const at = await pushing({ apps });
+    await at.press('New Push message');
+    const app = picker(at);
+    app.input.focus();
+    app.type(' shop APP ');
+    assert.equal(app.field.value, 'id-1');
+    assert.equal(app.sent(), 'id-1');
+    // what was typed stays in the field while it is typed in
+    assert.equal(app.input.value, ' shop APP ');
+    app.type('Same');
+    assert.equal(app.field.value, 'Same');
+    assert.equal(app.sent(), NOT_LISTED);
+    app.type('no such app');
+    assert.equal(app.field.value, 'no such app');
+    assert.equal(app.sent(), NOT_LISTED);
+    // leaving the field leaves what no entry stands for as it is
+    app.input.blur();
+    assert.equal(app.input.value, 'no such app');
+    // typed to search, then chosen: the id of the entry
+    app.input.focus();
+    app.type('sam');
+    assert.equal(app.field.value, 'sam');
+    assert.deepEqual(
+        app.shown().map(([id]) => id),
+        ['id-2', 'id-3'],
+    );
+    app.pick('id-3');
+    assert.equal(app.field.value, 'id-3');
+    assert.equal(app.input.value, 'same');
+    assert.equal(app.sent(), 'id-3');
+    at.type('name', 'Receipt');
+    at.type('content.customerKey', 'receipt');
+    assert.equal(at.field('content.customerKey').value, 'receipt_push');
+    await at.send();
+    assert.deepEqual(at.changes(), [
+        {
+            name: 'Receipt',
+            definitionKey: 'Receipt',
+            status: 'Active',
+            applicationId: 'id-3',
+            content: { customerKey: 'receipt_push' },
+        },
+    ]);
+
+    // an id and a key that the lists do not know are sent as they were typed
+    const own = await pushing({ apps });
+    await own.press('New Push message');
+    own.type('name', 'Receipt');
+    own.type('applicationId', ' 7d00d57d-0d94 ');
+    own.type('content.customerKey', 'Same');
+    assert.equal(picker(own).sent(), NOT_LISTED);
+    await own.send();
+    assert.equal(own.changes()[0].applicationId, '7d00d57d-0d94');
+    assert.deepEqual(own.changes()[0].content, { customerKey: 'Same' });
+});
+
+test('a name that was typed before the list came stands for its entry once the list is there', async () => {
+    const gate = Promise.withResolvers();
+    const at = page(MENU, (path, method) =>
+        path.startsWith('push/definitions?')
+            ? { body: { definitions: [] } }
+            : offering()(path, method),
+    );
+    await at.open();
+    await tab(at, 'push');
+    const quick = at.window.fetch;
+    at.window.fetch = async (url, options) => {
+        if (url.includes(APPS)) {
+            await gate.promise;
+        }
+        return quick(url, options);
+    };
+    await click(at, 'new');
+    at.form = () => at.panel().querySelector('form');
+    at.field = (path) => named(at.form(), path);
+    const app = picker(at);
+    app.input.focus();
+    app.type('staff APP');
+    assert.equal(app.field.value, 'staff APP');
+    // nothing is said of a list that is not there yet
+    assert.equal(app.sent(), null);
+    gate.resolve();
+    await tick();
+    await tick();
+    assert.equal(app.field.value, 'app-2');
+    assert.equal(app.sent(), 'app-2');
+    assert.equal(app.input.value, 'staff APP');
+});
+
+test('a form of any kind that is opened, looked at and sent untouched sends nothing, whatever its fields show', async () => {
+    const cases = [
+        ['sms', { ...DEFINITION, requestId: undefined }],
+        ['push', PUSH],
+        // an id and a key that the lists do not hold
+        ['push', { ...PUSH, applicationId: 'app-gone', content: { customerKey: 'key-gone' } }],
+        ['ott', OTT],
+        ['ott', { ...OTT, content: { customerKey: 'key-gone' } }],
+        // a key of a message that is written for another use
+        ['ott', { ...OTT, content: { customerKey: 'receipt_push' } }],
+    ];
+    for (const [kind, definition] of cases) {
+        const at = await stored(kind, definition);
+        await at.press('Edit');
+        const shown = [...at.form().querySelectorAll('[role="combobox"]')];
+        assert.equal(shown.length, { sms: 0, push: 2, ott: 1 }[kind]);
+        for (const input of shown) {
+            input.focus();
+            input.dispatchEvent(new at.window.MouseEvent('click', { bubbles: true }));
+            input.blur();
+        }
+        await at.send();
+        assert.deepEqual(at.changes(), [], kind);
+        assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+    }
+});
+
+test('a stored id or key that the list does not hold is shown as it is, marked, and kept', async () => {
+    const at = await stored('push', {
+        ...PUSH,
+        applicationId: 'app-gone',
+        content: { customerKey: 'receipt_push' },
+    });
+    await at.press('Edit');
+    const app = picker(at);
+    assert.equal(app.input.value, 'app-gone');
+    assert.equal(app.field.value, 'app-gone');
+    assert.equal(app.sent(), NOT_LISTED);
+    // the other field is changed: only that one is sent
+    const content = picker(at, 'content.customerKey');
+    assert.equal(content.input.value, 'Receipt');
+    content.input.focus();
+    content.type('hello');
+    assert.equal(content.field.value, 'line_hi');
+    await at.send();
+    assert.deepEqual(at.changes(), [{ content: { customerKey: 'line_hi' } }]);
+});
+
+test('a field with a list that cannot hold what is stored is switched off, the one on show with it', async () => {
+    const at = await stored('push', { ...PUSH, applicationId: { id: 'app-2' } });
+    await at.press('Edit');
+    const app = picker(at);
+    for (const input of [app.field, app.input]) {
+        assert.equal(input.disabled, true);
+        assert.equal(input.title, 'This value cannot be changed here.');
+        assert.equal(input.value, '');
+    }
+    assert.equal(app.sent(), null);
+    await at.send();
+    assert.deepEqual(at.changes(), []);
+});
+
+test('the content of an OTT message is chosen by name from the mobile messages that are written for something else than push, SMS and the app', async () => {
+    const at = await stored('ott', OTT, { folders: FOLDER_LIST });
+    // the details name the content first, then its key
+    assert.deepEqual(parts(at, 'content.customerKey'), ['Order update', 'wa_order']);
+    await at.press('Edit');
+    const content = picker(at, 'content.customerKey');
+    assert.equal(content.input.getAttribute('role'), 'combobox');
+    assert.equal(content.field.name, 'ott_content.customerKey');
+    assert.equal(content.input.value, 'Order update');
+    assert.equal(content.sent(), 'wa_order');
+    content.input.focus();
+    assert.deepEqual(content.shown(), [
+        ['line_hi', 'Hello', false],
+        ['wa_order', 'Order update', true],
+    ]);
+    // each says the views it names, then its folder and when it was changed
+    const when = at.window.sfmcUxToolsFormatDate(MODIFIED);
+    assert.deepEqual(
+        [...content.list.children].map((item) => item.querySelector(MORE).textContent),
+        ['Line, push', `whatsApp · Receipts · modified ${when}`],
+    );
+    // the mobile messages were read once, for the list, the details and the form
+    assert.equal(reads(at, CONTENTS), 1);
+    // nothing of what only a push message has
+    assert.equal(at.form().querySelector(CUSTOM_KEYS), null);
+    assert.equal(at.form().querySelector(REFUSED), null);
+    assert.deepEqual(
+        at.looked.filter(
+            (path) =>
+                path.startsWith(`${CONTENTS}?$filter=`) ||
+                path.startsWith(INTERNAL_APPS) ||
+                path === APPS,
+        ),
+        [],
+    );
+    // the sender stays a plain field
+    assert.equal(face(at.field('senderId')), at.field('senderId'));
+    assert.equal(at.field('senderId').hasAttribute('role'), false);
+    assert.equal(listOf(at.field('senderId')), null);
+    content.pick('line_hi');
+    assert.equal(content.input.value, 'Hello');
+    await at.send();
+    assert.deepEqual(at.changes(), [{ content: { customerKey: 'line_hi' } }]);
+});
+
+test('without a mobile message for another channel the OTT content says so and takes a typed key, and push offers its own from the same read', async () => {
+    const answer = (path, method) =>
+        path.startsWith(`${CONTENTS}?$page=`)
+            ? { body: { items: MIXED.filter((item) => item.customerKey.includes('_1')) } }
+            : offering()(path, method);
+    const none = await form('ott', answer);
+    await tick();
+    const content = picker(none, 'content.customerKey');
+    content.input.focus();
+    assert.deepEqual(content.shown(), []);
+    assert.equal(content.status(), 'This business unit has nothing to choose from here.');
+    none.type('name', 'Order shipped');
+    none.type('senderId', '4912312345678');
+    none.type('content.customerKey', 'order_whatsapp');
+    assert.equal(content.sent(), NOT_LISTED);
+    await none.send();
+    assert.deepEqual(none.sent()[0].content, { customerKey: 'order_whatsapp' });
+
+    // one read of the mobile messages serves the push form and the OTT form
+    const at = await form('ott', (path, method) =>
+        path.startsWith(`${CONTENTS}?$page=`)
+            ? { body: { items: MIXED } }
+            : offering()(path, method),
+    );
+    await tick();
+    assert.deepEqual(
+        picker(at, 'content.customerKey')
+            .shown()
+            .map(([key]) => key),
+        ['line_hi', 'wa_order'],
+    );
+    at.button('Cancel').click();
+    await tick();
+    await tab(at, 'push');
+    await click(at, 'new');
+    await tick();
+    assert.deepEqual(
+        picker(at, 'content.customerKey')
+            .shown()
+            .map(([key]) => key),
+        ['line_hi', 'receipt_push'],
+    );
+    // a push content says nothing of its views
+    assert.equal(listOf(at.field('content.customerKey')).querySelector(MORE), null);
+    assert.equal(reads(at, CONTENTS), 1);
+});
+
+const CODE_VIEW = '.sfmc-ux-tools-transactional-code-view';
+
+/**
+ * Finds where the details show the message of an SMS.
+ *
+ * @param {{panel: () => Element}} at the page with the details
+ * @returns {Element} the cell
+ */
+function messageCell(at) {
+    return [...at.panel().querySelectorAll('dt')].find((item) => item.title === MESSAGE)
+        .nextElementSibling;
+}
+
+test('the details show the message of an SMS in the code editor of the form, to read and not to change', async () => {
+    const coded = { ...DEFINITION, content: { message: 'Hi %%=Lookup("a","b","c",d)=%%\nBye' } };
+    const at = await withEditor(() => details(() => ({ body: coded }), coded));
+    assert.deepEqual(
+        at.imported,
+        EDITOR_FILES.map((file) => EXTENSION + file),
+    );
+    const editor = at.editor();
+    assert.ok(editor, 'the editor is there');
+    const cell = messageCell(at);
+    assert.equal(cell.contains(editor.getWrapperElement()), true);
+    assert.equal(editor.getWrapperElement().parentNode.matches(CODE_VIEW), true);
+    assert.equal(editor.getValue(), coded.content.message);
+    assert.equal(editor.getOption('mode'), 'ampScriptHtmlMixed');
+    // read, marked and copied, but not changed; as tall as its text
+    assert.equal(editor.getOption('readOnly'), true);
+    assert.equal(editor.getOption('viewportMargin'), Infinity);
+    assert.equal(editor.getInputField().getAttribute('aria-label'), 'Message');
+    // in place of the plain text, not next to it
+    assert.equal(cell.querySelector(':scope > .sfmc-ux-tools-transactional-value'), null);
+    assert.equal(cell.children.length, 1);
+    // no helpers of the form: nothing to insert, nothing to count
+    assert.equal(at.panel().querySelector(TOOLS), null);
+    assert.equal(at.panel().querySelector(PERSON), null);
+    // the colours of every code editor
+    await pause();
+    assert.equal(editor.getTokenTypeAt({ line: 0, ch: 8 }), 'sfmc-function');
+    // with nothing of the editor open, Escape is the panel's
+    let reached = 0;
+    at.panel().addEventListener('keydown', () => reached++);
+    assert.equal(press(at, { key: 'Escape', keyCode: 27 }).defaultPrevented, false);
+    assert.equal(reached, 1);
+    assert.equal(editor.getValue(), coded.content.message);
+    // a suggestion or a quick fix that is clicked changes it through the API: refused too
+    editor.replaceRange('x', { line: 0, ch: 0 });
+    editor.replaceSelection('y');
+    assert.equal(editor.getValue(), coded.content.message);
+    // the form gets its own editor, which can be typed into, from the scripts that are there
+    await at.press('Edit');
+    await pause();
+    const typing = at.editor();
+    assert.notEqual(typing, editor);
+    assert.equal(at.panel().querySelector('form').contains(typing.getWrapperElement()), true);
+    assert.equal(typing.getOption('readOnly'), false);
+    assert.equal(at.imported.length, EDITOR_FILES.length);
+    assert.deepEqual(at.written, []);
+    // as tall as the text, up to a limit
+    const { rule } = stylesheet();
+    assert.match(rule(`${CODE_VIEW} .CodeMirror`), /height:\s*auto/);
+    assert.match(rule(`${CODE_VIEW} .CodeMirror-scroll`), /max-height:/);
+});
+
+test('without the code editor the details show the message as the text it is, and ask for the editor again the next time', async (t) => {
+    const warn = t.mock.method(console, 'warn', () => {});
+    const failures = [
+        // the browser refuses the file: asked for again the next time
+        [() => Promise.reject(new TypeError('Failed to fetch dynamically imported module')), 2],
+        // the files run, but bring no editor
+        [() => Promise.resolve(), EDITOR_FILES.length],
+    ];
+    for (const [load, loads] of failures) {
+        warn.mock.resetCalls();
+        const at = await withEditor(() => details(), load);
+        await pause();
+        assert.equal(at.editor(), undefined);
+        assert.equal(at.panel().querySelector(CODE_VIEW), null);
+        assert.equal(messageCell(at).textContent, 'line 1\nline 2');
+        assert.equal(messageCell(at).children.length, 1);
+        assert.equal(warn.mock.callCount(), 1);
+        assert.match(
+            warn.mock.calls[0].arguments[0],
+            /^SFMC UX Tools: the code editor for the message/,
+        );
+        assert.equal(at.panel().querySelector('.sfmc-ux-tools-transactional-error'), null);
+        // the details again
+        await click(at, 'back');
+        rows(at)[0].click();
+        await pause();
+        assert.equal(messageCell(at).textContent, 'line 1\nline 2');
+        assert.equal(at.imported.length, loads);
+    }
+    // while the editor is on its way the text is there, and stays when the details are left
+    const waiting = await details();
+    assert.equal(messageCell(waiting).textContent, 'line 1\nline 2');
+    assert.equal(waiting.imported.length, 1);
+    // a message that is no text is shown as what it is, and asks for no editor
+    const odd = { ...DEFINITION, content: { message: { not: 'text' } } };
+    const none = await withEditor(() => details(() => ({ body: odd }), odd));
+    assert.equal(none.editor(), undefined);
+    assert.deepEqual(none.imported, []);
+    // nor do the details of the other kinds
+    const push = await withEditor(() => pushDetails());
+    assert.equal(push.editor(), undefined);
+    assert.deepEqual(push.imported, []);
 });

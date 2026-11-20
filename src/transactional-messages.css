@@ -205,9 +205,12 @@
 }
 /*
  * The message of an SMS in a code editor: the field stays where it is, out of sight, for the form
- * to read and to check, and the editor stands below the line of the field.
+ * to read and to check, and the editor stands below the line of the field. The same goes for a
+ * field with a list to choose from: the id or key stays in the field of the form, out of sight,
+ * and the name is shown in a field next to it.
  */
-.sfmc-ux-tools-transactional-field textarea.sfmc-ux-tools-transactional-coded {
+.sfmc-ux-tools-transactional-field textarea.sfmc-ux-tools-transactional-coded,
+.sfmc-ux-tools-transactional-field input[type='text'].sfmc-ux-tools-transactional-coded {
     border: 0;
     height: 1px;
     min-height: 0;
@@ -218,7 +221,7 @@
     resize: none;
     width: 1px;
 }
-.sfmc-ux-tools-transactional-field:has(.sfmc-ux-tools-transactional-coded) {
+.sfmc-ux-tools-transactional-field:has(textarea.sfmc-ux-tools-transactional-coded) {
     margin-bottom: 0;
 }
 .sfmc-ux-tools-transactional-code {
@@ -228,6 +231,21 @@
     border: 1px solid #c9c9c9;
     border-radius: 4px;
     height: 16em;
+}
+/*
+ * The message of an SMS in the details, in the same editor, to read: as tall as its text, and
+ * scrolling by itself from the height of the form's editor on.
+ */
+.sfmc-ux-tools-transactional-code-view {
+    white-space: normal;
+}
+.sfmc-ux-tools-transactional-code-view .CodeMirror {
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    height: auto;
+}
+.sfmc-ux-tools-transactional-code-view .CodeMirror-scroll {
+    max-height: 16em;
 }
 /* the field holds the cursor while the browser says that the message is missing */
 .sfmc-ux-tools-transactional-field:has(.sfmc-ux-tools-transactional-coded:focus)
@@ -240,18 +258,29 @@
     background: #f3f3f3;
     color: #5c5c5c;
 }
-/* the name of what a field or a value of the details holds, such as the app behind an id */
-.sfmc-ux-tools-transactional-resolved {
+/* the field holds the cursor while the browser says that it is empty or refused */
+.sfmc-ux-tools-transactional-field:has(input.sfmc-ux-tools-transactional-coded:focus)
+    .sfmc-ux-tools-transactional-combo-input {
+    outline: 2px solid #0176d3;
+}
+/* in the details, the name of what a value holds, such as the app behind an id, stands first;
+   the id or key follows it, set back */
+.sfmc-ux-tools-transactional-resolved[hidden] {
+    display: none;
+}
+.sfmc-ux-tools-transactional-resolved:not([hidden]) + .sfmc-ux-tools-transactional-value {
     color: #5c5c5c;
-    font-style: italic;
-}
-.sfmc-ux-tools-transactional-field .sfmc-ux-tools-transactional-resolved {
-    display: block;
-}
-.sfmc-ux-tools-transactional-fields .sfmc-ux-tools-transactional-resolved {
+    font-size: 12px;
     margin-left: 8px;
 }
-.sfmc-ux-tools-transactional-resolved[hidden] {
+/* below a field with a list: the id or key that is sent for the name in the field */
+.sfmc-ux-tools-transactional-combo-sent {
+    color: #5c5c5c;
+    display: block;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+.sfmc-ux-tools-transactional-combo-sent[hidden] {
     display: none;
 }
 /* the list below a field to choose from: in the flow of the form, never cut off by the panel */

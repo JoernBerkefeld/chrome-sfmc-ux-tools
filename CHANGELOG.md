@@ -52,6 +52,21 @@
 - **Transactional SMS, length**: a line below the message counts its characters, those of the GSM extension table as two, and says how many are not in the GSM alphabet and whether the length depends on personalization. **Show non-GSM characters** marks them in the code editor until the message is changed.
 - **Transactional messages, seen on a real account**: the folder names of contents, the texts of a push content, the list for personalization and saving custom keys were seen answering on a real account, tried with the same requests the panel sends, not by clicking through the panel itself.
 - **A code editor for the text of a transactional SMS**: in the form of the panel **Transactional Messages**, the message of an SMS is written in a code editor like the code view of Content Builder, with colours for AMPscript, suggestions while you type and on **Ctrl+Space**, explanations on hover, parameter help and underlined mistakes, in the editor theme chosen in the options. **Tab** moves on to the next field, **Esc** closes an open list of suggestions and leaves the form open, **Ctrl+S** does nothing; there is no formatting. If the editor cannot be loaded, the plain text field stays. For this the extension bundles CodeMirror 5.65.21 and loads it, with its colouring and language scripts, into the Marketing Cloud page only when an SMS form is opened. The forms for push and OTT are unchanged.
+- **Transactional messages, names first**: reviewed by the owner and changed as follows.
+    - The details of a push message show the name of its app and of its content first, and the ID or key after it. Without a name, only the ID or key is shown.
+    - In the form, the **App** and **Content** fields show the name. A small line below shows the ID or key, which is still what is sent.
+    - A typed ID or key from the list, or a full name that exactly one entry has, stands for that entry. Anything else is sent as typed, and the line says "not in the list – sent as typed".
+    - A form that is opened and saved untouched still sends nothing.
+- **Transactional OTT messages, list of contents**: the **Content** field works like the one of push.
+    - It offers the mobile messages of Content Builder that are written for something other than push, SMS or in-app, each with what it is written for.
+    - How a WhatsApp message is marked there is not known, and that OTT contents are such messages is not verified.
+    - If there is none, the list says so and the field takes a typed key.
+    - The mobile messages are read once for push and OTT together.
+    - **Sender ID** stays a plain field: the list of WhatsApp senders was empty on our account.
+- **Transactional SMS, the message in the details**: the details show the text of an SMS in the code editor, read-only, with colours and explanations on hover. It is as tall as the text up to a limit, and plain text stays if the editor cannot be loaded.
+- **Transactional SMS, order of codes and keywords**: both lists of the form are in alphabetical order.
+- **Transactional SMS, link to the setup**: "Setup > MobileConnect" in the notes about link shortening and the send blockout window is a link to MobileConnect's administration, in a new tab.
+- **Transactional messages, no saved logins in the forms**: the fields of the three forms are named `sms_…`, `push_…` and `ott_…` instead of bare names such as `name`, and text fields ask the browser not to fill them in, so that password managers leave them alone. What is sent is unchanged.
 - **Readable keys for data filters**: the dialog of Email Studio that saves a new data filter gets its External Key from the name.
 - **Readable keys for triggered sends**: the page of Email Studio that creates a triggered send gets its External Key from the name, for which the extension now also runs on `https://*.exacttarget.com/Content/Interactions/TriggeredSendConfiguration.aspx`.
 - **The key of a journey, to see and to copy**: the details below a journey's name get an entry **Key**. For a journey that was never saved it is a field that shows the key made from the name and takes a key of your own; the details open by themselves so that it is seen. For a saved journey it shows the key as text, which one click marks for copying, also with readable keys switched off.

@@ -83,6 +83,11 @@
         ['display:subtitle', 'Subtitle'],
         ['display:message', 'Message'],
     ];
+    // said under a field that holds what its list does not have: no id or key stands for it
+    const NOT_LISTED = 'not in the list – sent as typed';
+    // the views a mobile message of Content Builder is known to name, in small letters: none of
+    // them is one of an OTT channel
+    const MOBILE_VIEWS = new Set(['push', 'sms', 'inapp']);
     // said under a field whose list could not be read
     const NO_LIST = 'The list to choose from could not be read. Type the id or key.';
     // said of an app that MobilePush greys out, in the list and under the field that holds its id
@@ -143,7 +148,8 @@
         parts.filter((part) => typeof part === 'string' && part).join(' · ');
     /**
      * Puts entries to choose from in the order of their names, whatever the case: nobody knows
-     * an app or a content by its id or key. Entries of the same name follow each other by that
+     * an app or a content by its id or key, and a code or a keyword is looked for by the
+     * alphabet. Entries of the same name follow each other by that
      * id or key, so that the order is the same every time.
      *
      * @param {{label: unknown, value: unknown}[]} entries entries of a list
@@ -163,28 +169,32 @@
             path: 'legacy/v1/beta/mobile/code/',
             // two codes of one country are told apart by the code itself and by what kind it is
             read: (answer) =>
-                (answer.entry || []).map((item) => ({
-                    value: item.code,
-                    // what the screen of the code in MobileConnect is found by
-                    id: item.id,
-                    label: joined(
-                        item.code,
-                        item.countryCode,
-                        typeof item.isShortCode === 'boolean' &&
-                            (item.isShortCode ? 'short code' : 'long code'),
-                        item.codeType,
-                    ),
-                })),
+                byName(
+                    (answer.entry || []).map((item) => ({
+                        value: item.code,
+                        // what the screen of the code in MobileConnect is found by
+                        id: item.id,
+                        label: joined(
+                            item.code,
+                            item.countryCode,
+                            typeof item.isShortCode === 'boolean' &&
+                                (item.isShortCode ? 'short code' : 'long code'),
+                            item.codeType,
+                        ),
+                    })),
+                ),
         },
         keywords: {
             path: 'legacy/v1/beta/mobile/keyword/',
             // a keyword belongs to one code; the same word under another code is another entry
             read: (answer) =>
-                (answer.entry || []).map((item) => ({
-                    value: item.keyword,
-                    label: item.keyword,
-                    within: item.code?.code,
-                })),
+                byName(
+                    (answer.entry || []).map((item) => ({
+                        value: item.keyword,
+                        label: item.keyword,
+                        within: item.code?.code,
+                    })),
+                ),
         },
         // the settings of MobileConnect for this account: one answer, kept as a list of one
         account: {
@@ -252,25 +262,21 @@
             pages: 'items',
             // a mobile message is written for one use, which it names as its view: push, sms or
             // inApp, in whatever case. Seen on a business unit with push definitions: every one of
-            // them holds a message written for push
+            // them holds a message written for push. All of them are read once; a field offers
+            // those of the views it takes
             read: (items) =>
                 byName(
-                    items
-                        .filter(
-                            (item) =>
-                                Array.isArray(item.availableViews) &&
-                                item.availableViews.some(
-                                    (view) => String(view).toLowerCase() === 'push',
-                                ),
-                        )
-                        .map((item) => ({
-                            value: item.customerKey,
-                            label: item.name,
-                            // a row of the list has the id of its folder only
-                            folder: item.category?.id,
-                            modified: item.modifiedDate,
-                            by: item.modifiedBy?.name,
-                        })),
+                    items.map((item) => ({
+                        value: item.customerKey,
+                        label: item.name,
+                        views: (Array.isArray(item.availableViews) ? item.availableViews : []).map(
+                            String,
+                        ),
+                        // a row of the list has the id of its folder only
+                        folder: item.category?.id,
+                        modified: item.modifiedDate,
+                        by: item.modifiedBy?.name,
+                    })),
                 ),
             // the list that names the folders
             folders: 'folders',
@@ -378,6 +384,8 @@
                     // seen live: without content the API refuses the message
                     isRequired: true,
                     suggest: 'contents',
+                    // the mobile messages that are written for push
+                    only: { takes: (views) => views.some((view) => view.toLowerCase() === 'push') },
                     isNamed: true,
                     // the details show what the content says
                     isSaid: true,
@@ -419,6 +427,16 @@
                     path: 'content.customerKey',
                     label: 'Content',
                     isRequired: true,
+                    suggest: 'contents',
+                    // nobody has seen what view a message for WhatsApp names (seen on a real
+                    // account: push, sms and inApp only), so those of any other view are offered,
+                    // each with the views it names
+                    only: {
+                        takes: (views) =>
+                            views.some((view) => !MOBILE_VIEWS.has(view.toLowerCase())),
+                        isTold: true,
+                    },
+                    isNamed: true,
                     help: 'The customer key of the message in Content Builder.',
                 },
             ],
@@ -521,6 +539,8 @@
     // what looks again at whether a field may hold what it holds, by the field; called before a
     // form is sent, because the lists it was held against may be gone since
     const checks = new WeakMap();
+    // the field the user sees and types into in place of one that is out of sight, by that one
+    const faces = new WeakMap();
 
     let dialog;
     let body;
@@ -822,6 +842,23 @@
             'MobilePush/mobilepush/%23!/administration/app',
             id,
         );
+    // the settings of MobileConnect for the account, where link shortening and the send blockout
+    // window are set up
+    const SETUP = 'Setup > MobileConnect';
+    const setupLink = () =>
+        screenLink(SETUP, 'MobileConnect/MobileConnectFuel3/%23!', 'administration');
+    /**
+     * Builds a note on what the settings of MobileConnect mean for a form, with the way there.
+     *
+     * @param {string} before what it says before the link
+     * @param {string} after what it says after it
+     * @returns {HTMLElement} the note
+     */
+    function accountNote(before, after) {
+        const said = make('p', 'account-note');
+        said.append(before, setupLink(), after);
+        return said;
+    }
     // a code of MobileConnect, where its keywords are; by the id the list of codes has for it
     const codeLink = (id) =>
         screenLink(
@@ -1050,14 +1087,15 @@
             const title = make('dt', undefined, LABELS.get(at) ?? key);
             title.title = at;
             const cell = make('dd');
+            // the name first, when the list has one, and the id or key it stands for after it
+            if (typeof part === 'string' && named.has(at)) {
+                cell.append(resolved(named.get(at), () => part).element);
+            }
             cell.append(
                 typeof part === 'string' && DATES.has(key)
                     ? stamp(make('span', 'value'), part)
                     : show(part, named, at),
             );
-            if (typeof part === 'string' && named.has(at)) {
-                cell.append(resolved(named.get(at), () => part).element);
-            }
             list.append(title, cell);
         }
         return list;
@@ -1262,17 +1300,22 @@
     /**
      * Puts a list of the business unit below a text field, to choose from: all of it whenever
      * the field is entered or clicked, whatever the field holds, and what matches the name or
-     * the value while the user types. The field takes any text, with its list and without; a
+     * the value while the user types. The field of the form goes out of sight and stays what
+     * the form reads, checks and sends: the id or key. In its place stands a field that shows
+     * the name of what is chosen and takes what is typed; the id or key that is sent is said
+     * below it. Text that is the id or key of an entry, or the name of exactly one, stands for
+     * that entry; any other text is taken and sent as it is, with the list and without. A
      * list that cannot be read is done without, and the rest of one is not read for a form that
      * was closed meanwhile.
      *
-     * @param {HTMLInputElement} input the text field
+     * @param {HTMLInputElement} input the text field of the form
      * @param {string} id name for the list and its entries
      * @param {string} name codes, keywords, apps or contents
-     * @param {unknown} [kept] what the message that is changed holds in the field; it can always be kept
+     * @param {string} [kept] what the message that is changed holds in the field; it can always be kept
+     * @param {{takes: (views: string[]) => boolean, isTold?: boolean}} [only] the entries of the list the field offers, by the views they name, and whether an entry says its views
      * @returns {HTMLElement} the field with its list
      */
-    function combo(input, id, name, kept) {
+    function combo(input, id, name, kept, only) {
         const box = make('div', 'combo');
         const drop = make('div', 'combo-drop');
         const status = make('div', 'combo-status');
@@ -1281,12 +1324,26 @@
         list.setAttribute('role', 'listbox');
         drop.hidden = true;
         drop.append(status, list);
-        box.append(input, drop);
-        input.autocomplete = 'off';
-        input.setAttribute('role', 'combobox');
-        input.setAttribute('aria-autocomplete', 'list');
-        input.setAttribute('aria-controls', id);
-        input.setAttribute('aria-expanded', 'false');
+        // the field on show. It has no name: nothing of the form reads it
+        const face = make('input', 'combo-input');
+        face.type = 'text';
+        face.id = `${id}-field`;
+        face.autocomplete = 'off';
+        // the id or key that is stored, until the list tells its name
+        face.value = kept ?? '';
+        face.setAttribute('aria-required', String(input.required));
+        faces.set(input, face);
+        // still reachable for the form's check, no stop for the Tab key
+        input.classList.add(`${NAME}-coded`);
+        input.tabIndex = -1;
+        // says what is sent for the field
+        const sent = make('span', 'combo-sent');
+        sent.hidden = true;
+        box.append(input, face, drop, sent);
+        face.setAttribute('role', 'combobox');
+        face.setAttribute('aria-autocomplete', 'list');
+        face.setAttribute('aria-controls', id);
+        face.setAttribute('aria-expanded', 'false');
         // taken away when the list cannot be read: the field is a plain text field then
         const wired = new AbortController();
         const on = (target, type, listener) =>
@@ -1298,21 +1355,87 @@
         // the entries on show, and the one among them that the arrow keys are at
         let shown = [];
         let active;
-        // true while an entry is put into the field, which is no typing
-        let isChoosing = false;
+        // true once the user typed into the field on show
+        let isTouched = false;
+        // true while this puts a value into the field of the form, which is no typing there
+        let isWriting = false;
+        // the id or key the field stood for before its text was changed: what it held when it
+        // was opened, or the entry it held last
+        let chosen;
+
+        const entryOf = (value) => (entries || []).find((entry) => entry.value === value);
+        // what a text stands for: the id or key of an entry when it is one, or when it is the
+        // name of exactly one entry, whatever the case; otherwise the text itself
+        const meant = (text) => {
+            const wanted = text.trim();
+            if (!wanted || entryOf(wanted)) {
+                return wanted;
+            }
+            // the name of the entry that is chosen stays that entry, even if another entry has
+            // the same name: typing and taking back a letter changes nothing
+            const before = entryOf(chosen);
+            if (before && before.label.toLowerCase() === wanted.toLowerCase()) {
+                return before.value;
+            }
+            const called = (entries || []).filter(
+                (entry) => entry.label.toLowerCase() === wanted.toLowerCase(),
+            );
+            return called.length === 1 ? called[0].value : text;
+        };
+        // puts a value into the field of the form, as if it was typed there: the form and
+        // whatever else listens to the field hear of it
+        const hold = (value, ...types) => {
+            isWriting = true;
+            input.value = value;
+            for (const type of types) {
+                input.dispatchEvent(new Event(type, { bubbles: true }));
+            }
+            isWriting = false;
+        };
+        const tell = () => {
+            const value = input.value.trim();
+            sent.hidden = !entries || !value;
+            sent.textContent = entryOf(value) ? value : NOT_LISTED;
+        };
+        // shows what the field of the form holds: by its name, when the list has one for it
+        const paint = () => {
+            face.value = entryOf(input.value.trim())?.label || input.value;
+        };
+        face.addEventListener('input', () => {
+            const held = input.value.trim();
+            if (!isTouched || entryOf(held)) {
+                chosen = held;
+            }
+            isTouched = true;
+            hold(meant(face.value), 'input');
+        });
+        input.addEventListener('input', () => {
+            tell();
+            if (isWriting) {
+                return;
+            }
+            // typed into the field of the form itself, which holds the cursor after the form
+            // pointed at it as empty or refused
+            paint();
+            if (document.activeElement === input) {
+                face.focus();
+            }
+        });
+        // the browser's note that the field is empty or refused needs the cursor to stay in it
+        input.addEventListener('focus', () => {
+            if (input.validity.valid) {
+                face.focus();
+            }
+        });
 
         const close = () => {
             drop.hidden = true;
-            input.setAttribute('aria-expanded', 'false');
-            input.removeAttribute('aria-activedescendant');
+            face.setAttribute('aria-expanded', 'false');
+            face.removeAttribute('aria-activedescendant');
         };
         const choose = (entry) => {
-            isChoosing = true;
-            input.value = entry.value;
-            // as if it was typed: the name under the field and the form hear of it
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            isChoosing = false;
+            face.value = entry.label || entry.value;
+            hold(entry.value, 'input', 'change');
             typed = '';
             close();
         };
@@ -1348,13 +1471,14 @@
         // what else tells an entry from one of the same name: its folder, and when and by whom
         // it was last changed
         const moreOf = (entry) => {
+            const views = only?.isTold && entry.views?.length > 0 && entry.views.join(', ');
             const change = [
                 typeof entry.modified === 'string' && entry.modified && formatDate(entry.modified),
                 typeof entry.by === 'string' && entry.by && `by ${entry.by}`,
             ]
                 .filter(Boolean)
                 .join(' ');
-            return joined(folderOf(entry), change && `modified ${change}`);
+            return joined(views, folderOf(entry), change && `modified ${change}`);
         };
         const draw = () => {
             const current = input.value.trim();
@@ -1403,10 +1527,10 @@
             }
             status.hidden = shown.length > 0;
             if (at && !drop.hidden) {
-                input.setAttribute('aria-activedescendant', at.id);
+                face.setAttribute('aria-activedescendant', at.id);
                 at.scrollIntoView({ block: 'nearest' });
             } else {
-                input.removeAttribute('aria-activedescendant');
+                face.removeAttribute('aria-activedescendant');
             }
         };
         const open = () => {
@@ -1414,7 +1538,7 @@
             const current = input.value.trim();
             active = (entries || []).find((entry) => entry.value === current && !isBarred(entry));
             drop.hidden = false;
-            input.setAttribute('aria-expanded', 'true');
+            face.setAttribute('aria-expanded', 'true');
             draw();
         };
         const openAll = () => {
@@ -1474,19 +1598,21 @@
             },
             Tab: close,
         };
-        on(input, 'focus', openAll);
+        on(face, 'focus', openAll);
         // every click, also into a field that holds something
-        on(input, 'click', openAll);
-        on(input, 'blur', close);
-        on(input, 'input', () => {
-            if (isChoosing) {
-                return;
+        on(face, 'click', openAll);
+        on(face, 'blur', () => {
+            close();
+            // an id or key that was typed gives way to its name
+            if (entryOf(input.value.trim())) {
+                paint();
             }
-
-            typed = input.value.trim().toLowerCase();
+        });
+        on(face, 'input', () => {
+            typed = face.value.trim().toLowerCase();
             open();
         });
-        on(input, 'keydown', (event) => {
+        on(face, 'keydown', (event) => {
             if (Object.hasOwn(keys, event.key)) {
                 keys[event.key](event);
             }
@@ -1496,7 +1622,19 @@
         const read = async () => {
             const found = await readOffers(name, () => input.isConnected);
             if (found) {
-                entries = found;
+                entries = only ? found.filter((entry) => only.takes(entry.views ?? [])) : found;
+                if (isTouched) {
+                    // what was typed before the list came may be the name of an entry
+                    const value = meant(face.value);
+                    if (value !== input.value) {
+                        hold(value, 'input');
+                    }
+                } else {
+                    // nothing is put into the field of the form: one that was not touched
+                    // sends nothing
+                    paint();
+                }
+                tell();
                 // an open list stays open, narrowed down by what was typed meanwhile
                 if (drop.hidden) {
                     draw();
@@ -1513,7 +1651,7 @@
                 'aria-expanded',
                 'aria-activedescendant',
             ]) {
-                input.removeAttribute(attribute);
+                face.removeAttribute(attribute);
             }
             drop.replaceWith(make('span', 'help', NO_LIST));
         };
@@ -1594,7 +1732,7 @@
         const stored = [held(first, typed[0]), held(second, typed[1])];
         const [chosen, dependent] = [first, second].map((spec, index) => {
             const select = make('select');
-            select.name = spec.path;
+            select.name = typed[index].name;
             select.required = Boolean(spec.isRequired);
             const isFocused = document.activeElement === typed[index];
             typed[index].replaceWith(select);
@@ -1683,13 +1821,14 @@
     /**
      * Builds the field of a form.
      *
+     * @param {{id: string}} kind kind of message
      * @param {object} spec what the field is, from the list of its kind of message
      * @param {string} id name for what belongs to the field
      * @param {boolean} isNew true in the form for a new message
      * @param {unknown} [kept] what the message that is changed holds in the field
      * @returns {{row: HTMLElement, input: HTMLElement}} the line of the form and the field in it
      */
-    function field(spec, id, isNew, kept) {
+    function field(kind, spec, id, isNew, kept) {
         // a field with a list below it is no label as a whole: a click into the list would
         // count as one into the field
         const row = make(spec.suggest ? 'div' : 'label', 'field');
@@ -1706,7 +1845,12 @@
             input = make('input');
             input.type = spec.input === 'checkbox' ? 'checkbox' : 'text';
         }
-        input.name = spec.path;
+        // with its kind before it: a bare "name" is what a password manager takes for the
+        // name of a person, and offers to fill in
+        input.name = `${kind.id}_${spec.path}`;
+        if (input.type === 'text' || spec.input === 'textarea') {
+            input.autocomplete = 'off';
+        }
         input.required = Boolean(spec.isRequired);
         if (spec.max) {
             input.maxLength = spec.max;
@@ -1721,26 +1865,24 @@
             title.id = `${id}-title`;
         }
         if (spec.suggest) {
-            input.id = `${id}-field`;
-            title.htmlFor = input.id;
+            // the words of the field are the label of the one on show
+            title.htmlFor = `${id}-field`;
             row.append(
                 title,
                 combo(
                     input,
                     id,
                     spec.suggest,
-                    kept === undefined || kept === null ? undefined : String(kept),
+                    // what the field cannot hold is not shown in it either
+                    kept === undefined || kept === null || typeof kept === 'object'
+                        ? undefined
+                        : String(kept),
+                    spec.only,
                 ),
             );
         } else {
             // a checkbox stands before its words
             row.append(...(input.type === 'checkbox' ? [input, title] : [title, input]));
-        }
-        if (spec.isNamed) {
-            const { element, draw } = resolved(spec.suggest, () => input.value.trim());
-            // typing and choosing from the list both come as this
-            input.addEventListener('input', draw);
-            row.append(element);
         }
         if (spec.help) {
             row.append(make('span', 'help', spec.help));
@@ -1788,6 +1930,7 @@
             const row = make('label', 'field');
             const input = make('input');
             input.type = 'text';
+            input.autocomplete = 'off';
             input.dataset.customKey = key;
             const value = from?.value;
             const isFixed = typeof value === 'object' && value !== null;
@@ -1922,6 +2065,121 @@
             : import(url);
     }
 
+    // the scripts of the code editor on their way into the page, or there; none before the
+    // first message is shown
+    let editorScripts;
+
+    /**
+     * Loads what makes a code editor, once for the details and the forms of the page.
+     *
+     * @returns {Promise.<void>} settles when the scripts ran; fails when one could not be loaded
+     */
+    function loadEditor() {
+        if (!editorScripts) {
+            const loading = (async () => {
+                for (const file of EDITOR_SCRIPTS) {
+                    await load(file);
+                }
+            })();
+            editorScripts = loading;
+            const forgetFailed = async () => {
+                try {
+                    await loading;
+                } catch {
+                    // asked for again the next time
+                    if (editorScripts === loading) {
+                        editorScripts = undefined;
+                    }
+                }
+            };
+            forgetFailed();
+        }
+        return editorScripts;
+    }
+
+    /**
+     * Keeps Escape for a code editor while a list of suggestions or a box of it is open (an
+     * explanation, quick fixes, parameter help): the key closes that, not the panel. The editor
+     * closes them itself, so what was open is noted before the key reaches it.
+     *
+     * @param {HTMLElement} mount where the editor stands
+     * @param {object} editor the editor
+     */
+    function guardEscape(mount, editor) {
+        let hasOpen = false;
+        mount.addEventListener(
+            'keydown',
+            () => {
+                const boxes = mount.closest('dialog')?.querySelectorAll('.sfmc-tooltip') ?? [];
+                hasOpen =
+                    Boolean(editor.state.completionActive) || [...boxes].some((box) => !box.hidden);
+            },
+            { capture: true },
+        );
+        mount.addEventListener('keydown', (event) => {
+            if (!(hasOpen && event.key === 'Escape')) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+        });
+    }
+
+    /**
+     * Shows the message of the details in the code editor of the form, to read: with its
+     * colours and explanations, to be marked and copied, not to be changed. The editor is
+     * loaded for this; until it is there, and when it cannot be had, the text stays as it is.
+     *
+     * @param {Element|undefined} cell where the details show the message
+     * @param {unknown} text the message
+     */
+    async function codeView(cell, text) {
+        if (!cell || typeof text !== 'string' || !text) {
+            return;
+        }
+        const mount = make('div', 'code-view');
+        try {
+            await loadEditor();
+            // the details were left meanwhile
+            if (!cell.isConnected) {
+                return;
+            }
+            const plain = [...cell.children];
+            cell.append(mount);
+            const editor = new globalThis.CodeMirror(mount, {
+                value: text,
+                mode: EDITOR_MODE,
+                lineNumbers: true,
+                lineWrapping: true,
+                readOnly: true,
+                // all of the text is drawn: the editor is as tall as it, up to what the
+                // stylesheet allows
+                viewportMargin: Infinity,
+                extraKeys: {
+                    // left to the browser: on to the next button, and out of the panel
+                    Tab: false,
+                    'Shift-Tab': false,
+                    Esc: false,
+                },
+            });
+            // readOnly only stops typing: a suggestion or a quick fix that is clicked changes
+            // the text through the editor's API, which is refused here
+            editor.on('beforeChange', (_editor, change) => change.cancel());
+            const typing = editor.getInputField();
+            typing.setAttribute('aria-label', LABELS.get('content.message'));
+            typing.setAttribute('aria-readonly', 'true');
+            guardEscape(mount, editor);
+            for (const item of plain) {
+                item.remove();
+            }
+        } catch (ex) {
+            mount.remove();
+            // eslint-disable-next-line no-console -- the only trace of why the message is plain text
+            console.warn(`${MADE_BY}: the code editor for the message could not be loaded`, ex);
+        }
+    }
+
     /**
      * Puts a code editor in the place of the field a message is typed into: with colours for
      * AMPscript, suggestions, explanations and underlined mistakes, as in Content Builder. The
@@ -1937,9 +2195,7 @@
         const mount = make('div', 'code');
         let editor;
         try {
-            for (const file of EDITOR_SCRIPTS) {
-                await load(file);
-            }
+            await loadEditor();
             // the form was left meanwhile, or the field cannot be changed
             if (!input.isConnected || input.disabled) {
                 return;
@@ -2001,27 +2257,7 @@
                 editor.focus();
             }
         });
-        // Escape closes an open list of suggestions or an open box of the editor (an
-        // explanation, quick fixes, parameter help), not the panel; the editor closes them
-        // itself, so what was open is noted before the key reaches it
-        let hasOpen = false;
-        mount.addEventListener(
-            'keydown',
-            () => {
-                const boxes = mount.closest('dialog')?.querySelectorAll('.sfmc-tooltip') ?? [];
-                hasOpen =
-                    Boolean(editor.state.completionActive) || [...boxes].some((box) => !box.hidden);
-            },
-            { capture: true },
-        );
-        mount.addEventListener('keydown', (event) => {
-            if (!(hasOpen && event.key === 'Escape')) {
-                return;
-            }
-
-            event.preventDefault();
-            event.stopPropagation();
-        });
+        guardEscape(mount, editor);
         const isFocused = document.activeElement === input;
         input.classList.add(`${NAME}-coded`);
         // still reachable for the form's check, no stop for the Tab key
@@ -2628,22 +2864,15 @@
             inputs
                 .get(boxes.at(-1).path)
                 .closest(`.${NAME}-field`)
-                .after(
-                    make(
-                        'p',
-                        'account-note',
-                        'Link shortening is switched off for this account (Setup > MobileConnect).',
-                    ),
-                );
+                .after(accountNote('Link shortening is switched off for this account (', ').'));
         }
         if (message && account.isBlockedOut === true) {
             message
                 .closest(`.${NAME}-field`)
                 .before(
-                    make(
-                        'p',
-                        'account-note',
-                        'This account has a send blockout window (Setup > MobileConnect); messages may be held back during it.',
+                    accountNote(
+                        'This account has a send blockout window (',
+                        '); messages may be held back during it.',
                     ),
                 );
         }
@@ -2668,6 +2897,7 @@
         const number = ++forms;
         for (const [index, spec] of kind.fields.entries()) {
             const { row, input } = field(
+                kind,
                 spec,
                 `${NAME}-list-${number}-${index}`,
                 !loaded,
@@ -2685,8 +2915,11 @@
                 ? value === undefined || typeof value === 'boolean'
                 : value === undefined || value === null || typeof value !== 'object';
             if (!isHeld) {
-                input.disabled = true;
-                input.title = 'This value cannot be changed here.';
+                // also the field that is on show in its place, if one is
+                for (const fixed of [input, faces.get(input) ?? input]) {
+                    fixed.disabled = true;
+                    fixed.title = 'This value cannot be changed here.';
+                }
             } else if (isTick) {
                 input.checked = value === true;
             } else {
@@ -2873,9 +3106,13 @@
         if (coded) {
             point();
         }
-        for (const { path, isSaid } of kind.fields) {
+        for (const { path, isSaid, input } of kind.fields) {
             if (isSaid) {
                 showTexts(shown, path, valueAt(definition, path));
+            }
+            // the message of an SMS, as the form shows it
+            if (input === 'textarea') {
+                codeView(cellOf(path), valueAt(definition, path));
             }
         }
     }

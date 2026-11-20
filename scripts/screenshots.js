@@ -682,7 +682,8 @@ async function openList(page, name) {
     await page.$eval(field, (element) =>
         element.closest('.sfmc-ux-tools-transactional-field').scrollIntoView({ block: 'center' }),
     );
-    await page.click(field);
+    // the field of that name is out of sight; the one on show in its place takes the click
+    await page.click(`.sfmc-ux-tools-transactional-field:has([name="${name}"]) [role="combobox"]`);
     await expect(
         page,
         `the list below the field ${name}`,
@@ -729,7 +730,7 @@ async function smsForm(context) {
     );
     // the line of the field, the editor below it and the helpers below that
     const message = [
-        '.sfmc-ux-tools-transactional-field:has([name="content.message"])',
+        '.sfmc-ux-tools-transactional-field:has([name="sms_content.message"])',
         `${FORM} .sfmc-ux-tools-transactional-code`,
         `${FORM} .sfmc-ux-tools-transactional-tools`,
     ];
@@ -753,14 +754,14 @@ async function smsForm(context) {
         }),
     );
     await page.keyboard.press('Escape');
-    const links = `.sfmc-ux-tools-transactional-field:has([name="options.urlShortenerOptions.isLinkShorteningEnabled"])`;
+    const links = `.sfmc-ux-tools-transactional-field:has([name="sms_options.urlShortenerOptions.isLinkShorteningEnabled"])`;
     const note = `${FORM} .sfmc-ux-tools-transactional-account-note`;
     await expect(
         page,
         'the link boxes that cannot be ticked',
         (selector) =>
             document.querySelector(
-                'dialog form [name="options.urlShortenerOptions.isLinkShorteningEnabled"]',
+                'dialog form [name="sms_options.urlShortenerOptions.isLinkShorteningEnabled"]',
             )?.disabled && document.querySelector(selector),
         note,
     );
@@ -784,9 +785,9 @@ async function pushForm(context) {
     const page = await panelPage(context, 'push');
     await page.click(`${PANEL} .sfmc-ux-tools-transactional-new`);
     await expect(page, 'the form of a new push message', () =>
-        document.querySelector('dialog form [name="applicationId"]'),
+        document.querySelector('dialog form [name="push_applicationId"]'),
     );
-    const app = await openList(page, 'applicationId');
+    const app = await openList(page, 'push_applicationId');
     await expect(page, 'an app without push credentials', () =>
         document.querySelector('dialog form')?.textContent.includes('no push credentials set up'),
     );
@@ -799,7 +800,7 @@ async function pushForm(context) {
         }),
     );
     await page.keyboard.press('Escape');
-    const content = await openList(page, 'content.customerKey');
+    const content = await openList(page, 'push_content.customerKey');
     await expect(page, 'the folders of the contents', () =>
         document.querySelector('dialog form')?.textContent.includes('Demo Push Messages'),
     );

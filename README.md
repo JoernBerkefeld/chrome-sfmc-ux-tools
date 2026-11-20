@@ -316,7 +316,13 @@ The folder names of contents, the texts of a push content, the list for personal
     - What was read is kept for as long as the page is open. After a refresh, only messages that are new or were changed are read again.
     - Until all are read, sorting by these columns is switched off, and a search finds them only in the messages already read.
     - On the first opening of a list with several hundred messages, that many requests go out once.
-- **The details of one message:** click a row to see everything Marketing Cloud stores for it, with plain labels such as **Key**, **Message** or **Code**. Point at a label to see the name of the field in the API. For a push message the name of its app and of its content stands next to their IDs. **← All … messages** takes you back.
+- **The details of one message:** click a row to see everything Marketing Cloud stores for it, with plain labels such as **Key**, **Message** or **Code**. Point at a label to see the name of the field in the API. **← All … messages** takes you back.
+    - **Names first:** for a push message, the name of its app and of its content comes first, and the ID or key after it in small grey letters. The same goes for the content of an OTT message. If the name is not known, only the ID or key is shown.
+    - **The text of an SMS is shown in the code editor**, as in the form, but only to read:
+        - It has the same colours, and explains a function when you point at it.
+        - You can mark and copy the text. You cannot change it there; use **Edit** for that.
+        - It is as tall as the text, up to a limit; a longer text scrolls.
+        - If the editor cannot be loaded, the text is shown as plain text, as before.
 
     ![The details of a made-up push message: its app by name with a link to its settings, the title, subtitle and message of its content, and its two custom keys with their values](images/push-details.png)
 
@@ -331,6 +337,7 @@ The folder names of contents, the texts of a push content, the list for personal
     - **SMS:** name, key, description, status, the text of the message, the code and keyword it is sent with, the country code of a short code, and whether the recipient is added or updated as a subscriber.
     - **Push:** name, key, description, status, the app, the custom keys of that app, the content (the customer key of the push message in Content Builder), sound and badge.
     - **OTT:** name, key, description, status, the sender (WhatsApp and its phone number) and the content.
+    - **No saved logins in these forms:** the fields have names that password managers do not take for a login or a person's name, and the browser is asked not to fill them in.
 - **The text of an SMS is written in a code editor**, like the code view of Content Builder:
 
     ![The message of a made-up SMS in the code editor, with %%FirstName%% in colour; below it the person button, the line "43 characters · length depends on personalization" and the open list with FirstName, City and FavouriteColour](images/sms-editor.png)
@@ -356,6 +363,7 @@ The folder names of contents, the texts of a push content, the list for personal
     - A message that cannot be changed in the form has no helpers.
 - **The key follows the name** while you type, as with [readable keys](#readable-keys) elsewhere, until you type a key yourself. The **Readable keys** option switches this off.
 - **SMS code and keyword are two lists:** choose the code first; the keyword list then shows only the keywords of that code. A code reads like `8850 · NL · short code · SHARED`.
+    - Both lists are in alphabetical order, the same every time.
     - If Marketing Cloud's lists cannot be read, both are plain text fields.
     - When you edit a message whose code or keyword is not in the lists, it stays chosen and is marked as not found.
     - The lists show what Marketing Cloud returns in its first answer, which is up to 50 codes and 50 keywords.
@@ -363,12 +371,18 @@ The folder names of contents, the texts of a push content, the list for personal
         - Reloading reads the codes and keywords again and keeps what you chose. It sends nothing and does not count as a change.
         - If they cannot be read, the lists stay as they were and a line says so.
 - **App and content of a push message are chosen from a list** that opens below the field:
+    - **The field shows the name**, and a small line below it shows the ID or key. The ID or key is what is sent, as before.
     - **It opens on every click** into the field, also when the field already holds something, and shows all entries.
     - **Every entry is shown in full length:** its name and, beside it, its ID or key. A long one continues on the next line.
     - **Type to narrow it down:** the list keeps the entries whose name or ID contains what you typed.
     - **Keys:** the arrow keys move through the list, **Enter** takes the marked entry, **Esc** closes the list and leaves the form open.
+    - **What you type counts like this:**
+        - An ID or key that is in the list stands for that entry. When you leave the field, it shows the name.
+        - A full name that exactly one entry has stands for that entry, in any upper or lower case.
+        - Anything else is sent exactly as you typed it, also a name that two entries share. The line below then says "not in the list – sent as typed".
     - **The field still takes any ID or key you type**, also one that is not in the list.
-    - **App:** the list has the apps of the business unit, sorted by name. The name of the app you chose stands under the field.
+    - **A message whose ID or key is not in the list keeps it:** the field shows the ID or key itself, and nothing is sent unless you change it.
+    - **App:** the list has the apps of the business unit, sorted by name.
 
         ![The open list of the App field: "Demo App" can be chosen, "Demo App (test)" is greyed out with "no push credentials set up"](images/push-app.png)
 
@@ -384,7 +398,14 @@ The folder names of contents, the texts of a push content, the list for personal
         - Typing the name of a folder keeps the messages in that folder.
         - If the folders cannot be read, the entries are shown without them.
         - Messages written for SMS or for in-app are left out: on an account with push messages, every transactional one held a message written for push.
-    - If Marketing Cloud's list cannot be read, the field is a plain text field.
+    - If Marketing Cloud's list cannot be read, the field is a plain text field that shows and takes the ID or key.
+- **The content of an OTT message is chosen from a list too**, which works like the one of push: name in the field, customer key below it, folder, date and author in each entry, and any typed key is still taken.
+    - **Which messages it offers:** the mobile messages of Content Builder that are written for something other than push, SMS or in-app. Each entry says what it is written for.
+    - **Why not "WhatsApp messages":** we do not know how Content Builder marks a WhatsApp message. On a real account we only saw messages for push, SMS and in-app.
+    - **Not verified:** that the content of an OTT message is a mobile message of Content Builder at all is an assumption.
+    - If there is no such message, the list says so, and you type the customer key.
+    - The texts of the content, custom keys and the check for push credentials belong to push only.
+    - **Sender ID stays a plain field.** Marketing Cloud's list of WhatsApp senders was empty on our account, so we do not know what an entry looks like and built nothing on a guess.
 - **Custom keys of a push message:** below the **App** field, the form has one text field for every custom key of the app you chose.
     - Marketing Cloud only accepts custom keys that the chosen app defines.
     - Choose another app and the fields change to the keys of that app. An app without custom keys has none.
@@ -408,9 +429,10 @@ The folder names of contents, the texts of a push content, the list for personal
     ![The two boxes for link shortening and tracking, greyed out, with the line "Link shortening is switched off for this account (Setup > MobileConnect)."](images/sms-links.png)
 
     - **Switched off for the account:** if your account has "Salesforce Link Shortening and Tracking" switched off in MobileConnect's setup, the two boxes cannot be ticked, and a line below them says so.
+    - **Setup > MobileConnect** in that line is a link. It opens MobileConnect's administration in a new tab, so the form stays open.
     - A box that is already ticked on a message stays usable, so that you can untick it.
     - A box that cannot be ticked changes nothing in what is sent.
-- **Send blockout window:** if your account has a send blockout window in MobileConnect's setup, the SMS form says above the message that messages may be held back during it. There is nothing to fill in.
+- **Send blockout window:** if your account has a send blockout window in MobileConnect's setup, the SMS form says above the message that messages may be held back during it, with the same link to MobileConnect's administration. There is nothing to fill in.
 - **Where this comes from:** the panel reads the MobileConnect settings of the account once, when an SMS form opens, and again after **Refresh**. If they cannot be read, the form is as it would be without them.
 - **Change a message:** the details have an **Edit** button. It opens the same form, filled in. The key cannot be changed.
     - Only what you changed is sent. If you change nothing, nothing is sent.

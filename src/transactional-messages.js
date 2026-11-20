@@ -70,6 +70,7 @@
     const LISTING = `${NAME}-listing`;
     const SVG = 'http://www.w3.org/2000/svg';
     const REFRESH = 'Refresh';
+    const RELOAD_KEYWORDS = 'Reload keywords';
     // said in the list below a field, in place of entries
     const READING = 'reading …';
     const NOTHING_OFFERED = 'This business unit has nothing to choose from here.';
@@ -142,16 +143,18 @@
         parts.filter((part) => typeof part === 'string' && part).join(' · ');
     /**
      * Puts entries to choose from in the order of their names, whatever the case: nobody knows
-     * an app or a content by its id or key.
+     * an app or a content by its id or key. Entries of the same name follow each other by that
+     * id or key, so that the order is the same every time.
      *
-     * @param {{label: unknown}[]} entries entries of a list
-     * @returns {object[]} the same entries, by name
+     * @param {{label: unknown, value: unknown}[]} entries entries of a list
+     * @returns {object[]} the same entries, by name and then by value
      */
     const byName = (entries) =>
-        entries.toSorted((one, other) =>
-            String(one.label ?? '').localeCompare(String(other.label ?? ''), undefined, {
-                sensitivity: 'base',
-            }),
+        entries.toSorted(
+            (one, other) =>
+                String(one.label ?? '').localeCompare(String(other.label ?? ''), undefined, {
+                    sensitivity: 'base',
+                }) || String(one.value ?? '').localeCompare(String(other.value ?? '')),
         );
     // lists of the business unit that a field offers to choose from, each entry with the value
     // to send and the name to show for it
@@ -162,6 +165,8 @@
             read: (answer) =>
                 (answer.entry || []).map((item) => ({
                     value: item.code,
+                    // what the screen of the code in MobileConnect is found by
+                    id: item.id,
                     label: joined(
                         item.code,
                         item.countryCode,
@@ -180,6 +185,18 @@
                     label: item.keyword,
                     within: item.code?.code,
                 })),
+        },
+        // the settings of MobileConnect for this account: one answer, kept as a list of one
+        account: {
+            path: 'legacy/v1/beta/mobile/account/@default',
+            read: (answer) => [
+                {
+                    value: 'account',
+                    // "Salesforce Link Shortening and Tracking"
+                    isShortening: answer.optedInForSmslinktracking,
+                    isBlockedOut: answer.mobileBlackoutWindow?.isEnabled,
+                },
+            ],
         },
         apps: {
             path: 'push/v1/application',
@@ -277,6 +294,8 @@
                     label: 'Message',
                     input: 'textarea',
                     isRequired: true,
+                    // the account may hold messages back for a while
+                    isHeldBack: true,
                 },
                 {
                     path: 'subscriptions.shortCode',
@@ -316,12 +335,15 @@
                     input: 'checkbox',
                     // a new message does not name it unless it is ticked
                     isOptional: true,
+                    // works only when the account has link shortening switched on
+                    isShortened: true,
                 },
                 {
                     path: 'options.urlShortenerOptions.isSubscriberTrackingEnabled',
                     label: 'Track the shortened links by subscriber',
                     input: 'checkbox',
                     isOptional: true,
+                    isShortened: true,
                 },
             ],
             // what the list shows of a message that only its details hold
@@ -429,6 +451,9 @@
     const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/i;
     // what a list is searched by
     const SEARCHED = ['name', 'definitionKey'];
+    // the statuses a list can be narrowed to, in the order they are offered; any other one that
+    // occurs follows them by its name
+    const STATUSES = ['Active', 'Inactive', 'Draft'];
     // what the details call a field of a definition, by its path; a field that is not in here
     // is shown under the name the API has for it
     const LABELS = new Map([
@@ -464,12 +489,12 @@
     // the lists as they were read, by their kind: {rows, readAt}. A kind that is not in here is
     // read when its list is shown next
     const lists = new Map();
-    // what the user searches and sorts each list by and the page of it on show, counted from 0,
-    // kept while the page lives
+    // what the user searches and sorts each list by, the status it is narrowed to (none for all)
+    // and the page of it on show, counted from 0, kept while the page lives
     const views = new Map(
         KINDS.map((kind) => [
             kind.id,
-            { search: '', field: undefined, isReversed: false, page: 0 },
+            { search: '', status: '', field: undefined, isReversed: false, page: 0 },
         ]),
     );
     // what was read of single messages, by their kind and then by their key: {definition,
@@ -718,6 +743,63 @@
             offers.get(name)?.entries?.find((entry) => entry.value === value)?.label || undefined
         );
     }
+
+    /**
+     * Picks the custom keys a push message holds that its app does not define. Marketing Cloud
+     * refuses to save a message with such a key, so one that is stored was taken off the app
+     * after the message was saved. Nothing is claimed about an app that is not known.
+     *
+     * @param {unknown} stored the custom keys of the message, as the definition holds them
+     * @param {unknown} appId the id of the app
+     * @returns {string[]} the names of those keys, each once; none when the list of apps was not read or does not hold the app
+     */
+    function strayKeys(stored, appId) {
+        const keys = offers.get('apps')?.entries?.find((entry) => entry.value === appId)?.keys;
+        if (!keys || !Array.isArray(stored)) {
+            return [];
+        }
+        return [
+            ...new Set(
+                stored
+                    .map((item) => item?.key)
+                    .filter((key) => typeof key === 'string' && !keys.includes(key)),
+            ),
+        ];
+    }
+
+    /**
+     * Builds a link to a screen of Marketing Cloud. It opens in another tab, so that a form
+     * that is open is not lost.
+     *
+     * @param {string} text what the link says
+     * @param {string} screen the app and its screen, as the address of the page names them
+     * @param {unknown} id the id of what the screen shows
+     * @returns {HTMLAnchorElement} the link
+     */
+    function screenLink(text, screen, id) {
+        const link = make('a', 'setup', text);
+        link.href = new URL(
+            `/cloud/#app/${screen}/${encodeURIComponent(String(id))}`,
+            location.origin,
+        ).href;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        return link;
+    }
+    // the settings of an app, where its custom keys are set up
+    const appLink = (id) =>
+        screenLink(
+            'Open this app’s settings in MobilePush',
+            'MobilePush/mobilepush/%23!/administration/app',
+            id,
+        );
+    // a code of MobileConnect, where its keywords are; by the id the list of codes has for it
+    const codeLink = (id) =>
+        screenLink(
+            'Open this code in MobileConnect',
+            'MobileConnect/MobileConnectFuel3/%23!/administration/code',
+            id,
+        );
 
     /**
      * Builds the place that names what a field holds, which stays empty until the list is read
@@ -1472,7 +1554,7 @@
     async function chooseBoth(inputs, first, second) {
         const typed = [inputs.get(first.path), inputs.get(second.path)];
         const isShown = () => typed[0].isConnected;
-        const [all, dependents] = await Promise.all([
+        let [all, dependents] = await Promise.all([
             readOffers(first.choose, isShown),
             readOffers(second.choose, isShown),
         ]);
@@ -1510,8 +1592,65 @@
         };
         offer(chosen, `Choose a ${one} …`, all, stored[0], stored[0]);
         offerDependents(stored[1]);
+        // below the keywords: the way to the code that is chosen, where a keyword can be added,
+        // and what reads both lists again afterwards
+        const tools = make('div', 'code-tools');
+        let link = codeLink();
+        const help = make('span', 'help', 'Add a keyword there, then reload the keywords.');
+        const point = () => {
+            const id = all.find((entry) => entry.value === chosen.value)?.id;
+            const next = codeLink(id);
+            next.hidden = !(typeof id === 'string' && id);
+            link.replaceWith(next);
+            link = next;
+            help.hidden = next.hidden;
+        };
+        const reload = make('button', 'refresh');
+        reload.type = 'button';
+        reload.title = RELOAD_KEYWORDS;
+        reload.setAttribute('aria-label', RELOAD_KEYWORDS);
+        reload.append(reloadSign());
+        const failed = make('span', 'reload-failed');
+        failed.hidden = true;
+        reload.addEventListener('click', async () => {
+            reload.disabled = true;
+            failed.hidden = true;
+            const names = [first.choose, second.choose];
+            // not from what was kept, which is replaced by what comes
+            const kept = names.map((name) => offers.get(name));
+            for (const name of names) {
+                offers.delete(name);
+            }
+            const fresh = await Promise.all(
+                names.map((name) => readOffers(name, () => chosen.isConnected)),
+            );
+            if (fresh.every((entries) => entries?.length)) {
+                [all, dependents] = fresh;
+                const keyword = dependent.value;
+                offer(chosen, `Choose a ${one} …`, all, stored[0], chosen.value);
+                offerDependents(keyword);
+                point();
+            } else {
+                // a list that could not be read stays the one it was, for everyone
+                for (const [index, name] of names.entries()) {
+                    const [read, old] = [fresh.at(index), kept.at(index)];
+                    if (!read && old && !offers.has(name)) {
+                        offers.set(name, old);
+                    }
+                }
+                failed.textContent = 'The lists could not be read again. They are as they were.';
+                failed.hidden = false;
+            }
+            reload.disabled = false;
+        });
+        tools.append(link, help, reload, failed);
+        dependent.closest(`.${NAME}-field`).after(tools);
+        point();
         // another code: the keyword stays only when the new code has it too
-        chosen.addEventListener('change', () => offerDependents(dependent.value));
+        chosen.addEventListener('change', () => {
+            offerDependents(dependent.value);
+            point();
+        });
     }
 
     /**
@@ -1591,13 +1730,14 @@
      * one for every other key of the app that is chosen. They are no fields of the kind of
      * message: what they change is told by what each of them was filled with, and sent as the
      * whole list of the definition, in which everything that was not touched stays as it is.
-     * One case apart: Marketing Cloud refuses a key the app does not define, so once another
-     * app than the one of the definition is chosen, and that app is known, the stored keys it
-     * does not list are left out of what is sent, and their fields say so.
+     * One case apart: Marketing Cloud refuses a key the app does not define, so the stored keys
+     * that the chosen app does not list, when that app is known, have no field. They are
+     * printed in a box that says they are removed when the message is saved, and left out of
+     * what is sent, which counts as a change.
      *
      * @param {HTMLInputElement} app the field that holds the id of the app
      * @param {object} [loaded] the definition the form was filled from; none for a new one
-     * @returns {{element: HTMLElement, isChanged: () => boolean, built: () => object[]}} the fields, whether one of them was changed, and the list to send
+     * @returns {{element: HTMLElement, isChanged: () => boolean, built: () => object[], draw: () => void, printed: () => string[]}} the fields, whether one of them was changed, the list to send, what draws them again and the keys the box says are removed
      */
     function customKeys(app, loaded) {
         const element = make('div', 'custom-keys');
@@ -1607,16 +1747,16 @@
         const isHeld = kept === undefined || kept === null || Array.isArray(kept);
         // the fields by their key: {input, filled, from}, the latter the stored entry, if any
         const fields = new Map();
-        // the app the definition has: only under another one is something stored left out
-        const first = app.value.trim();
         // the keys of the app that is chosen; none when the app is not known
         const listed = () =>
             offers.get('apps')?.entries?.find((entry) => entry.value === app.value.trim())?.keys;
-        // whether a stored entry is left out: its key is none of another, known app
-        const isLeft = (item) => {
-            const keys = loaded && app.value.trim() !== first ? listed() : undefined;
-            return Boolean(keys) && typeof item?.key === 'string' && !keys.includes(item.key);
-        };
+        // the stored keys that the chosen app does not define, when it is known
+        const gone = () => (isHeld ? strayKeys(stored, app.value.trim()) : []);
+        // whether a stored entry is left out: its key is one of those
+        const isLeft = (item) => gone().includes(item?.key);
+        // the box that prints what is left out, and the keys it names
+        const box = make('div', 'keys-gone');
+        let printed = [];
         const add = (key, from) => {
             const row = make('label', 'field');
             const input = make('input');
@@ -1631,8 +1771,7 @@
                 input.value = value === undefined || value === null ? '' : String(value);
             }
             row.append(make('span', 'label', key), input);
-            const note = make('span', 'help', 'Not a custom key of this app, will not be sent.');
-            fields.set(key, { row, input, filled: input.value.trim(), from, isFixed, note });
+            fields.set(key, { row, input, filled: input.value.trim(), from, isFixed });
         };
         for (const item of stored) {
             // an entry without a key, or with one that came before, has no field and stays
@@ -1641,9 +1780,10 @@
             }
         }
         const title = make('span', 'help', 'Custom keys of the app');
-        // the fields on show: those of what is stored, then those of the app that is chosen
+        // the fields on show: those of what is stored and stays, then those of the app that is
+        // chosen
         const shown = () => [
-            ...fields.values().filter((item) => item.from),
+            ...fields.values().filter((item) => item.from && !isLeft(item.from)),
             ...(listed() ?? [])
                 .filter((key) => !fields.get(key)?.from)
                 .map((key) => {
@@ -1657,23 +1797,41 @@
         const draw = () => {
             const items = isHeld ? shown() : [];
             const rows = items.map((item) => item.row);
-            for (const { row, input, from, isFixed, note } of items) {
-                const isOut = isLeft(from);
-                input.disabled = isFixed || isOut;
-                if (isOut) {
-                    row.append(note);
-                } else {
-                    note.remove();
+            printed = gone();
+            if (printed.length > 0) {
+                // every entry that is removed, also a second one of the same key
+                const list = make('ul', 'keys-gone-list');
+                for (const item of stored) {
+                    if (!isLeft(item)) {
+                        continue;
+                    }
+
+                    const { key, value } = item;
+                    const text =
+                        typeof value === 'object' && value !== null
+                            ? JSON.stringify(value)
+                            : String(value ?? '');
+                    list.append(make('li', undefined, text ? `${key}: ${text}` : key));
                 }
+                box.replaceChildren(
+                    make(
+                        'strong',
+                        undefined,
+                        'These custom keys are not set up on the app. They will be removed when you save this message.',
+                    ),
+                    list,
+                    appLink(app.value.trim()),
+                );
             }
+            const parts = [title, ...(printed.length > 0 ? [box] : []), ...rows];
             // fields that stay keep their place, and the cursor in them
             if (
-                rows.length !== element.children.length - 1 ||
-                rows.some((row) => row.parentElement !== element)
+                parts.length !== element.children.length ||
+                parts.some((part, index) => element.children[index] !== part)
             ) {
-                element.replaceChildren(title, ...rows);
+                element.replaceChildren(...parts);
             }
-            element.hidden = rows.length === 0;
+            element.hidden = parts.length === 1;
         };
         const drawLater = async () => {
             await readOffers('apps', () => app.isConnected);
@@ -1685,13 +1843,13 @@
         drawLater();
         const changed = () =>
             (isHeld ? shown() : []).filter(
-                ({ input, filled, from, isFixed }) =>
-                    !isFixed && !isLeft(from) && input.value.trim() !== filled,
+                ({ input, filled, isFixed }) => !isFixed && input.value.trim() !== filled,
             );
         return {
             element,
-            isChanged: () =>
-                changed().length > 0 || (isHeld && stored.some((item) => isLeft(item))),
+            draw,
+            printed: () => printed,
+            isChanged: () => changed().length > 0 || gone().length > 0,
             built: () => {
                 const touched = new Set(changed());
                 const sent = [];
@@ -2264,7 +2422,7 @@
      * @param {HTMLElement} says where a refusal is shown
      * @param {object} loaded the definition the form was filled from
      * @param {Map.<string, string|boolean>} filled what each field held when the form was filled
-     * @param {{isChanged: () => boolean, built: () => object[]}} [keys] the custom keys of the form, if its kind has them
+     * @param {{isChanged: () => boolean, built: () => object[], draw: () => void, printed: () => string[]}} [keys] the custom keys of the form, if its kind has them
      */
     async function save(kind, form, inputs, says, loaded, filled, keys) {
         const buttons = [...form.querySelectorAll('button')];
@@ -2273,19 +2431,25 @@
             return;
         }
         const key = loaded.definitionKey;
-        const { changes, paths } = toChanges(kind.fields, inputs, loaded, filled);
-        if (keys?.isChanged()) {
-            // into the options that go out anyway, or into a copy of those that are stored: the
-            // list is sent whole, next to everything else the part holds
-            const { options } = loaded;
-            changes.options ??=
-                typeof options === 'object' && options !== null ? { ...options } : {};
-            changes.options.customKeys = keys.built();
-            paths.push(CUSTOM_KEYS);
-        }
+        const collect = () => {
+            const found = toChanges(kind.fields, inputs, loaded, filled);
+            if (keys?.isChanged()) {
+                // into the options that go out anyway, or into a copy of those that are stored:
+                // the list is sent whole, next to everything else the part holds
+                const { options } = loaded;
+                found.changes.options ??=
+                    typeof options === 'object' && options !== null ? { ...options } : {};
+                found.changes.options.customKeys = keys.built();
+                found.paths.push(CUSTOM_KEYS);
+            }
+            return found;
+        };
+        let { changes, paths } = collect();
+        // the custom keys the form says are removed by this save
+        const removed = keys?.printed() ?? [];
         // what an earlier try said no longer holds
         says.hidden = true;
-        if (paths.length === 0) {
+        if (paths.length === 0 && removed.length === 0) {
             says.textContent = 'Nothing was changed, so nothing was sent.';
             says.hidden = false;
             return;
@@ -2298,6 +2462,32 @@
         // how far it got: the check before, the request itself, the look at what came of it
         let step = 'check';
         try {
+            if (removed.length > 0) {
+                // the list of apps is as old as the page: a key may have been set up on the app
+                // since. Nothing is removed on the word of an old list, so it is read again,
+                // and kept for everyone else
+                const old = offers.get('apps');
+                offers.delete('apps');
+                const fresh = await readOffers('apps', () => true);
+                if (!fresh && old && !offers.has('apps')) {
+                    offers.set('apps', old);
+                }
+                if (mine !== asked) {
+                    return;
+                }
+                if (!fresh) {
+                    throw new Error(
+                        'the custom keys of the app could not be checked, so nothing was removed. Try again.',
+                    );
+                }
+                keys.draw();
+                if (JSON.stringify(keys.printed()) !== JSON.stringify(removed)) {
+                    throw new Error(
+                        'the custom keys of the app have changed. Check the form and save again.',
+                    );
+                }
+                ({ changes, paths } = collect());
+            }
             // as before a delete: the request names only the key, which another business unit
             // may hold too, and someone else may have changed the message since it was read
             const current = await readDefinition(kind, key);
@@ -2370,6 +2560,59 @@
             for (const button of buttons) {
                 button.disabled = false;
             }
+        }
+    }
+
+    /**
+     * Fits a form to the settings of MobileConnect for the account, once they are read: without
+     * link shortening the boxes that ask for it are switched off, except one that was ticked
+     * when the form was filled, which can still be unticked; and a send blockout window is
+     * mentioned next to the message. Nothing of this changes what is sent. Settings that cannot
+     * be read, or that say something else than yes or no, leave the form as it is.
+     *
+     * @param {object[]} specs the fields of the kind of message
+     * @param {Map.<string, HTMLElement>} inputs the fields of the form by their path
+     * @param {Map.<string, string|boolean>} filled what each field held when the form was filled
+     */
+    async function accountSettings(specs, inputs, filled) {
+        const boxes = specs.filter((spec) => spec.isShortened);
+        const message = inputs.get(specs.find((spec) => spec.isHeldBack)?.path);
+        const [first = message] = boxes.map((spec) => inputs.get(spec.path));
+        if (!first) {
+            return;
+        }
+        const isShown = () => first.isConnected;
+        const [account] = (await readOffers('account', isShown)) ?? [];
+        // an answer that comes after the form was left changes nothing
+        if (!account || !isShown()) {
+            return;
+        }
+        if (account.isShortening === false && boxes.length > 0) {
+            for (const { path } of boxes) {
+                const box = inputs.get(path);
+                box.disabled ||= !box.checked && filled.get(path) !== true;
+            }
+            inputs
+                .get(boxes.at(-1).path)
+                .closest(`.${NAME}-field`)
+                .after(
+                    make(
+                        'p',
+                        'account-note',
+                        'Link shortening is switched off for this account (Setup > MobileConnect).',
+                    ),
+                );
+        }
+        if (message && account.isBlockedOut === true) {
+            message
+                .closest(`.${NAME}-field`)
+                .before(
+                    make(
+                        'p',
+                        'account-note',
+                        'This account has a send blockout window (Setup > MobileConnect); messages may be held back during it.',
+                    ),
+                );
         }
     }
 
@@ -2490,6 +2733,7 @@
                 second,
             );
         }
+        accountSettings(kind.fields, inputs, filled);
         fill(
             make(
                 'h3',
@@ -2533,7 +2777,69 @@
             kind.fields.filter((spec) => spec.isNamed).map((spec) => [spec.path, spec.suggest]),
         );
         const shown = show(definition, named);
-        fill(...(notice ? [make('p', 'notice', notice)] : []), actions, shown);
+        // where the details show the value of a field, by the path of the field
+        const cellOf = (path) =>
+            [...shown.querySelectorAll('dt')].find((item) => item.title === path)
+                ?.nextElementSibling;
+        // says which custom keys the app no longer defines, once the list of apps tells
+        const warning = make('div', 'keys-warning');
+        warning.hidden = true;
+        fill(...(notice ? [make('p', 'notice', notice)] : []), actions, warning, shown);
+        const warn = async () => {
+            await readOffers('apps', () => warning.isConnected);
+            const stored = valueAt(definition, CUSTOM_KEYS);
+            const stray = strayKeys(stored, definition.applicationId);
+            if (stray.length === 0) {
+                return;
+            }
+            warning.append(
+                make(
+                    'strong',
+                    undefined,
+                    `Custom keys the app does not define: ${stray.join(', ')}`,
+                ),
+                make(
+                    'p',
+                    undefined,
+                    'Marketing Cloud no longer accepts them for this app. Saving this message here removes them. To keep them, add them to the app first.',
+                ),
+                appLink(definition.applicationId),
+            );
+            warning.hidden = false;
+            // the rows of those keys, which stand in the order of what is stored
+            const rows = [...(cellOf(CUSTOM_KEYS)?.querySelectorAll(':scope > dl > dt') ?? [])];
+            for (const [index, item] of stored.entries()) {
+                const row = rows.at(index);
+                if (!row || !stray.includes(item?.key)) {
+                    continue;
+                }
+
+                row.classList.add(`${NAME}-stray-key`);
+                row.nextElementSibling.classList.add(`${NAME}-stray-key`);
+                row.nextElementSibling.append(make('span', 'stray-note', 'not defined on the app'));
+            }
+        };
+        const keyed = kind.fields.find((spec) => spec.isKeyed)?.path;
+        if (keyed) {
+            const appId = valueAt(definition, keyed);
+            if (typeof appId === 'string' && appId) {
+                cellOf(keyed)?.append(appLink(appId));
+            }
+            warn();
+        }
+        // the code of an SMS message gets a link once the list of codes tells its id
+        const coded = kind.fields.find((spec) => spec.choose === 'codes')?.path;
+        const point = async () => {
+            const entries = await readOffers('codes', () => shown.isConnected);
+            const code = valueAt(definition, coded);
+            const id = entries?.find((entry) => entry.value === code)?.id;
+            if (typeof id === 'string' && id) {
+                cellOf(coded)?.append(codeLink(id));
+            }
+        };
+        if (coded) {
+            point();
+        }
         for (const { path, isSaid } of kind.fields) {
             if (isSaid) {
                 showTexts(shown, path, valueAt(definition, path));
@@ -2617,7 +2923,13 @@
                 cell.textContent = row?.[column.field] ?? '';
             }
         }
+        // the column of the app whose custom keys a message holds
+        const keyed = kind.fields?.find((spec) => spec.isKeyed)?.path;
         const fill = () => {
+            const definition = detailsOf(kind, row);
+            const stray = keyed
+                ? strayKeys(valueAt(definition, CUSTOM_KEYS), valueAt(definition, keyed))
+                : [];
             for (const [column, cell] of late) {
                 const { text, name = text } = detail(kind, row, column);
                 cell.textContent = name;
@@ -2625,7 +2937,18 @@
                 if (text && column.names) {
                     cell.title = text;
                 }
+                if (column.field !== keyed || stray.length === 0) {
+                    continue;
+                }
+
+                const says = `Custom keys the app does not define: ${stray.join(', ')}`;
+                const sign = make('span', 'warn', '⚠');
+                sign.setAttribute('role', 'img');
+                sign.setAttribute('aria-label', says);
+                sign.title = says;
+                cell.prepend(sign, ' ');
             }
+            element.classList.toggle(`${NAME}-stray`, stray.length > 0);
         };
         fill();
         const key = row?.definitionKey;
@@ -2647,19 +2970,21 @@
     }
 
     /**
-     * Picks the definitions that match what is searched for, in the order asked for. A row is
-     * also found by what the columns of its kind hold and show, once its details are read.
+     * Picks the definitions of the status asked for that match what is searched for, in the order
+     * asked for. A row is also found by what the columns of its kind hold and show, once its
+     * details are read.
      *
      * @param {{id: string}} kind kind of message
-     * @param {object[]} rows the definitions as they were read
-     * @param {{search: string, isReversed: boolean}} view what the user searches by, and which way round the order is
+     * @param {object[]} all the definitions as they were read
+     * @param {{search: string, status: string, isReversed: boolean}} view what the user searches by, the status to show (none for all), and which way round the order is
      * @param {object[]} columns the columns of the list
      * @param {object} [column] the column to sort by; none for the order of the list
      * @returns {object[]} the definitions to show
      */
-    function listed(kind, rows, { search, isReversed }, columns, column) {
+    function listed(kind, all, { search, status, isReversed }, columns, column) {
         const wanted = search.trim().toLowerCase();
         const late = columns.filter((item) => item.isDetail);
+        const rows = status ? all.filter((row) => row?.status === status) : all;
         const found = wanted
             ? rows.filter((row) =>
                   [
@@ -2686,15 +3011,16 @@
     }
 
     /**
-     * Builds the table of definitions, with the field to search it by and the buttons to page
-     * through it. Searching, sorting and paging redraw its rows and the line below them only, so
+     * Builds the table of definitions, with the field to search it by, the list of statuses to
+     * narrow it to and the buttons to page through it. Searching, choosing a status, sorting and
+     * paging redraw its rows and the line below them only, so
      * that the field being typed in stays as it is. The details that the list did not bring are
      * read while the table is on show, a few at a time, and fill in row by row.
      *
      * @param {{id: string, title: string, columns?: object[]}} kind kind of message
      * @param {object[]} rows the definitions
      * @param {() => boolean} isShown false once the panel shows something else or is closed
-     * @returns {{search: HTMLInputElement, progress: HTMLElement, content: HTMLElement[]}} the search field, the place that says how many details are read, and the table with what belongs below it
+     * @returns {{search: HTMLInputElement, status: HTMLSelectElement, progress: HTMLElement, content: HTMLElement[]}} the search field, the list of statuses, the place that says how many details are read, and the table with what belongs below it
      */
     function table(kind, rows, isShown) {
         const view = views.get(kind.id);
@@ -2704,7 +3030,7 @@
         const element = make('table', 'list');
         const head = element.createTHead().insertRow();
         const content = element.createTBody();
-        const none = make('p', 'hint', 'No message matches what you search for.');
+        const none = make('p', 'hint');
         const pager = make('div', 'pager');
         const previous = make('button', 'previous', '← Previous');
         const next = make('button', 'next', 'Next →');
@@ -2767,6 +3093,9 @@
                 [...content.rows].find((item) => item.dataset.key === used)?.focus();
             }
             none.hidden = shown.length > 0;
+            none.textContent = view.status
+                ? `No message with the status ${view.status} matches what you search for.`
+                : 'No message matches what you search for.';
             pager.hidden = last === 0;
             range.textContent = `${from + 1}–${from + shown.length} of ${found.length}`;
             previous.disabled = view.page === 0;
@@ -2870,6 +3199,34 @@
             view.page = 0;
             draw();
         });
+        // how many messages have each status that occurs, the known ones first
+        const counts = new Map();
+        for (const { status: name } of rows) {
+            if (typeof name === 'string' && name) {
+                counts.set(name, (counts.get(name) || 0) + 1);
+            }
+        }
+        const status = make('select', 'status');
+        status.setAttribute('aria-label', 'Show by status');
+        status.append(
+            choice('', `All (${rows.length})`),
+            ...[
+                ...STATUSES.filter((name) => counts.has(name)),
+                ...counts
+                    .keys()
+                    .filter((name) => !STATUSES.includes(name))
+                    .toArray()
+                    .toSorted((one, other) => one.localeCompare(other)),
+            ].map((name) => choice(name, `${name} (${counts.get(name)})`)),
+        );
+        // a status that no message has any more is not asked for any longer
+        view.status = counts.has(view.status) ? view.status : '';
+        status.value = view.status;
+        status.addEventListener('change', () => {
+            view.status = status.value;
+            view.page = 0;
+            draw();
+        });
         const turn = (button, pages) => {
             button.type = 'button';
             button.addEventListener('click', () => {
@@ -2899,7 +3256,7 @@
         // the rows scroll under the names of their columns; what is around the table stays
         const scroll = make('div', 'rows');
         scroll.append(element);
-        return { search, progress, content: [scroll, none, pager] };
+        return { search, status, progress, content: [scroll, none, pager] };
     }
 
     /**
@@ -2947,8 +3304,8 @@
             return;
         }
         const mine = asked;
-        const { search, progress, content } = table(kind, rows, () => mine === asked);
-        bar.append(progress, search);
+        const { search, status, progress, content } = table(kind, rows, () => mine === asked);
+        bar.append(progress, search, status);
         fill(...said, bar, ...content);
         dialog.classList.add(LISTING);
     }

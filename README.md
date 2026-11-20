@@ -2,6 +2,8 @@
 
 A Chrome extension with small usability helpers for Salesforce Marketing Cloud Engagement, and for the content editor of Marketing Cloud Next.
 
+Brought to you by Jörn Berkefeld, the developer behind [SFMC DevTools (mcdev)](https://github.com/Accenture/sfmc-devtools).
+
 > Not affiliated with, endorsed by or supported by Salesforce.
 
 ## TL;DR
@@ -264,6 +266,11 @@ The folder names of contents, the texts of a push content, the list for personal
 - **A list per channel:** the panel that opens has the tabs **SMS**, **Push** and **OTT**. Each lists the messages of the business unit you are in.
     - **Columns:** name, key, status, and the dates a message was created and last changed, in your local date and time. SMS also shows **Code** and **Keyword**, push shows **App** and **Content** by their names.
     - **Search:** type into the search box to filter by name, key and the channel columns.
+    - **Show by status:** the list next to the search box shows only the messages of one status.
+        - It offers **All** and every status that occurs in the list, each with its number, such as "All (249)", "Active (237)", "Inactive (1)", "Draft (11)".
+        - It works together with search, sorting and the pages.
+        - Your choice is kept per tab, also when you open a message and come back or reopen the panel.
+        - The numbers are counted again when the list is read again. If no message has the chosen status any more, the list shows all.
     - **Sorting:** click a column heading; click again to turn the order round.
     - **Pages:** 50 messages per page, with **Previous** and **Next**.
     - **Only the rows scroll.** The column headings, the bar above the list and the page buttons below it stay in place.
@@ -280,6 +287,11 @@ The folder names of contents, the texts of a push content, the list for personal
 - **The details of one message:** click a row to see everything Marketing Cloud stores for it, with plain labels such as **Key**, **Message** or **Code**. Point at a label to see the name of the field in the API. For a push message the name of its app and of its content stands next to their IDs. **← All … messages** takes you back.
     - **What a push message says:** under the content key, the details show the **Title**, **Subtitle** and **Message** of the chosen content, read from Content Builder. They are shown as they are written there, AMPscript included, and cannot be changed here. A text that is empty is left out; if the content cannot be read, the lines are simply missing.
     - **Custom keys of a push message** are listed by their name, each with its value.
+    - **A warning for custom keys the app no longer has:** if a push message holds custom keys that its app does not define, a warning box at the top names them and says that saving the message here removes them. The keys are marked in the list below it.
+        - The **Push** list shows a warning sign in the **App** column of such a message. Point at it to read the keys.
+        - Nothing is marked when the list of apps cannot be read or does not have the app.
+    - **Open this app's settings in MobilePush:** a link next to the app of a push message opens the screen where the custom keys of that app are set up, in a new tab.
+    - **Open this code in MobileConnect:** a link next to the code of an SMS message opens that code in a new tab. It is shown once the list of codes is read and has the code.
 - **Create a message:** every list has a **New … message** button. It opens a form with the fields of that channel:
     - **SMS:** name, key, description, status, the text of the message, the code and keyword it is sent with, the country code of a short code, and whether the recipient is added or updated as a subscriber.
     - **Push:** name, key, description, status, the app, the custom keys of that app, the content (the customer key of the push message in Content Builder), sound and badge.
@@ -309,6 +321,9 @@ The folder names of contents, the texts of a push content, the list for personal
     - If Marketing Cloud's lists cannot be read, both are plain text fields.
     - When you edit a message whose code or keyword is not in the lists, it stays chosen and is marked as not found.
     - The lists show what Marketing Cloud returns in its first answer, which is up to 50 codes and 50 keywords.
+    - **Add a keyword on the way:** below the keyword list, **Open this code in MobileConnect** opens the chosen code in a new tab. Add a keyword there, then click **Reload keywords** (the button with the reload sign).
+        - Reloading reads the codes and keywords again and keeps what you chose. It sends nothing and does not count as a change.
+        - If they cannot be read, the lists stay as they were and a line says so.
 - **App and content of a push message are chosen from a list** that opens below the field:
     - **It opens on every click** into the field, also when the field already holds something, and shows all entries.
     - **Every entry is shown in full length:** its name and, beside it, its ID or key. A long one continues on the next line.
@@ -330,16 +345,26 @@ The folder names of contents, the texts of a push content, the list for personal
     - Marketing Cloud only accepts custom keys that the chosen app defines.
     - Choose another app and the fields change to the keys of that app. An app without custom keys has none.
     - A key you leave empty is not sent.
-    - When you edit a message, the keys it already has are shown at once, also keys that its app does not list. As long as you keep the app, they are sent back as they are stored unless you change them.
-    - Choose another app for a message and the keys it has that the new app does not list are greyed out and say "Not a custom key of this app, will not be sent." Saving then sends the new app together with the shorter list of keys.
-        - Choose the first app again and the keys are back as they were.
-        - If the list of apps cannot be read, or the app is not in it, all keys are sent back as they are stored.
+    - You never type the name of a key, only its value.
+    - When you edit a message, the keys it already has are shown at once.
+    - **Keys the app no longer has:** a message can still hold a key that was removed from its app later. Marketing Cloud refuses to save such a message.
+        - These keys are not fields. A red box lists them with their values and says they will be removed when you save the message.
+        - Saving removes them, also when you changed nothing else.
+        - The box has a link **Open this app's settings in MobilePush**. It opens in a new tab, so the form stays open. Add the key to the app there if you want to keep it.
+        - Right before saving, the panel reads the list of apps again. If the keys of the app changed meanwhile, nothing is saved and the form shows the new state: check it and save again. If the list cannot be read, nothing is saved either.
+        - Choose another app and the same box lists the keys that app does not have. Choose an app that has them and they are back as they were.
+        - If the list of apps cannot be read, or the app is not in it, nothing is removed: all keys are sent back as they are stored.
     - Empty a key that had a value and it is taken out of the message.
     - Changing one custom key sends the whole list of custom keys, together with the other options of the message.
 - **What Marketing Cloud refuses is shown:** if a message cannot be created, the form says why in Marketing Cloud's words and keeps what you typed.
 - **A new message starts as Active** unless you choose another status in the form. An active message can be sent at once by anything that knows its key.
     - **Push has three statuses:** Active, Inactive and Draft. Marketing Cloud stores a new push message as Draft unless it is Active, also when you choose Inactive.
 - **Links in an SMS:** two optional boxes switch on Marketing Cloud's link shortening and its tracking of the shortened links per subscriber.
+    - **Switched off for the account:** if your account has "Salesforce Link Shortening and Tracking" switched off in MobileConnect's setup, the two boxes cannot be ticked, and a line below them says so.
+    - A box that is already ticked on a message stays usable, so that you can untick it.
+    - A box that cannot be ticked changes nothing in what is sent.
+- **Send blockout window:** if your account has a send blockout window in MobileConnect's setup, the SMS form says above the message that messages may be held back during it. There is nothing to fill in.
+- **Where this comes from:** the panel reads the MobileConnect settings of the account once, when an SMS form opens, and again after **Refresh**. If they cannot be read, the form is as it would be without them.
 - **Change a message:** the details have an **Edit** button. It opens the same form, filled in. The key cannot be changed.
     - Only what you changed is sent. If you change nothing, nothing is sent.
     - Right before saving, the panel reads the message again. If someone changed it meanwhile, or you changed the business unit in another browser tab, nothing is saved and the form says so.

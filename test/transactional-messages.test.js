@@ -833,6 +833,129 @@ test('the search narrows the list by name and key while typing, without a reques
     assert.equal(empty.search(), null);
 });
 
+/**
+ * Finds the list of statuses in the bar above the list.
+ *
+ * @param {{panel: () => Element}} at the page
+ * @returns {HTMLSelectElement | null} the list, if there is one
+ */
+function statusList(at) {
+    return at.panel().querySelector('.sfmc-ux-tools-transactional-status');
+}
+
+/**
+ * Chooses a status in the bar above the list.
+ *
+ * @param {{panel: () => Element, window: Window}} at the page
+ * @param {string} status the status, or nothing for all
+ */
+function showStatus(at, status) {
+    statusList(at).value = status;
+    statusList(at).dispatchEvent(new at.window.Event('change', { bubbles: true }));
+}
+
+/**
+ * Reads what the list of statuses offers.
+ *
+ * @param {{panel: () => Element}} at the page
+ * @returns {string[]} the entries as they are shown
+ */
+function offered(at) {
+    return [...statusList(at).options].map((option) => option.textContent);
+}
+
+test('the list of statuses offers all and every status that occurs, with how many messages have it', async () => {
+    const at = await listing([
+        { ...ROW('a'), status: 'Draft' },
+        { ...ROW('b'), status: 'Paused' },
+        ROW('c'),
+        { ...ROW('d'), status: 'Inactive' },
+        ROW('e'),
+        { ...ROW('f'), status: 'Archived' },
+        // no status: counted with all only
+        { name: 'g', definitionKey: 'g' },
+    ]);
+    assert.equal(statusList(at).tagName, 'SELECT');
+    assert.equal(statusList(at).getAttribute('aria-label'), 'Show by status');
+    // the known ones first, then the others by their name; none that no message has
+    assert.deepEqual(offered(at), [
+        'All (7)',
+        'Active (2)',
+        'Inactive (1)',
+        'Draft (1)',
+        'Archived (1)',
+        'Paused (1)',
+    ]);
+    assert.equal(statusList(at).value, '');
+    assert.equal(at.names().length, 7);
+    // in the bar, next to the search
+    assert.equal(statusList(at).previousElementSibling, at.search());
+    assert.equal(listReads(at), 1);
+    await tab(at, 'push');
+    assert.deepEqual(offered(at), ['All (1)', 'Active (1)']);
+    // an empty list has no status to choose
+    const empty = await listing([]);
+    assert.equal(statusList(empty), null);
+});
+
+test('a chosen status narrows the list, together with the search and the order, without a request', async () => {
+    const at = await listing([
+        ...SORTED,
+        { ...ROW('k-4'), name: 'delta', status: 'Draft' },
+        { ...ROW('k-5'), name: 'Epsilon', status: 'Draft' },
+    ]);
+    const none = () => at.panel().querySelector('table').parentElement.nextElementSibling;
+    const [field, body] = [statusList(at), at.panel().querySelector('tbody')];
+    showStatus(at, 'Draft');
+    assert.deepEqual(at.names(), ['gamma', 'delta', 'Epsilon']);
+    at.sort('Name');
+    assert.deepEqual(at.names(), ['delta', 'Epsilon', 'gamma']);
+    at.look('a');
+    assert.deepEqual(at.names(), ['delta', 'gamma']);
+    // found by the search, but of another status
+    at.look('alpha');
+    assert.deepEqual(at.names(), []);
+    assert.equal(none().hidden, false);
+    assert.equal(
+        none().textContent,
+        'No message with the status Draft matches what you search for.',
+    );
+    showStatus(at, '');
+    assert.deepEqual(at.names(), ['Alpha']);
+    assert.equal(none().hidden, true);
+    showStatus(at, 'Inactive');
+    at.look('');
+    assert.deepEqual(at.names(), ['beta']);
+    // only the rows were drawn again
+    assert.equal(statusList(at), field);
+    assert.equal(at.panel().querySelector('tbody'), body);
+    assert.deepEqual(offered(at), ['All (5)', 'Active (1)', 'Inactive (1)', 'Draft (3)']);
+    assert.equal(listReads(at), 1);
+});
+
+test('the chosen status stays with its list: on another tab, in the details and when the panel opens again', async () => {
+    const at = await listing([ROW('welcome'), { ...ROW('later'), status: 'Draft' }]);
+    showStatus(at, 'Draft');
+    assert.deepEqual(at.names(), ['name of later']);
+    // another list has its own
+    await tab(at, 'push');
+    assert.equal(statusList(at).value, '');
+    assert.deepEqual(at.names(), ['name of other']);
+    await tab(at, 'sms');
+    assert.equal(statusList(at).value, 'Draft');
+    assert.deepEqual(at.names(), ['name of later']);
+    rows(at)[0].click();
+    await tick();
+    await click(at, 'back');
+    assert.equal(statusList(at).value, 'Draft');
+    assert.deepEqual(at.names(), ['name of later']);
+    await click(at, 'close');
+    await at.open();
+    assert.equal(statusList(at).value, 'Draft');
+    assert.deepEqual(at.names(), ['name of later']);
+    assert.equal(listReads(at), 1);
+});
+
 test('a click on the head of a column sorts by it, another one turns the order around, and dates are sorted as the API writes them', async () => {
     const at = await listing(SORTED);
     // as the API returned them
@@ -964,12 +1087,16 @@ async function details(answer = () => ({ body: DEFINITION }), definition = DEFIN
 
 test('every request uses the session of the page, and every list leaves out what was deleted', async () => {
     const at = await details();
-    // the list, the details that the list reads for its columns, and the details that were opened
-    assert.equal(at.calls.length, 3);
+    // the list, the details that the list reads for its columns, and the details that were
+    // opened, which also ask for the codes, to link to the one of the message
+    assert.equal(at.calls.length, 4);
     for (const call of at.calls) {
         assert.equal(call.credentials, 'same-origin');
         assert.equal(call.redirect, 'error');
         assert.equal(call.method, 'GET');
+    }
+    assert.equal(at.calls[3].url, `/cloud/fuelapi/${CODES}`);
+    for (const call of at.calls.slice(0, 3)) {
         assert.ok(call.url.startsWith('/cloud/fuelapi/messaging/v1/sms/definitions'), call.url);
     }
     assert.ok(at.calls[0].url.endsWith('?$page=1&$pageSize=100&$filter=status%20neq%20deleted'));
@@ -1557,6 +1684,7 @@ test('the form offers the codes, keywords and apps of the business unit, and wor
     assert.deepEqual(sms.looked, [
         'legacy/v1/beta/mobile/code/',
         'legacy/v1/beta/mobile/keyword/',
+        'legacy/v1/beta/mobile/account/@default',
         'contacts/v1/attributeSetDefinitions?$pageSize=500',
     ]);
     // only what can be chosen: a code that is no text is left out
@@ -1937,8 +2065,9 @@ test('the details call the fields by readable names, with the name of the API to
         ['Shorten links', 'options.urlShortenerOptions.isLinkShorteningEnabled'],
         ['Shortener type', 'options.urlShortenerOptions.shortenerType'],
     ]);
-    // an SMS message has nothing that a list names, and reads none for its details
-    assert.deepEqual(at.looked, []);
+    // an SMS message has nothing that a list names; its details read the codes only, to link
+    // to the one of the message
+    assert.deepEqual(at.looked, [CODES]);
     assert.equal(at.panel().querySelector(RESOLVED), null);
 });
 
@@ -2258,6 +2387,182 @@ test('an option of a message that has no options yet is sent alone, and untouche
     other.type('description', 'new words');
     await other.send();
     assert.equal(Object.hasOwn(other.changes()[0], 'options'), false);
+});
+
+// the settings of MobileConnect for the account, and what an SMS form says about them
+const ACCOUNT = 'legacy/v1/beta/mobile/account/@default';
+const SHORTENING_OFF = 'Link shortening is switched off for this account (Setup > MobileConnect).';
+const BLOCKOUT =
+    'This account has a send blockout window (Setup > MobileConnect); messages may be held back during it.';
+
+/**
+ * Answers for an API whose account has the given settings of MobileConnect.
+ *
+ * @param {object} [account] the settings; none when they cannot be read
+ * @returns {(path: string, method: string) => object} what the API answers
+ */
+function withAccount(account) {
+    return (path, method) => {
+        if (path === ACCOUNT) {
+            return account ? { body: account } : { status: 500, body: { message: 'No' } };
+        }
+        if (method !== 'GET') {
+            return { status: 200, body: {} };
+        }
+        return { body: path.includes('?') ? { definitions: [] } : {} };
+    };
+}
+
+/**
+ * Reads what a form says about the settings of the account.
+ *
+ * @param {{panel: () => Element}} at the page
+ * @returns {string[]} the lines, from the top
+ */
+function accountNotes(at) {
+    return [...at.panel().querySelectorAll('.sfmc-ux-tools-transactional-account-note')].map(
+        (note) => note.textContent,
+    );
+}
+
+test('without link shortening on the account, the boxes of the link shortener are switched off and say why', async () => {
+    const at = await form(
+        'sms',
+        withAccount({
+            optedInForSmslinktracking: false,
+            mobileBlackoutWindow: { isEnabled: false },
+        }),
+    );
+    await tick();
+    assert.equal(at.field(SHORTEN).disabled, true);
+    assert.equal(at.field(TRACK).disabled, true);
+    assert.equal(at.field(SHORTEN).checked, false);
+    assert.deepEqual(accountNotes(at), [SHORTENING_OFF]);
+    // one line, below the two boxes
+    assert.equal(at.field(TRACK).closest('label').nextElementSibling.textContent, SHORTENING_OFF);
+    // the other boxes are as they were
+    assert.equal(at.field('subscriptions.autoAddSubscriber').disabled, false);
+    // a new message does not name the options, as before
+    at.type('name', 'Order shipped');
+    at.type('content.message', 'On its way.');
+    at.type('subscriptions.shortCode', '8850');
+    at.type('subscriptions.keyword', 'ORDER');
+    await at.send();
+    assert.equal(at.sent().length, 1);
+    assert.equal(Object.hasOwn(at.sent()[0], 'options'), false);
+});
+
+test('the boxes of the link shortener stay as they are when the account has it on, or its settings cannot be read', async () => {
+    for (const account of [
+        { optedInForSmslinktracking: true, mobileBlackoutWindow: { isEnabled: false } },
+        // cannot be read
+        undefined,
+        // says nothing
+        {},
+        // says something else than yes or no
+        { optedInForSmslinktracking: 'false', mobileBlackoutWindow: { isEnabled: 'true' } },
+        { optedInForSmslinktracking: null, mobileBlackoutWindow: null },
+    ]) {
+        const at = await form('sms', withAccount(account));
+        await tick();
+        assert.equal(at.field(SHORTEN).disabled, false);
+        assert.equal(at.field(TRACK).disabled, false);
+        assert.deepEqual(accountNotes(at), []);
+        assert.equal(reads(at, ACCOUNT), 1);
+    }
+});
+
+test('a box of the link shortener that is ticked on the message can be unticked without link shortening on the account, and an untouched form sends nothing', async () => {
+    const off = { optedInForSmslinktracking: false };
+    const open = async (held) => {
+        const at = await editing(held, (path, method) => {
+            if (path === ACCOUNT) {
+                return { body: off };
+            }
+            return method === 'GET' ? { body: held } : { status: 200 };
+        });
+        await tick();
+        return at;
+    };
+    const at = await open({
+        ...DEFINITION,
+        options: { urlShortenerOptions: { isLinkShorteningEnabled: true } },
+    });
+    assert.equal(at.field(SHORTEN).checked, true);
+    assert.equal(at.field(SHORTEN).disabled, false);
+    assert.equal(at.field(TRACK).disabled, true);
+    assert.deepEqual(accountNotes(at), [SHORTENING_OFF]);
+    const before = at.calls.length;
+    await at.send();
+    assert.equal(at.calls.length, before);
+    assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+    // unticked, it stays a box of this form
+    at.field(SHORTEN).click();
+    assert.equal(at.field(SHORTEN).checked, false);
+    assert.equal(at.field(SHORTEN).disabled, false);
+    await at.send();
+    assert.deepEqual(at.changes(), [
+        { options: { urlShortenerOptions: { isLinkShorteningEnabled: false } } },
+    ]);
+    // the next form of the message, which holds no tick any more, has it switched off
+    const next = await open({
+        ...DEFINITION,
+        options: { urlShortenerOptions: { isLinkShorteningEnabled: false } },
+    });
+    assert.equal(next.field(SHORTEN).disabled, true);
+    assert.equal(next.field(TRACK).disabled, true);
+    const untouched = next.calls.length;
+    await next.send();
+    assert.equal(next.calls.length, untouched);
+});
+
+test('an SMS form mentions the send blockout window of the account next to the message, and no other form does', async () => {
+    const at = await form(
+        'sms',
+        withAccount({ optedInForSmslinktracking: true, mobileBlackoutWindow: { isEnabled: true } }),
+    );
+    await tick();
+    assert.deepEqual(accountNotes(at), [BLOCKOUT]);
+    assert.equal(
+        at.field('content.message').closest('.sfmc-ux-tools-transactional-field')
+            .previousElementSibling.textContent,
+        BLOCKOUT,
+    );
+    assert.equal(at.field(SHORTEN).disabled, false);
+    // nothing to fill in comes with it
+    assert.equal(
+        at.form().querySelector(':scope .sfmc-ux-tools-transactional-account-note input'),
+        null,
+    );
+    const both = await form(
+        'sms',
+        withAccount({
+            optedInForSmslinktracking: false,
+            mobileBlackoutWindow: { isEnabled: true },
+        }),
+    );
+    await tick();
+    assert.deepEqual(accountNotes(both), [BLOCKOUT, SHORTENING_OFF]);
+    const none = await form(
+        'sms',
+        withAccount({
+            optedInForSmslinktracking: true,
+            mobileBlackoutWindow: { isEnabled: false },
+        }),
+    );
+    await tick();
+    assert.deepEqual(accountNotes(none), []);
+    // the settings are those of MobileConnect: a push form does not ask for them
+    const push = await form(
+        'push',
+        withAccount({
+            optedInForSmslinktracking: false,
+            mobileBlackoutWindow: { isEnabled: true },
+        }),
+    );
+    await tick();
+    assert.deepEqual(accountNotes(push), []);
+    assert.equal(reads(push, ACCOUNT), 0);
 });
 
 test('"Cancel" leaves the form without sending anything', async () => {
@@ -3032,6 +3337,113 @@ test('searching and sorting take the whole list and go back to its first page', 
     assert.equal(at.names()[0], 'name of m-119');
     await click(at, 'next');
     assert.equal(at.names()[0], 'name of m-069');
+});
+
+test('choosing a status takes the whole list and goes back to its first page', async () => {
+    const at = await messages(
+        'sms',
+        NUMBERED(120).map((definition, index) => ({
+            ...definition,
+            status: index % 2 ? 'Inactive' : 'Active',
+        })),
+    );
+    await click(at, 'next');
+    await click(at, 'next');
+    showStatus(at, 'Inactive');
+    assert.equal(range(at), '1–50 of 60');
+    assert.equal(at.names()[0], 'name of m-001');
+    await click(at, 'next');
+    assert.equal(range(at), '51–60 of 60');
+    assert.equal(at.names()[0], 'name of m-101');
+    showStatus(at, '');
+    assert.equal(range(at), '1–50 of 120');
+    await click(at, 'next');
+    showStatus(at, 'Active');
+    at.look('m-11');
+    assert.deepEqual(
+        at.names(),
+        [110, 112, 114, 116, 118].map((number) => `name of m-${number}`),
+    );
+    assert.equal(at.part('pager').hidden, true);
+});
+
+test('the statuses are counted again after a change through the panel and on Refresh, and a status that is gone gives way to all', async () => {
+    const at = await messages('sms', [SMS('one'), SMS('two', { status: 'Inactive' })]);
+    at.onWrite = (key) => {
+        at.held.set(key, { ...at.held.get(key), status: 'Active' });
+        at.list = at.held
+            .values()
+            .map((definition) => LISTED(definition))
+            .toArray();
+    };
+    showStatus(at, 'Inactive');
+    assert.deepEqual(at.names(), ['name of two']);
+    rows(at)[0].click();
+    await tick();
+    await at.press('Edit');
+    const form = at.panel().querySelector('form');
+    form.elements.status.value = 'Active';
+    form.elements.status.dispatchEvent(new at.window.Event('change', { bubbles: true }));
+    form.dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
+    await tick();
+    await tick();
+    await tick();
+    assert.deepEqual(at.written, ['POST sms/definitions/two']);
+    if (!statusList(at)) {
+        await click(at, 'back');
+    }
+    // no message is inactive any more: all are shown
+    assert.deepEqual(offered(at), ['All (2)', 'Active (2)']);
+    assert.equal(statusList(at).value, '');
+    assert.deepEqual(at.names(), ['name of one', 'name of two']);
+    // a status that still occurs is kept over a Refresh, with its new count
+    showStatus(at, 'Active');
+    at.list = [...at.list, LISTED(SMS('three')), LISTED(SMS('four', { status: 'Draft' }))];
+    await click(at, 'refresh');
+    assert.deepEqual(offered(at), ['All (4)', 'Active (3)', 'Draft (1)']);
+    assert.equal(statusList(at).value, 'Active');
+    assert.deepEqual(at.names(), ['name of one', 'name of two', 'name of three']);
+    // and one that a Refresh no longer brings is dropped
+    showStatus(at, 'Draft');
+    at.list = at.list.slice(0, 3);
+    await click(at, 'refresh');
+    assert.deepEqual(offered(at), ['All (3)', 'Active (3)']);
+    assert.equal(statusList(at).value, '');
+    assert.equal(at.names().length, 3);
+});
+
+test('the settings of the account are read once for the SMS forms, and again after "Refresh"', async () => {
+    const at = await messages('sms', [SMS('one')]);
+    const open = async () => {
+        at.panel().querySelector('.sfmc-ux-tools-transactional-new').click();
+        await tick();
+        await tick();
+    };
+    const leave = async () => {
+        [...at.panel().querySelectorAll(':scope form button')]
+            .find((button) => button.textContent === 'Cancel')
+            .click();
+        await tick();
+    };
+    // not before a form asks for them
+    assert.equal(reads(at, ACCOUNT), 0);
+    await open();
+    assert.equal(reads(at, ACCOUNT), 1);
+    await leave();
+    await open();
+    assert.equal(reads(at, ACCOUNT), 1);
+    // the form of a message that exists uses them too
+    await leave();
+    rows(at)[0].click();
+    await tick();
+    await at.press('Edit');
+    await tick();
+    assert.equal(reads(at, ACCOUNT), 1);
+    await leave();
+    await click(at, 'back');
+    await click(at, 'refresh');
+    await open();
+    assert.equal(reads(at, ACCOUNT), 2);
 });
 
 test('the page on show is kept with its list, and a list of one page has no pager', async () => {
@@ -4537,6 +4949,34 @@ test('the apps of a push message are listed by their name, whatever its case, ea
     assert.equal(listOf(at.field('applicationId')).querySelector('[aria-disabled]'), null);
 });
 
+test('apps and contents of the same name follow each other by their id or key, whatever order they come in', async () => {
+    const apps = [
+        { id: 'id-c', name: 'Same' },
+        { id: 'id-a', name: 'same' },
+        { id: 'id-b', name: 'Same' },
+        { id: 'id-0', name: 'Zulu' },
+    ];
+    const contents = [
+        { customerKey: 'k-2', name: 'Twin', availableViews: ['push'] },
+        { customerKey: 'k-1', name: 'Twin', availableViews: ['push'] },
+    ];
+    for (const turned of [false, true]) {
+        const at = await pushing({
+            apps: turned ? apps.toReversed() : apps,
+            contents: turned ? contents.toReversed() : contents,
+        });
+        await at.press('New Push message');
+        assert.deepEqual(
+            options(at, 'applicationId').map(([value]) => value),
+            ['id-a', 'id-b', 'id-c', 'id-0'],
+        );
+        assert.deepEqual(
+            options(at, 'content.customerKey').map(([value]) => value),
+            ['k-1', 'k-2'],
+        );
+    }
+});
+
 test('the contents of a push message are listed by their name, whatever its case, each with its key', async () => {
     const at = await pushing({
         contents: [
@@ -4754,7 +5194,10 @@ test('details whose content cannot be read, is another one or says nothing show 
 
     // the other kinds of message ask for no content
     const sms = await details();
-    assert.deepEqual(sms.looked, []);
+    assert.deepEqual(
+        sms.looked.filter((path) => path.startsWith(CONTENTS)),
+        [],
+    );
 });
 
 test('a new push message asks for the custom keys of the app that is chosen, and sends those that are filled', async () => {
@@ -4834,9 +5277,16 @@ const withKeys = (definition, customKeys, options) => ({
     ...definition,
     options: { ...definition.options, ...options, customKeys },
 });
+// the same apps, the shop app with every key that the message above holds
+const WHOLE_APPS = KEYED_APPS.map((app) =>
+    app.id === 'app-1' ? { ...app, keys: ['deeplink', 'campaign', 'legacy', 'count'] } : app,
+);
+const GONE = '.sfmc-ux-tools-transactional-keys-gone';
+const APP_SCREEN =
+    'https://mc.s7.exacttarget.com/cloud/#app/MobilePush/mobilepush/%23!/administration/app/';
 
 test('the form of a push message shows its stored custom keys at once, also without the list of apps, and sends nothing untouched', async () => {
-    const at = await pushing({ definition: KEYED });
+    const at = await pushing({ definition: KEYED, apps: WHOLE_APPS });
     await at.details();
     await at.press('Edit');
     // what is stored first, as it is stored, then what else the app has
@@ -4866,44 +5316,106 @@ test('the form of a push message shows its stored custom keys at once, also with
     ]);
 });
 
-const NOT_SENT = /Not a custom key of this app, will not be sent\./;
+/**
+ * Reads the box of a form that prints the custom keys a save removes.
+ *
+ * @param {{form: () => Element}} at the page with the form
+ * @returns {{text: string, entries: string[], href: string}|null} what it says, the entries it prints and where its link leads; nothing without the box
+ */
+function gone(at) {
+    const box = at.form().querySelector(GONE);
+    return (
+        box && {
+            text: box.textContent,
+            entries: [...box.querySelectorAll('li')].map((item) => item.textContent),
+            href: box.querySelector('a').href,
+        }
+    );
+}
 
-test('another app takes the stored custom keys it does not list out of what is sent, in one request with the app', async () => {
-    // app-3 lists zeta only: deeplink is a key of app-1, legacy of no app
+test('stored custom keys the app does not define are printed as removed, have no field, and an untouched form takes them out', async () => {
+    // app-1 defines deeplink and campaign: legacy and count were taken off it
+    const kept = [{ key: 'deeplink', value: 'shop://a' }];
+    const at = await pushing({ definition: KEYED, after: withKeys(KEYED, kept) });
+    await at.details();
+    await at.press('Edit');
+    assert.deepEqual(at.keys(), [
+        ['deeplink', 'shop://a'],
+        ['campaign', ''],
+    ]);
+    assert.equal(at.key('legacy'), undefined);
+    assert.deepEqual(gone(at).entries, ['legacy', 'count: 5']);
+    assert.match(
+        gone(at).text,
+        /not set up on the app\. They will be removed when you save this message\./,
+    );
+    // the way to where the keys of this app are set up, which leaves the form open
+    const link = at.form().querySelector(`${GONE} a`);
+    assert.equal(link.href, `${APP_SCREEN}app-1`);
+    assert.equal(link.textContent, 'Open this app’s settings in MobilePush');
+    assert.deepEqual([link.target, link.rel], ['_blank', 'noopener']);
+    // in the group of the custom keys, above its fields
+    assert.equal(at.form().querySelector(GONE).parentElement, at.form().querySelector(CUSTOM_KEYS));
+    const apps = () => at.looked.filter((path) => path === APPS).length;
+    const before = apps();
+    await at.send();
+    // nothing else was changed: the list goes out without them, next to the other options
+    assert.deepEqual(at.changes(), [{ options: { sound: 'old', customKeys: kept } }]);
+    // the list of apps was read again right before, not taken from what was kept
+    assert.equal(apps(), before + 1);
+    assert.match(at.text(), /^Saved “name of receipt” \(key receipt\)\./);
+    assert.doesNotMatch(at.text(), /not as they were sent/);
+
+    // together with another change, in one request; every entry of such a key goes
+    const twice = withKeys(KEYED, [
+        { key: 'legacy', value: 'one' },
+        { key: 'deeplink', value: 'shop://a' },
+        { key: 'legacy', value: { a: 1 } },
+    ]);
+    const both = await pushing({ definition: twice });
+    await both.details();
+    await both.press('Edit');
+    assert.deepEqual(gone(both).entries, ['legacy: one', 'legacy: {"a":1}']);
+    both.type('options.sound', 'new');
+    both.typeKey('campaign', 'spring');
+    await both.send();
+    assert.deepEqual(both.changes(), [
+        {
+            options: {
+                sound: 'new',
+                customKeys: [...kept, { key: 'campaign', value: 'spring' }],
+            },
+        },
+    ]);
+});
+
+test('another app prints the stored custom keys it does not define as removed, and going back brings them back', async () => {
+    // app-3 defines zeta only
     const stored = withKeys(KEYED, [
-        { key: 'legacy', value: 'x' },
         { key: 'deeplink', value: 'shop://a' },
         { key: 'zeta', value: 'z' },
     ]);
-    const at = await pushing({ definition: stored });
+    const at = await pushing({
+        definition: stored,
+        apps: KEYED_APPS.map((app) =>
+            app.id === 'app-1' ? { ...app, keys: ['deeplink', 'zeta'] } : app,
+        ),
+    });
     await at.details();
     await at.press('Edit');
     const before = at.calls.length;
-    // the same app: a stored key it does not list is a field as any other
-    assert.equal(at.key('legacy').disabled, false);
-    assert.doesNotMatch(at.form().textContent, NOT_SENT);
+    assert.equal(gone(at), null);
     at.type('applicationId', 'app-3');
-    // the fields stay on show, those that are not sent switched off and saying so
+    assert.deepEqual(at.keys(), [['zeta', 'z']]);
+    assert.deepEqual(gone(at).entries, ['deeplink: shop://a']);
+    assert.equal(gone(at).href, `${APP_SCREEN}app-3`);
+    // back at the app that defines them all, everything is as it was, and nothing is sent
+    at.type('applicationId', 'app-1');
+    assert.equal(gone(at), null);
     assert.deepEqual(at.keys(), [
-        ['legacy', 'x'],
         ['deeplink', 'shop://a'],
         ['zeta', 'z'],
     ]);
-    assert.deepEqual(
-        ['legacy', 'deeplink', 'zeta'].map((key) => [
-            at.key(key).disabled,
-            NOT_SENT.test(at.key(key).parentElement.textContent),
-        ]),
-        [
-            [true, true],
-            [true, true],
-            [false, false],
-        ],
-    );
-    // back at the app the message has, everything is as it was, and nothing is sent
-    at.type('applicationId', 'app-1');
-    assert.equal(at.key('legacy').disabled, false);
-    assert.doesNotMatch(at.form().textContent, NOT_SENT);
     await at.send();
     assert.equal(at.calls.length, before);
     assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
@@ -4916,11 +5428,10 @@ test('another app takes the stored custom keys it does not list out of what is s
         },
     ]);
 
-    // an app that lists every stored key changes the app alone
+    // an app that defines every stored key changes the app alone
     const listed = await pushing({
-        definition: withKeys({ ...KEYED, applicationId: 'app-3' }, [
-            { key: 'deeplink', value: 'shop://a' },
-        ]),
+        definition: withKeys({ ...KEYED, applicationId: 'app-3' }, [{ key: 'zeta', value: 'z' }]),
+        apps: KEYED_APPS.map((app) => (app.id === 'app-1' ? { ...app, keys: ['zeta'] } : app)),
     });
     await listed.details();
     await listed.press('Edit');
@@ -4929,23 +5440,7 @@ test('another app takes the stored custom keys it does not list out of what is s
     assert.deepEqual(listed.changes(), [{ applicationId: 'app-1' }]);
 });
 
-test('stored custom keys the app does not list pass through under the same app and under an app that is not known', async () => {
-    // the same app: legacy, which app-1 does not list, goes back as it is stored
-    const same = await pushing({ definition: KEYED });
-    await same.details();
-    await same.press('Edit');
-    same.typeKey('campaign', 'spring');
-    await same.send();
-    assert.deepEqual(same.changes(), [
-        {
-            options: {
-                sound: 'old',
-                customKeys: [...KEYED.options.customKeys, { key: 'campaign', value: 'spring' }],
-            },
-        },
-    ]);
-
-    // an app the list does not have, and a list that cannot be read: nothing is left out
+test('under an app that is not known, or without the list of apps, stored custom keys stay fields and pass through', async () => {
     for (const has of [{}, { down: [APPS] }]) {
         const appId = has.down ? 'app-3' : 'app-9';
         const at = await pushing({ definition: KEYED, ...has });
@@ -4953,7 +5448,7 @@ test('stored custom keys the app does not list pass through under the same app a
         await at.press('Edit');
         at.type('applicationId', appId);
         assert.equal(at.key('legacy').disabled, false);
-        assert.doesNotMatch(at.form().textContent, NOT_SENT);
+        assert.equal(gone(at), null);
         at.typeKey('deeplink', 'shop://b');
         await at.send();
         assert.deepEqual(at.changes(), [
@@ -4972,6 +5467,339 @@ test('stored custom keys the app does not list pass through under the same app a
     }
 });
 
+test('no custom key is removed on the word of an old list of apps: it is read again before the save', async () => {
+    const open = async (has = {}) => {
+        const at = await pushing({ definition: KEYED, ...has });
+        await at.details();
+        await at.press('Edit');
+        assert.deepEqual(gone(at).entries, ['legacy', 'count: 5']);
+        return at;
+    };
+    // both keys were set up on the app again while the form was open
+    const apps = structuredClone(KEYED_APPS);
+    const back = await open({ apps });
+    apps.find((app) => app.id === 'app-1').keys.push('legacy', 'count');
+    await back.send();
+    assert.deepEqual(back.changes(), []);
+    assert.match(
+        back.text(),
+        /Not saved: the custom keys of the app have changed\. Check the form and save again\./,
+    );
+    // the group is drawn from the new list: they are fields again
+    assert.equal(gone(back), null);
+    assert.deepEqual(back.keys(), [
+        ['legacy', ''],
+        ['deeplink', 'shop://a'],
+        ['count', '5'],
+        ['campaign', ''],
+    ]);
+    await back.send();
+    assert.deepEqual(back.changes(), []);
+    assert.match(back.text(), /Nothing was changed, so nothing was sent\./);
+
+    // one of them only: nothing is sent either, and the box names what is left
+    const some = structuredClone(KEYED_APPS);
+    const half = await open({ apps: some });
+    some.find((app) => app.id === 'app-1').keys.push('count');
+    await half.send();
+    assert.deepEqual(half.changes(), []);
+    assert.deepEqual(gone(half).entries, ['legacy']);
+    // what the form says now is what the next save does
+    await half.send();
+    assert.deepEqual(half.changes()[0].options.customKeys, [
+        { key: 'deeplink', value: 'shop://a' },
+        { key: 'count', value: 5 },
+    ]);
+
+    // the list cannot be read again: nothing is removed and nothing sent, the form stays
+    const down = [];
+    const unread = await open({ down });
+    down.push(APPS);
+    unread.type('options.sound', 'new');
+    await unread.send();
+    assert.deepEqual(unread.changes(), []);
+    assert.match(unread.text(), /Not saved: the custom keys of the app could not be checked/);
+    assert.deepEqual(gone(unread).entries, ['legacy', 'count: 5']);
+    down.length = 0;
+    await unread.send();
+    assert.deepEqual(unread.changes(), [
+        { options: { sound: 'new', customKeys: [{ key: 'deeplink', value: 'shop://a' }] } },
+    ]);
+});
+
+const STRAY = 'sfmc-ux-tools-transactional-stray';
+const WARN = '.sfmc-ux-tools-transactional-warn';
+const WARNING = '.sfmc-ux-tools-transactional-keys-warning';
+// a link to a screen of Marketing Cloud
+const LINK = '.sfmc-ux-tools-transactional-setup';
+
+/**
+ * Finds the link next to the app in the details of a push message.
+ *
+ * @param {{panel: () => Element}} at the page
+ * @returns {HTMLAnchorElement|null} the link, if there is one
+ */
+function appLink(at) {
+    return [...at.panel().querySelectorAll('dt')]
+        .find((item) => item.title === 'applicationId')
+        .nextElementSibling.querySelector(LINK);
+}
+
+test('a push list marks a message whose custom keys its app does not define, in the cell of the app', async () => {
+    const says = 'Custom keys the app does not define: legacy, count';
+    const at = await pushing({ definition: KEYED });
+    await settle();
+    const [row] = rows(at);
+    const sign = row.querySelector(WARN);
+    assert.equal(sign.closest('td'), row.cells[DETAILS[0]]);
+    assert.deepEqual([sign.title, sign.getAttribute('aria-label')], [says, says]);
+    assert.equal(sign.getAttribute('role'), 'img');
+    assert.equal(row.classList.contains(STRAY), true);
+    // the name of the app stays next to it
+    assert.match(row.cells[DETAILS[0]].textContent, /Shop app$/);
+
+    // none when every key is one of the app, when the list of apps cannot be read, and when
+    // it does not have the app
+    for (const has of [
+        { definition: KEYED, apps: WHOLE_APPS },
+        { definition: PUSH },
+        { definition: KEYED, down: [APPS] },
+        { definition: { ...KEYED, applicationId: 'app-9' } },
+    ]) {
+        const fine = await pushing(has);
+        await settle();
+        assert.equal(rows(fine)[0].querySelector(WARN), null);
+        assert.equal(rows(fine)[0].classList.contains(STRAY), false);
+    }
+});
+
+test('the mark of a push list comes when the details of the message or the list of apps come late', async () => {
+    for (const late of ['push/definitions/receipt', APPS]) {
+        const gate = Promise.withResolvers();
+        const at = page(MENU, (path) => {
+            if (path === APPS) {
+                return { body: KEYED_APPS };
+            }
+            if (path.startsWith('push/definitions?')) {
+                return { body: { definitions: [ROW('receipt')] } };
+            }
+            return {
+                body: path.includes('/definitions/') ? KEYED : { definitions: [], items: [] },
+            };
+        });
+        await at.open();
+        const quick = at.window.fetch;
+        at.window.fetch = async (url, options) => {
+            if (url.endsWith(late)) {
+                await gate.promise;
+            }
+            return quick(url, options);
+        };
+        await tab(at, 'push');
+        await settle();
+        const [row] = rows(at);
+        assert.equal(row.querySelector(WARN), null, late);
+        gate.resolve();
+        await settle();
+        // filled in where the row stands
+        assert.equal(rows(at)[0], row);
+        assert.ok(row.querySelector(WARN), late);
+        assert.equal(row.classList.contains(STRAY), true);
+    }
+});
+
+test('the details of a push message warn about custom keys its app does not define, and always lead to the settings of the app', async () => {
+    const at = await pushing({ definition: KEYED });
+    await at.details();
+    const box = at.panel().querySelector(WARNING);
+    assert.equal(box.hidden, false);
+    assert.match(box.textContent, /^Custom keys the app does not define: legacy, count/);
+    assert.match(box.textContent, /Saving this message here removes them\./);
+    // above the details
+    assert.equal(box.nextElementSibling.tagName, 'DL');
+    for (const link of [box.querySelector(LINK), appLink(at)]) {
+        assert.equal(link.href, `${APP_SCREEN}app-1`);
+        assert.equal(link.textContent, 'Open this app’s settings in MobilePush');
+        assert.deepEqual([link.target, link.rel], ['_blank', 'noopener']);
+    }
+    // the rows of those keys say so, the others do not
+    const marked = [...at.panel().querySelectorAll('dd.sfmc-ux-tools-transactional-stray-key')];
+    assert.equal(marked.length, 2);
+    assert.ok(marked.every((item) => item.textContent.endsWith('not defined on the app')));
+    assert.deepEqual(
+        marked.map((item) => item.previousElementSibling.title),
+        ['options.customKeys.0', 'options.customKeys.2'],
+    );
+
+    // without such a key there is no warning, and the link to the app is there all the same
+    const fine = await pushing({ definition: KEYED, apps: WHOLE_APPS });
+    await fine.details();
+    assert.equal(fine.panel().querySelector(WARNING).hidden, true);
+    assert.equal(fine.panel().querySelector(WARNING).childNodes.length, 0);
+    assert.equal(fine.panel().querySelector('.sfmc-ux-tools-transactional-stray-key'), null);
+    assert.equal(appLink(fine).href, `${APP_SCREEN}app-1`);
+    // an id is written for an address; a list of apps that cannot be read warns of nothing
+    const odd = await pushing({ definition: { ...KEYED, applicationId: 'a b/c' }, down: [APPS] });
+    await odd.details();
+    assert.equal(odd.panel().querySelector(WARNING).hidden, true);
+    assert.equal(appLink(odd).href, `${APP_SCREEN}a%20b%2Fc`);
+    // a message without an app has no link
+    const none = await pushing({ definition: { ...ROW('receipt'), status: 'Draft' } });
+    await none.details();
+    assert.equal(none.panel().querySelector(LINK), null);
+});
+
+const CODE_SCREEN =
+    'https://mc.s7.exacttarget.com/cloud/#app/MobileConnect/MobileConnectFuel3/%23!/administration/code/';
+const CODE_ID = 'M3hSQTE0SUF3a2FXaUU4Z2NpQzlOUTo4MTow+/=';
+const CODE_TOOLS = '.sfmc-ux-tools-transactional-code-tools';
+
+/**
+ * Answers as offering() does, with codes that have an id, as the API lists them, but for the
+ * short code, and with the keywords that are handed in.
+ *
+ * @param {object} [definition] what is read under a key
+ * @param {{keywords?: object[], down?: string[]}} [has] the keywords, and the lists that cannot be read; both are looked at with every request
+ * @returns {(path: string, method: string) => object} what the API answers
+ */
+function coded(definition, has = {}) {
+    return (path, method) => {
+        if ((has.down ?? []).some((list) => path.startsWith(list))) {
+            return { status: 500, body: { message: 'No' } };
+        }
+        if (path.startsWith(CODES)) {
+            const [long, short] = OFFERED[CODES].entry;
+            return { body: { entry: [{ ...long, id: CODE_ID }, short] } };
+        }
+        return path.startsWith(KEYWORDS) && has.keywords
+            ? { body: { entry: has.keywords } }
+            : offering(definition)(path, method);
+    };
+}
+
+test('the details of an SMS message lead to its code in MobileConnect, once the list of codes names it', async () => {
+    const stored = {
+        ...DEFINITION,
+        subscriptions: { shortCode: '3197010240', keyword: 'ORDER' },
+    };
+    const at = await details(coded(stored), stored);
+    await settle();
+    // next to the code
+    const link = [...at.panel().querySelectorAll('dt')]
+        .find((item) => item.title === 'subscriptions.shortCode')
+        .nextElementSibling.querySelector(LINK);
+    assert.equal(link.href, CODE_SCREEN + encodeURIComponent(CODE_ID));
+    assert.equal(link.textContent, 'Open this code in MobileConnect');
+    assert.deepEqual([link.target, link.rel], ['_blank', 'noopener']);
+    assert.equal(at.panel().querySelectorAll(LINK).length, 1);
+
+    // no link for a code the list has no id for, for one it does not have, and without the list
+    const short = { ...DEFINITION, subscriptions: { shortCode: '8850', keyword: 'PROMO' } };
+    for (const [definition, has] of [
+        [short, {}],
+        [DEFINITION, {}],
+        [stored, { down: [CODES] }],
+    ]) {
+        const none = await details(coded(definition, has), definition);
+        await settle();
+        assert.equal(none.panel().querySelector(LINK), null);
+        assert.equal(none.panel().querySelector('.sfmc-ux-tools-transactional-error'), null);
+    }
+});
+
+test('the form of an SMS message leads to the code that is chosen, below the keywords', async () => {
+    const at = await form('sms', coded());
+    await settle();
+    const tools = at.form().querySelector(CODE_TOOLS);
+    const link = () => tools.querySelector('a');
+    const help = () => tools.querySelector('.sfmc-ux-tools-transactional-help');
+    assert.equal(at.field('subscriptions.keyword').closest(FIELD).nextElementSibling, tools);
+    // no code is chosen yet
+    assert.deepEqual([link().hidden, help().hidden], [true, true]);
+    choose(at, 'subscriptions.shortCode', '3197010240');
+    assert.equal(link().hidden, false);
+    assert.equal(link().href, CODE_SCREEN + encodeURIComponent(CODE_ID));
+    assert.equal(link().textContent, 'Open this code in MobileConnect');
+    assert.deepEqual([link().target, link().rel], ['_blank', 'noopener']);
+    assert.equal(help().textContent, 'Add a keyword there, then reload the keywords.');
+    assert.equal(help().hidden, false);
+    // a code the list has no id for
+    choose(at, 'subscriptions.shortCode', '8850');
+    assert.deepEqual([link().hidden, help().hidden], [true, true]);
+    choose(at, 'subscriptions.shortCode', '3197010240');
+    assert.equal(link().hidden, false);
+
+    // a form whose fields stay text fields has none of it
+    const plain = await form('sms', coded(undefined, { down: [KEYWORDS] }));
+    await settle();
+    assert.equal(plain.form().querySelector(CODE_TOOLS), null);
+});
+
+test('"Reload keywords" reads the codes and keywords again, shows a keyword that was added and keeps what is chosen', async () => {
+    const has = { keywords: OFFERED[KEYWORDS].entry, down: [] };
+    const at = await form('sms', coded(undefined, has));
+    await settle();
+    const reload = at.form().querySelector(`${CODE_TOOLS} button`);
+    const failed = at.form().querySelector('.sfmc-ux-tools-transactional-reload-failed');
+    const keywords = () => chosen(at, 'subscriptions.keyword').map(([value]) => value);
+    assert.equal(reload.type, 'button');
+    assert.equal(reload.title, 'Reload keywords');
+    assert.equal(reload.getAttribute('aria-label'), 'Reload keywords');
+    assert.ok(reload.querySelector('svg'));
+    choose(at, 'subscriptions.shortCode', '3197010240');
+    choose(at, 'subscriptions.keyword', 'STOP');
+    assert.deepEqual(keywords(), ['', 'ORDER', 'STOP']);
+    has.keywords = [...has.keywords, { keyword: 'FRESH', code: { code: '3197010240' } }];
+    const before = [reads(at, CODES), reads(at, KEYWORDS)];
+    reload.click();
+    await settle();
+    // both lists were read again, not taken from what was kept
+    assert.deepEqual([reads(at, CODES), reads(at, KEYWORDS)], [before[0] + 1, before[1] + 1]);
+    assert.deepEqual(keywords(), ['', 'ORDER', 'STOP', 'FRESH']);
+    assert.equal(at.field('subscriptions.shortCode').value, '3197010240');
+    assert.equal(at.field('subscriptions.keyword').value, 'STOP');
+    assert.equal(failed.hidden, true);
+    assert.equal(reload.disabled, false);
+    assert.equal(at.form().querySelector(`${CODE_TOOLS} a`).hidden, false);
+    // nothing was sent
+    assert.deepEqual(at.written, []);
+
+    // a list that cannot be read leaves both as they were, and says so
+    has.down = [KEYWORDS];
+    has.keywords = [];
+    reload.click();
+    await settle();
+    assert.deepEqual(keywords(), ['', 'ORDER', 'STOP', 'FRESH']);
+    assert.equal(at.field('subscriptions.keyword').value, 'STOP');
+    assert.equal(failed.hidden, false);
+    assert.equal(failed.textContent, 'The lists could not be read again. They are as they were.');
+    assert.equal(reload.disabled, false);
+    // and the next try that works takes the line away
+    has.down = [];
+    has.keywords = OFFERED[KEYWORDS].entry;
+    reload.click();
+    await settle();
+    assert.equal(failed.hidden, true);
+    assert.deepEqual(keywords(), ['', 'ORDER', 'STOP']);
+    assert.equal(at.field('subscriptions.keyword').value, 'STOP');
+});
+
+test('an untouched Edit form of an SMS message still sends nothing after its keywords were read again', async () => {
+    const stored = {
+        ...DEFINITION,
+        subscriptions: { shortCode: '3197010240', keyword: 'ORDER' },
+    };
+    const at = await editing(stored, coded(stored));
+    await settle();
+    at.form().querySelector(`${CODE_TOOLS} button`).click();
+    await settle();
+    assert.equal(at.field('subscriptions.shortCode').value, '3197010240');
+    assert.equal(at.field('subscriptions.keyword').value, 'ORDER');
+    await at.send();
+    assert.deepEqual(at.written, []);
+    assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+});
+
 test('a changed custom key is sent with the whole list, the others as they are stored, in one part with a changed option', async () => {
     const before = JSON.stringify(KEYED);
     const customKeys = [
@@ -4981,6 +5809,7 @@ test('a changed custom key is sent with the whole list, the others as they are s
     ];
     const at = await pushing({
         definition: KEYED,
+        apps: WHOLE_APPS,
         after: withKeys(KEYED, customKeys, { sound: 'new' }),
     });
     await at.details();
@@ -4996,7 +5825,11 @@ test('a changed custom key is sent with the whole list, the others as they are s
     assert.equal(JSON.stringify(KEYED), before);
 
     // a custom key alone takes the stored options along
-    const alone = await pushing({ definition: KEYED, after: withKeys(KEYED, customKeys) });
+    const alone = await pushing({
+        definition: KEYED,
+        apps: WHOLE_APPS,
+        after: withKeys(KEYED, customKeys),
+    });
     await alone.details();
     await alone.press('Edit');
     alone.typeKey('deeplink', 'shop://b');
@@ -5013,7 +5846,7 @@ test('an emptied custom key is taken out, a new one is added at the end, and wha
         { key: 'campaign', value: 'spring' },
     ];
     const run = async (after) => {
-        const at = await pushing({ definition: KEYED, after });
+        const at = await pushing({ definition: KEYED, apps: WHOLE_APPS, after });
         await at.details();
         await at.press('Edit');
         at.typeKey('deeplink', ' ');
@@ -5040,8 +5873,9 @@ test('an emptied custom key is taken out, a new one is added at the end, and wha
     assert.match(turned.text(), /not as they were sent: options\.customKeys\./);
 
     // the last key that is taken out leaves an empty list, which counts as saved when it is gone
-    const single = withKeys(PUSH, [{ key: 'deeplink', value: 'shop://a' }]);
-    const last = await pushing({ definition: single, after: PUSH });
+    const shop = { ...PUSH, applicationId: 'app-1' };
+    const single = withKeys(shop, [{ key: 'deeplink', value: 'shop://a' }]);
+    const last = await pushing({ definition: single, after: shop });
     await last.details();
     await last.press('Edit');
     last.typeKey('deeplink', '');
@@ -5052,13 +5886,16 @@ test('an emptied custom key is taken out, a new one is added at the end, and wha
 
 test('custom keys that the form cannot hold are left alone', async () => {
     // a value that is no text or number cannot be typed over, a second entry of a key has no field
-    const odd = withKeys(PUSH, [
+    const odd = withKeys({ ...PUSH, applicationId: 'app-1' }, [
         { key: 'nested', value: { a: 1 } },
         { key: 'deeplink', value: 'one' },
         { key: 'deeplink', value: 'two' },
         'no entry',
     ]);
-    const at = await pushing({ definition: odd });
+    const at = await pushing({
+        definition: odd,
+        apps: [{ id: 'app-1', name: 'Shop app', keys: ['nested', 'deeplink'] }],
+    });
     await at.details();
     await at.press('Edit');
     assert.deepEqual(at.keys(), [
@@ -5089,7 +5926,8 @@ test('custom keys that the form cannot hold are left alone', async () => {
 
 test('the details list the custom keys of a push message by their name, as text', async () => {
     const at = await pushing({
-        definition: withKeys(PUSH, [
+        // an app the list does not have: nothing is said about its keys
+        definition: withKeys({ ...PUSH, applicationId: 'app-9' }, [
             { key: 'deeplink', value: 'shop://<i>a</i>' },
             { key: 'count', value: 5 },
             { key: 'empty' },

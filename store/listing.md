@@ -128,14 +128,14 @@ Stores the user's choices from the extension's options page (editor theme, forma
 The language service for server-side JavaScript includes TypeScript and is about 4 MB, too large to run as a content script in every frame. When a Content Builder or Automation Studio page shows a code editor, the service worker loads this one file of the extension, editor-typescript.js, into that document with chrome.scripting.executeScript. It is never used for anything else and never loads code from outside the extension package.
 ```
 
-### Host permission justification
+### Host permission justification (at most 1,000 characters)
 
 ```text
-The extension only works on Salesforce Marketing Cloud's own pages:
-- https://*.marketingcloudapps.com/* : Content Builder, Automation Studio, Contact Builder and Journey Builder. The stack number in these addresses differs per account, so the host cannot be narrowed further. The content scripts are limited to those apps by their match patterns and include globs. This host permission is also what lets the scripting permission load the language service into Content Builder and Automation Studio.
-- https://*.exacttarget.com/... : the Marketing Cloud page around the apps (Mobile Studio menu, transactional messages panel), Email Studio, Setup pages and Installed Packages, each limited to the exact pages listed in the manifest.
-- https://*.lightning.force.com/cmsAuthor/contentEditor.app : the content editor of Marketing Cloud Next. The first part of the address differs per account.
-The extension only reads and changes these pages to add its editor help and fixes, and only sends requests to Marketing Cloud's own servers, through the page the user is logged in to.
+The extension only runs on Salesforce Marketing Cloud's own pages:
+- *.marketingcloudapps.com: Content Builder, Automation Studio, Contact Builder and Journey Builder. The stack number in the address differs per account, so the host cannot be narrower; include globs limit the content scripts to these apps. This host also lets the scripting permission load the bundled language service into code editors there.
+- *.exacttarget.com: the Marketing Cloud frame (Mobile Studio menu, transactional messages panel), Email Studio, Setup and Installed Packages, each limited to the exact pages in the manifest.
+- *.lightning.force.com/cmsAuthor/contentEditor.app: the content editor of Marketing Cloud Next; the subdomain differs per account.
+It reads and changes these pages only to add its editor help and fixes, and sends requests only to Marketing Cloud's own servers, through the page the user is logged in to.
 ```
 
 ### Remote code
@@ -163,7 +163,7 @@ Tick all three certifications:
 Works once the repository is public:
 
 ```text
-https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools#privacy
+https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/blob/main/PRIVACY.md
 ```
 
 ## Distribution tab

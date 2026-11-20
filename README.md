@@ -258,6 +258,8 @@ When you add or edit an API integration under **Setup → Platform Tools → App
 
 Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers WhatsApp and similar channels). They are set up through the API only: no app of Marketing Cloud shows which ones exist. The extension adds a place to see, create, change and delete them.
 
+The folder names of contents, the texts of a push content, the list for personalization and saving custom keys were seen answering on a real account. They were tried with the same requests the panel sends, not by clicking through the panel itself.
+
 - **A new entry in the menu:** point at **Mobile Studio** at the top of Marketing Cloud. Below MobileConnect, MobilePush and GroupConnect you find **Transactional Messages**. The small icon behind it is this extension's, to show who added the entry.
 - **A list per channel:** the panel that opens has the tabs **SMS**, **Push** and **OTT**. Each lists the messages of the business unit you are in.
     - **Columns:** name, key, status, and the dates a message was created and last changed, in your local date and time. SMS also shows **Code** and **Keyword**, push shows **App** and **Content** by their names.
@@ -276,9 +278,11 @@ Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers Wh
     - Until all are read, sorting by these columns is switched off, and a search finds them only in the messages already read.
     - On the first opening of a list with several hundred messages, that many requests go out once.
 - **The details of one message:** click a row to see everything Marketing Cloud stores for it, with plain labels such as **Key**, **Message** or **Code**. Point at a label to see the name of the field in the API. For a push message the name of its app and of its content stands next to their IDs. **← All … messages** takes you back.
+    - **What a push message says:** under the content key, the details show the **Title**, **Subtitle** and **Message** of the chosen content, read from Content Builder. They are shown as they are written there, AMPscript included, and cannot be changed here. A text that is empty is left out; if the content cannot be read, the lines are simply missing.
+    - **Custom keys of a push message** are listed by their name, each with its value.
 - **Create a message:** every list has a **New … message** button. It opens a form with the fields of that channel:
     - **SMS:** name, key, description, status, the text of the message, the code and keyword it is sent with, the country code of a short code, and whether the recipient is added or updated as a subscriber.
-    - **Push:** name, key, description, status, the app, the content (the customer key of the push message in Content Builder), sound and badge.
+    - **Push:** name, key, description, status, the app, the custom keys of that app, the content (the customer key of the push message in Content Builder), sound and badge.
     - **OTT:** name, key, description, status, the sender (WhatsApp and its phone number) and the content.
 - **The text of an SMS is written in a code editor**, like the code view of Content Builder:
     - **Colours** for AMPscript and personalisation strings, in the light or dark theme chosen in the options.
@@ -287,6 +291,19 @@ Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers Wh
     - There is no formatting (**Shift+Alt+F**) in this editor.
     - If the editor cannot be loaded, the plain text field stays and works as before.
     - The forms for push and OTT have no such field and are unchanged.
+- **Helpers below the text of an SMS:**
+    - **Insert personalization:** the button with the person sign opens a list of the attributes your business unit added to **MobileConnect Demographics**. Choose one and `%%Name%%` is put in at the cursor.
+        - **Keys:** the arrow keys move through the list, **Enter** or **Space** takes the marked attribute, **Esc** closes the list and leaves the form open.
+        - If the business unit has no such attributes, or they cannot be read, the button is not shown.
+    - **Length:** a line says how many characters the message has, such as "42 characters".
+        - Characters from the extension table of the GSM alphabet, such as `€` or `[`, count as two.
+        - Characters that are not in the GSM alphabet, such as emoji or typographic quotes, are counted separately: "3 not in the GSM alphabet".
+        - If the message contains `%%`, the line adds "length depends on personalization".
+        - The panel does not say how many SMS parts a message needs or what it costs.
+    - **Show non-GSM characters:** this button marks those characters in the code editor. The marks go away as soon as you change the message; click again to see them again.
+        - The button is shown only when the message has such characters, and only with the code editor.
+    - Both helpers also work with the plain text field, except for the marks.
+    - A message that cannot be changed in the form has no helpers.
 - **The key follows the name** while you type, as with [readable keys](#readable-keys) elsewhere, until you type a key yourself. The **Readable keys** option switches this off.
 - **SMS code and keyword are two lists:** choose the code first; the keyword list then shows only the keywords of that code. A code reads like `8850 · NL · short code · SHARED`.
     - If Marketing Cloud's lists cannot be read, both are plain text fields.
@@ -298,9 +315,27 @@ Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers Wh
     - **Type to narrow it down:** the list keeps the entries whose name or ID contains what you typed.
     - **Keys:** the arrow keys move through the list, **Enter** takes the marked entry, **Esc** closes the list and leaves the form open.
     - **The field still takes any ID or key you type**, also one that is not in the list.
-    - **App:** the list has the apps of the business unit. The name of the app you chose stands under the field.
-    - **Content:** the list has the push messages of Content Builder. Choosing one fills in its customer key. Messages written for SMS or for in-app are left out: on an account with push messages, every transactional one held a message written for push.
+    - **App:** the list has the apps of the business unit, sorted by name. The name of the app you chose stands under the field.
+        - **An app without push credentials is greyed out** and says "no push credentials set up". It cannot be chosen, with the mouse or with the keys. These are the apps that MobilePush greys out too: apps with neither Android credentials nor a working iOS key or certificate.
+        - **The app a message already has stays.** When you edit a message whose app has no credentials, that app is still chosen, can be kept and can be chosen again.
+        - **A typed or pasted ID of such an app is refused:** a line under the field says why, and the form is not sent until you choose another app.
+        - If the panel cannot find out which apps have credentials, no app is greyed out or refused.
+    - **Content:** the list has the push messages of Content Builder, sorted by name. Choosing one fills in its customer key.
+        - Every entry also names its **folder**, **when it was last changed** (in your local date and time) and **by whom**.
+        - Typing the name of a folder keeps the messages in that folder.
+        - If the folders cannot be read, the entries are shown without them.
+        - Messages written for SMS or for in-app are left out: on an account with push messages, every transactional one held a message written for push.
     - If Marketing Cloud's list cannot be read, the field is a plain text field.
+- **Custom keys of a push message:** below the **App** field, the form has one text field for every custom key of the app you chose.
+    - Marketing Cloud only accepts custom keys that the chosen app defines.
+    - Choose another app and the fields change to the keys of that app. An app without custom keys has none.
+    - A key you leave empty is not sent.
+    - When you edit a message, the keys it already has are shown at once, also keys that its app does not list. As long as you keep the app, they are sent back as they are stored unless you change them.
+    - Choose another app for a message and the keys it has that the new app does not list are greyed out and say "Not a custom key of this app, will not be sent." Saving then sends the new app together with the shorter list of keys.
+        - Choose the first app again and the keys are back as they were.
+        - If the list of apps cannot be read, or the app is not in it, all keys are sent back as they are stored.
+    - Empty a key that had a value and it is taken out of the message.
+    - Changing one custom key sends the whole list of custom keys, together with the other options of the message.
 - **What Marketing Cloud refuses is shown:** if a message cannot be created, the form says why in Marketing Cloud's words and keeps what you typed.
 - **A new message starts as Active** unless you choose another status in the form. An active message can be sent at once by anything that knows its key.
     - **Push has three statuses:** Active, Inactive and Draft. Marketing Cloud stores a new push message as Draft unless it is Active, also when you choose Inactive.

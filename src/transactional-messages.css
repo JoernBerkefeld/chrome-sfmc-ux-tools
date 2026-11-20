@@ -226,6 +226,7 @@
     .CodeMirror {
     outline: 2px solid #0176d3;
 }
+.sfmc-ux-tools-transactional-field input[type='text']:disabled,
 .sfmc-ux-tools-transactional-field select:disabled {
     background: #f3f3f3;
     color: #5c5c5c;
@@ -282,11 +283,88 @@
     font-weight: 600;
 }
 .sfmc-ux-tools-transactional-combo-name,
+.sfmc-ux-tools-transactional-combo-more,
 .sfmc-ux-tools-transactional-combo-value {
     display: block;
 }
+/* the folder of an entry, and when and by whom it was last changed */
+.sfmc-ux-tools-transactional-combo-more {
+    color: #5c5c5c;
+    font-style: italic;
+}
 .sfmc-ux-tools-transactional-combo-value {
     color: #5c5c5c;
+}
+/* an entry that cannot be chosen, such as an app without push credentials */
+.sfmc-ux-tools-transactional-combo-off {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+.sfmc-ux-tools-transactional-combo-off:hover {
+    background: none;
+}
+/* said under a field that holds what cannot be sent */
+.sfmc-ux-tools-transactional-refused {
+    color: #ba0517;
+    display: block;
+}
+.sfmc-ux-tools-transactional-refused[hidden] {
+    display: none;
+}
+/* the helpers below the message of an SMS: personalization, its length, what is not GSM */
+.sfmc-ux-tools-transactional-tools {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 12px;
+}
+.sfmc-ux-tools-transactional-tools button {
+    margin: 0;
+}
+.sfmc-ux-tools-transactional-tools button[hidden] {
+    display: none;
+}
+.sfmc-ux-tools-transactional-person {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    color: #181818;
+    cursor: pointer;
+    display: inline-flex;
+    padding: 5px;
+}
+.sfmc-ux-tools-transactional-person:hover {
+    background: #f3f3f3;
+}
+.sfmc-ux-tools-transactional-count {
+    color: #5c5c5c;
+}
+/* the list of attributes takes a line of its own */
+.sfmc-ux-tools-transactional-tools .sfmc-ux-tools-transactional-combo-drop {
+    flex-basis: 100%;
+    margin-top: 0;
+}
+/* a character of the message that the GSM alphabet does not have, once it is asked for */
+.sfmc-ux-tools-transactional-non-gsm {
+    background: #fde3a7;
+    outline: 1px solid #dd7a01;
+}
+/* the custom keys of the app that is chosen: fields of their own, set off from the form's */
+.sfmc-ux-tools-transactional-custom-keys {
+    border-left: 3px solid #c9c9c9;
+    margin: 0 0 12px;
+    padding-left: 12px;
+}
+.sfmc-ux-tools-transactional-custom-keys[hidden] {
+    display: none;
+}
+.sfmc-ux-tools-transactional-custom-keys .sfmc-ux-tools-transactional-field {
+    margin: 8px 0 0;
+}
+.sfmc-ux-tools-transactional-custom-keys .sfmc-ux-tools-transactional-label {
+    font-weight: normal;
 }
 .sfmc-ux-tools-transactional-field input[type='checkbox'] {
     margin-right: 6px;

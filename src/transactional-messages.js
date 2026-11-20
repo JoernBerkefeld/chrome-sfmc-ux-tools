@@ -74,8 +74,46 @@
     const READING = 'reading …';
     const NOTHING_OFFERED = 'This business unit has nothing to choose from here.';
     const NOTHING_MATCHES = 'Nothing in the list matches. The field takes what you typed as it is.';
+    // where a push definition holds the custom keys of its app, each with its value
+    const CUSTOM_KEYS = 'options.customKeys';
+    // what a mobile message written for push says, by the name Content Builder stores it under
+    const PUSH_TEXTS = [
+        ['display:title', 'Title'],
+        ['display:subtitle', 'Subtitle'],
+        ['display:message', 'Message'],
+    ];
     // said under a field whose list could not be read
     const NO_LIST = 'The list to choose from could not be read. Type the id or key.';
+    // said of an app that MobilePush greys out, in the list and under the field that holds its id
+    const NO_CREDENTIALS = 'no push credentials set up';
+    const APP_REFUSED =
+        'This app has no push credentials set up, so nothing can be sent with it. Choose another app.';
+    const PERSONALIZE = 'Insert personalization';
+    const SHOW_NON_GSM = 'Show non-GSM characters';
+    // the characters an SMS holds as one each (GSM 03.38, basic set), and those of its extension
+    // table, which take the room of two
+    const GSM = new Set(
+        '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà',
+    );
+    const GSM_EXTENDED = new Set('\f^{}\\[~]|€');
+    /**
+     * Says whether an app lacks what it needs to push, by the rule of MobilePush's own list of
+     * apps: neither Android credentials nor an iOS key or a certificate that still holds.
+     *
+     * @param {object} app the app as MobilePush's list has it
+     * @returns {boolean} true when MobilePush greys it out
+     */
+    const hasNoCredentials = (app) => {
+        const isAndroidOff = !(app?.gcmEnabled || app?.fcmFileName);
+        if (app?.apnsAuthType === 'Token') {
+            return !app.apnsAuthKeyFileName && isAndroidOff;
+        }
+        if (app?.apnsCertificateExpiration) {
+            // a date that cannot be read counts as one that still holds
+            return Date.parse(app.apnsCertificateExpiration) < Date.now() && isAndroidOff;
+        }
+        return isAndroidOff;
+    };
     /**
      * Lists what a new message is asked for, whatever its kind.
      *
@@ -102,6 +140,19 @@
      */
     const joined = (...parts) =>
         parts.filter((part) => typeof part === 'string' && part).join(' · ');
+    /**
+     * Puts entries to choose from in the order of their names, whatever the case: nobody knows
+     * an app or a content by its id or key.
+     *
+     * @param {{label: unknown}[]} entries entries of a list
+     * @returns {object[]} the same entries, by name
+     */
+    const byName = (entries) =>
+        entries.toSorted((one, other) =>
+            String(one.label ?? '').localeCompare(String(other.label ?? ''), undefined, {
+                sensitivity: 'base',
+            }),
+        );
     // lists of the business unit that a field offers to choose from, each entry with the value
     // to send and the name to show for it
     const SUGGESTIONS = {
@@ -133,29 +184,86 @@
         apps: {
             path: 'push/v1/application',
             read: (answer) =>
-                (Array.isArray(answer) ? answer : []).map((item) => ({
-                    value: item.id,
-                    label: item.name,
+                byName(
+                    (Array.isArray(answer) ? answer : []).map((item) => ({
+                        value: item.id,
+                        label: item.name,
+                        // the custom keys of the app; an app without any does not name them
+                        keys: (Array.isArray(item.keys) ? item.keys : []).filter(
+                            (key) => typeof key === 'string' && key,
+                        ),
+                    })),
+                ),
+            // the list that says which of them can send at all
+            credentials: 'credentials',
+        },
+        // the apps as MobilePush itself reads them, with what tells whether an app has the
+        // credentials to push with; the public list above does not say
+        credentials: {
+            path: 'push-internal/v1/application',
+            pages: 'items',
+            read: (items) =>
+                items.map((item) => ({
+                    value: item?.id,
+                    label: item?.name,
+                    isOff: hasNoCredentials(item),
                 })),
+        },
+        // what an SMS can be personalised with: the attributes of MobileConnect Demographics
+        // that the business unit added itself, by the name a message calls them
+        attributes: {
+            path: 'contacts/v1/attributeSetDefinitions?$pageSize=500',
+            read: (answer) => {
+                const set = (Array.isArray(answer.items) ? answer.items : []).find(
+                    (item) => item?.key === 'MobileDemographics',
+                );
+                return (Array.isArray(set?.attributes) ? set.attributes : [])
+                    .filter(
+                        (item) =>
+                            item?.isSystemDefined === false && typeof item.storageName === 'string',
+                    )
+                    .map((item) => {
+                        const name = item.storageName.replace(/^_/, '');
+                        return { value: name, label: name };
+                    });
+            },
         },
         contents: {
             path: 'asset/v1/content/assets',
-            query: `$filter=assetType.id%20eq%20${MOBILE_MESSAGE}&$fields=name,customerKey,availableViews`,
+            query: `$filter=assetType.id%20eq%20${MOBILE_MESSAGE}&$fields=id,name,customerKey,availableViews,modifiedDate,modifiedBy,category`,
             // comes in pages, under this name
             pages: 'items',
             // a mobile message is written for one use, which it names as its view: push, sms or
             // inApp, in whatever case. Seen on a business unit with push definitions: every one of
             // them holds a message written for push
             read: (items) =>
-                items
-                    .filter(
-                        (item) =>
-                            Array.isArray(item.availableViews) &&
-                            item.availableViews.some(
-                                (view) => String(view).toLowerCase() === 'push',
-                            ),
-                    )
-                    .map((item) => ({ value: item.customerKey, label: item.name })),
+                byName(
+                    items
+                        .filter(
+                            (item) =>
+                                Array.isArray(item.availableViews) &&
+                                item.availableViews.some(
+                                    (view) => String(view).toLowerCase() === 'push',
+                                ),
+                        )
+                        .map((item) => ({
+                            value: item.customerKey,
+                            label: item.name,
+                            // a row of the list has the id of its folder only
+                            folder: item.category?.id,
+                            modified: item.modifiedDate,
+                            by: item.modifiedBy?.name,
+                        })),
+                ),
+            // the list that names the folders
+            folders: 'folders',
+        },
+        // the folders of Content Builder, by their id
+        folders: {
+            path: 'asset/v1/content/categories',
+            pages: 'items',
+            read: (items) =>
+                items.map((item) => ({ value: String(item.id ?? ''), label: item.name })),
         },
     };
     const KINDS = [
@@ -239,6 +347,8 @@
                     isRequired: true,
                     suggest: 'apps',
                     isNamed: true,
+                    // the form asks for the custom keys of the app that is chosen
+                    isKeyed: true,
                 },
                 {
                     path: 'content.customerKey',
@@ -247,6 +357,8 @@
                     isRequired: true,
                     suggest: 'contents',
                     isNamed: true,
+                    // the details show what the content says
+                    isSaid: true,
                     help: 'The customer key of the push message in Content Builder.',
                 },
                 { path: 'options.sound', label: 'Sound' },
@@ -342,6 +454,7 @@
         ['options', 'Options'],
         ['options.sound', 'Sound'],
         ['options.badge', 'Badge'],
+        [CUSTOM_KEYS, 'Custom keys'],
         ['options.isReconcilable', 'Reconcilable'],
         ['options.urlShortenerOptions', 'Link shortener'],
         ['options.urlShortenerOptions.isLinkShorteningEnabled', 'Shorten links'],
@@ -374,6 +487,12 @@
     // read, with those who wait for them while they are being read. A list that could not be
     // read is not in here, and is asked for again the next time
     const offers = new Map();
+    // what the mobile messages of Content Builder say, by their customer key, as it was read
+    // for the details of a push message; kept until the lists are read again
+    const texts = new Map();
+    // what looks again at whether a field may hold what it holds, by the field; called before a
+    // form is sent, because the lists it was held against may be gone since
+    const checks = new WeakMap();
 
     let dialog;
     let body;
@@ -465,7 +584,7 @@
      * Reads a list the API hands out in pages, page by page.
      *
      * @param {string} path where the list is
-     * @param {string} query what else to ask for, such as a filter
+     * @param {string|undefined} query what else to ask for, such as a filter
      * @param {string} field name the rows of a page come under
      * @param {() => boolean} isWanted false once nobody waits for the rest any more
      * @param {number} [size] rows to ask for at a time
@@ -476,7 +595,9 @@
         let before;
         // asked between the pages only: the first one is always read
         for (let page = 1; page === 1 || isWanted(); page++) {
-            const answer = await ask(`${path}?$page=${page}&$pageSize=${size}&${query}`);
+            const answer = await ask(
+                `${path}?$page=${page}&$pageSize=${size}${query ? `&${query}` : ''}`,
+            );
             const found = Array.isArray(answer[field]) ? answer[field] : [];
             const first = JSON.stringify(found[0]);
             // the same rows again: the page asked for was ignored, and would be for ever
@@ -501,6 +622,7 @@
     function forget() {
         lists.clear();
         offers.clear();
+        texts.clear();
         for (const kept of details.values()) {
             kept.clear();
         }
@@ -622,6 +744,76 @@
     }
 
     /**
+     * Reads what a mobile message of Content Builder says when it is pushed: its title, its
+     * subtitle and its message. Read once for a customer key and kept; what cannot be read is
+     * done without (nothing comes of it), and asked for again the next time.
+     *
+     * @param {string} key customer key of the content
+     * @returns {Promise.<{label: string, name: string, text: string}[]|undefined>} what each of them is called here and in Content Builder, and its text; only those that are there
+     */
+    function readTexts(key) {
+        const kept = texts.get(key);
+        if (kept) {
+            return kept;
+        }
+        const filter = encodeURIComponent(`customerKey eq '${key.replaceAll("'", "''")}'`);
+        const isRead = async () => {
+            try {
+                const answer = await ask(
+                    `${SUGGESTIONS.contents.path}?$filter=${filter}&$fields=name,customerKey,views`,
+                );
+                const found = (Array.isArray(answer.items) ? answer.items : []).find(
+                    (item) => item?.customerKey === key,
+                );
+                const said = found?.views?.push?.meta?.options?.customBlockData;
+                return PUSH_TEXTS.map(([name, label]) => ({
+                    label,
+                    name,
+                    text: said?.[name],
+                })).filter(({ text }) => typeof text === 'string' && text);
+            } catch {
+                // asked for again the next time
+                return;
+            }
+        };
+        const read = isRead();
+        texts.set(key, read);
+        const forgetUnread = async () => {
+            if (!(await read) && texts.get(key) === read) {
+                texts.delete(key);
+            }
+        };
+        forgetUnread();
+        return read;
+    }
+
+    /**
+     * Puts what the content of a push message says below its key in the details, once it is
+     * read: as text, whatever it holds. Nothing is added when there is nothing to show.
+     *
+     * @param {HTMLElement} shown the details of the definition
+     * @param {string} path where the definition holds the customer key of its content
+     * @param {unknown} key the customer key
+     */
+    async function showTexts(shown, path, key) {
+        const title = [...shown.querySelectorAll('dt')].find((item) => item.title === path);
+        if (!title || typeof key !== 'string' || !key) {
+            return;
+        }
+        const said = (await readTexts(key)) ?? [];
+        // right below the key, before whatever else the content holds
+        let last = title.nextElementSibling;
+        for (const { label, name, text } of said) {
+            const term = make('dt', 'content-text', label);
+            term.title = name;
+            const cell = make('dd', 'content-text');
+            cell.append(make('span', 'value', text));
+            last.after(term, cell);
+            last = cell;
+        }
+    }
+
+    /**
      * Sends a request that changes a message. Whatever comes of it, also nothing at all, the
      * list of its kind and the details of that message may no longer be what was read, and are
      * read again when the list is shown next.
@@ -726,7 +918,18 @@
         if (value === null || typeof value !== 'object') {
             return make('span', 'value', String(value));
         }
-        const entries = Object.entries(value);
+        // custom keys are listed by their name, each with its value, when they hold nothing else
+        const isKeys =
+            path === CUSTOM_KEYS &&
+            Array.isArray(value) &&
+            value.every(
+                (item) =>
+                    typeof item?.key === 'string' &&
+                    Object.keys(item).every((name) => name === 'key' || name === 'value'),
+            );
+        const entries = isKeys
+            ? value.map((item) => [item.key, item.value ?? ''])
+            : Object.entries(value);
         if (entries.length === 0) {
             return make('span', 'value', '(none)');
         }
@@ -955,9 +1158,10 @@
      * @param {HTMLInputElement} input the text field
      * @param {string} id name for the list and its entries
      * @param {string} name codes, keywords, apps or contents
+     * @param {unknown} [kept] what the message that is changed holds in the field; it can always be kept
      * @returns {HTMLElement} the field with its list
      */
-    function combo(input, id, name) {
+    function combo(input, id, name, kept) {
         const box = make('div', 'combo');
         const drop = make('div', 'combo-drop');
         const status = make('div', 'combo-status');
@@ -1001,13 +1205,55 @@
             typed = '';
             close();
         };
+        // the list that names the folders of the entries, if they are in folders, and the one
+        // that says which entries cannot be used
+        const { folders, credentials } = SUGGESTIONS[name];
+        // an id or entry that the other list switches off; nothing is while that list is not
+        // read, or does not hold it
+        const isOff = (value) =>
+            Boolean(
+                credentials &&
+                offers.get(credentials)?.entries?.find((entry) => entry.value === value)?.isOff,
+            );
+        // not to be chosen: what is switched off, unless the message holds it already
+        const isBarred = (entry) => entry.value !== kept && isOff(entry.value);
+        // said under the field while it holds the id of such an entry, however it came there;
+        // the form is not sent then
+        const refused = make('span', 'refused', APP_REFUSED);
+        refused.hidden = true;
+        const check = () => {
+            const value = input.value.trim();
+            refused.hidden = value === kept || !isOff(value);
+            input.setCustomValidity(refused.hidden ? '' : APP_REFUSED);
+        };
+        if (credentials) {
+            box.append(refused);
+            input.addEventListener('input', check);
+            checks.set(input, check);
+        }
+        // the names of the folders by their id, once they are read
+        let folderNames = new Map();
+        const folderOf = (entry) => folderNames.get(String(entry.folder ?? '')) || undefined;
+        // what else tells an entry from one of the same name: its folder, and when and by whom
+        // it was last changed
+        const moreOf = (entry) => {
+            const change = [
+                typeof entry.modified === 'string' && entry.modified && formatDate(entry.modified),
+                typeof entry.by === 'string' && entry.by && `by ${entry.by}`,
+            ]
+                .filter(Boolean)
+                .join(' ');
+            return joined(folderOf(entry), change && `modified ${change}`);
+        };
         const draw = () => {
             const current = input.value.trim();
             shown = (entries || []).filter(
-                ({ value, label }) =>
-                    value.toLowerCase().includes(typed) || label.toLowerCase().includes(typed),
+                (entry) =>
+                    entry.value.toLowerCase().includes(typed) ||
+                    entry.label.toLowerCase().includes(typed) ||
+                    Boolean(folderOf(entry)?.toLowerCase().includes(typed)),
             );
-            if (!shown.includes(active)) {
+            if (!shown.includes(active) || isBarred(active)) {
                 active = undefined;
             }
             let at;
@@ -1017,10 +1263,18 @@
                     option.id = `${id}-${entries.indexOf(entry)}`;
                     option.setAttribute('role', 'option');
                     option.setAttribute('aria-selected', String(entry.value === current));
+                    const more = joined(moreOf(entry), isOff(entry.value) && NO_CREDENTIALS);
                     option.append(
                         make('span', 'combo-name', entry.label || entry.value),
+                        ...(more ? [make('span', 'combo-more', more)] : []),
                         make('span', 'combo-value', entry.value),
                     );
+                    if (isBarred(entry)) {
+                        // greyed, and neither the mouse nor the keys take it
+                        option.classList.add(`${NAME}-combo-off`);
+                        option.setAttribute('aria-disabled', 'true');
+                        return option;
+                    }
                     // before the field loses the focus, which would close the list
                     option.addEventListener('mousedown', () => choose(entry));
                     if (entry === active) {
@@ -1047,7 +1301,7 @@
         const open = () => {
             // what the field holds is where the keys start from
             const current = input.value.trim();
-            active = (entries || []).find((entry) => entry.value === current);
+            active = (entries || []).find((entry) => entry.value === current && !isBarred(entry));
             drop.hidden = false;
             input.setAttribute('aria-expanded', 'true');
             draw();
@@ -1057,14 +1311,16 @@
             open();
         };
         const move = (step) => {
-            if (shown.length === 0) {
+            // the keys pass over what cannot be chosen
+            const free = shown.filter((entry) => !isBarred(entry));
+            if (free.length === 0) {
                 return;
             }
-            const index = shown.indexOf(active);
-            const last = shown.length - 1;
+            const index = free.indexOf(active);
+            const last = free.length - 1;
             const from = step > 0 ? last : 0;
             const to = step > 0 ? 0 : last;
-            active = shown[index === -1 || index === from ? to : index + step];
+            active = free[index === -1 || index === from ? to : index + step];
             draw();
         };
         const keys = {
@@ -1150,8 +1406,36 @@
             }
             drop.replaceWith(make('span', 'help', NO_LIST));
         };
+        // the folders come when they come, and are done without when they do not
+        const nameFolders = async () => {
+            const found = await readOffers(folders, () => input.isConnected);
+            if (!found) {
+                return;
+            }
+
+            folderNames = new Map(found.map((entry) => [entry.value, entry.label]));
+            if (entries) {
+                draw();
+            }
+        };
+        // so does what switches entries off: without it every entry can be chosen
+        const switchOff = async () => {
+            const found = await readOffers(credentials, () => input.isConnected);
+            if (!found) {
+                return;
+            }
+
+            check();
+            draw();
+        };
         draw();
         read();
+        if (folders) {
+            nameFolders();
+        }
+        if (credentials) {
+            switchOff();
+        }
         return box;
     }
 
@@ -1236,9 +1520,10 @@
      * @param {object} spec what the field is, from the list of its kind of message
      * @param {string} id name for what belongs to the field
      * @param {boolean} isNew true in the form for a new message
+     * @param {unknown} [kept] what the message that is changed holds in the field
      * @returns {{row: HTMLElement, input: HTMLElement}} the line of the form and the field in it
      */
-    function field(spec, id, isNew) {
+    function field(spec, id, isNew, kept) {
         // a field with a list below it is no label as a whole: a click into the list would
         // count as one into the field
         const row = make(spec.suggest ? 'div' : 'label', 'field');
@@ -1272,7 +1557,15 @@
         if (spec.suggest) {
             input.id = `${id}-field`;
             title.htmlFor = input.id;
-            row.append(title, combo(input, id, spec.suggest));
+            row.append(
+                title,
+                combo(
+                    input,
+                    id,
+                    spec.suggest,
+                    kept === undefined || kept === null ? undefined : String(kept),
+                ),
+            );
         } else {
             // a checkbox stands before its words
             row.append(...(input.type === 'checkbox' ? [input, title] : [title, input]));
@@ -1290,6 +1583,144 @@
             row.append(make('span', 'help', spec.whenNew));
         }
         return { row, input };
+    }
+
+    /**
+     * Builds the fields for the custom keys of a push message, below the field of its app: one
+     * for every key the definition holds, at once and whatever becomes of the list of apps, and
+     * one for every other key of the app that is chosen. They are no fields of the kind of
+     * message: what they change is told by what each of them was filled with, and sent as the
+     * whole list of the definition, in which everything that was not touched stays as it is.
+     * One case apart: Marketing Cloud refuses a key the app does not define, so once another
+     * app than the one of the definition is chosen, and that app is known, the stored keys it
+     * does not list are left out of what is sent, and their fields say so.
+     *
+     * @param {HTMLInputElement} app the field that holds the id of the app
+     * @param {object} [loaded] the definition the form was filled from; none for a new one
+     * @returns {{element: HTMLElement, isChanged: () => boolean, built: () => object[]}} the fields, whether one of them was changed, and the list to send
+     */
+    function customKeys(app, loaded) {
+        const element = make('div', 'custom-keys');
+        const kept = valueAt(loaded, CUSTOM_KEYS);
+        const stored = Array.isArray(kept) ? kept : [];
+        // what is stored as something else than a list is shown in the details only, and left alone
+        const isHeld = kept === undefined || kept === null || Array.isArray(kept);
+        // the fields by their key: {input, filled, from}, the latter the stored entry, if any
+        const fields = new Map();
+        // the app the definition has: only under another one is something stored left out
+        const first = app.value.trim();
+        // the keys of the app that is chosen; none when the app is not known
+        const listed = () =>
+            offers.get('apps')?.entries?.find((entry) => entry.value === app.value.trim())?.keys;
+        // whether a stored entry is left out: its key is none of another, known app
+        const isLeft = (item) => {
+            const keys = loaded && app.value.trim() !== first ? listed() : undefined;
+            return Boolean(keys) && typeof item?.key === 'string' && !keys.includes(item.key);
+        };
+        const add = (key, from) => {
+            const row = make('label', 'field');
+            const input = make('input');
+            input.type = 'text';
+            input.dataset.customKey = key;
+            const value = from?.value;
+            const isFixed = typeof value === 'object' && value !== null;
+            if (isFixed) {
+                input.disabled = true;
+                input.title = 'This value cannot be changed here.';
+            } else {
+                input.value = value === undefined || value === null ? '' : String(value);
+            }
+            row.append(make('span', 'label', key), input);
+            const note = make('span', 'help', 'Not a custom key of this app, will not be sent.');
+            fields.set(key, { row, input, filled: input.value.trim(), from, isFixed, note });
+        };
+        for (const item of stored) {
+            // an entry without a key, or with one that came before, has no field and stays
+            if (typeof item?.key === 'string' && item.key && !fields.has(item.key)) {
+                add(item.key, item);
+            }
+        }
+        const title = make('span', 'help', 'Custom keys of the app');
+        // the fields on show: those of what is stored, then those of the app that is chosen
+        const shown = () => [
+            ...fields.values().filter((item) => item.from),
+            ...(listed() ?? [])
+                .filter((key) => !fields.get(key)?.from)
+                .map((key) => {
+                    // what was typed for a key comes back with its app
+                    if (!fields.has(key)) {
+                        add(key);
+                    }
+                    return fields.get(key);
+                }),
+        ];
+        const draw = () => {
+            const items = isHeld ? shown() : [];
+            const rows = items.map((item) => item.row);
+            for (const { row, input, from, isFixed, note } of items) {
+                const isOut = isLeft(from);
+                input.disabled = isFixed || isOut;
+                if (isOut) {
+                    row.append(note);
+                } else {
+                    note.remove();
+                }
+            }
+            // fields that stay keep their place, and the cursor in them
+            if (
+                rows.length !== element.children.length - 1 ||
+                rows.some((row) => row.parentElement !== element)
+            ) {
+                element.replaceChildren(title, ...rows);
+            }
+            element.hidden = rows.length === 0;
+        };
+        const drawLater = async () => {
+            await readOffers('apps', () => app.isConnected);
+            draw();
+        };
+        // typing and choosing from the list both come as this
+        app.addEventListener('input', draw);
+        draw();
+        drawLater();
+        const changed = () =>
+            (isHeld ? shown() : []).filter(
+                ({ input, filled, from, isFixed }) =>
+                    !isFixed && !isLeft(from) && input.value.trim() !== filled,
+            );
+        return {
+            element,
+            isChanged: () =>
+                changed().length > 0 || (isHeld && stored.some((item) => isLeft(item))),
+            built: () => {
+                const touched = new Set(changed());
+                const sent = [];
+                for (const item of stored) {
+                    if (isLeft(item)) {
+                        continue;
+                    }
+                    const field = fields.get(item?.key);
+                    if (field?.from !== item || !touched.has(field)) {
+                        sent.push(item);
+                        continue;
+                    }
+                    const value = field.input.value.trim();
+                    // a value that was taken out takes its key with it
+                    if (value) {
+                        sent.push({ ...item, value });
+                    }
+                }
+                for (const field of touched) {
+                    if (!field.from) {
+                        sent.push({
+                            key: field.input.dataset.customKey,
+                            value: field.input.value.trim(),
+                        });
+                    }
+                }
+                return sent;
+            },
+        };
     }
 
     /**
@@ -1314,6 +1745,7 @@
      * stays as it is.
      *
      * @param {HTMLTextAreaElement} input the field
+     * @returns {Promise.<object|undefined>} the editor; nothing when the field stays as it is
      */
     async function codeEditor(input) {
         const row = input.closest(`.${NAME}-field`);
@@ -1412,6 +1844,232 @@
         if (isFocused) {
             editor.focus();
         }
+        return editor;
+    }
+
+    /**
+     * Draws the sign for a person: a head above its shoulders.
+     *
+     * @returns {SVGElement} the sign, in the colour of the text around it
+     */
+    function personSign() {
+        const sign = shape('svg', {
+            class: `${NAME}-sign`,
+            viewBox: '0 0 16 16',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-width': '1.5',
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+            'aria-hidden': 'true',
+            focusable: 'false',
+        });
+        sign.append(
+            shape('circle', { cx: '8', cy: '5', r: '2.75' }),
+            shape('path', { d: 'M2.5 14a5.5 5.5 0 0 1 11 0' }),
+        );
+        return sign;
+    }
+
+    /**
+     * Measures the text of an SMS: every character counts as one, those of the extension table
+     * of the GSM alphabet as the two they take.
+     *
+     * @param {string} text the message
+     * @returns {{count: number, others: {at: number, size: number}[]}} how many characters it has, and where those are that the GSM alphabet does not have
+     */
+    function measure(text) {
+        let count = 0;
+        let at = 0;
+        const others = [];
+        for (const character of text) {
+            count += GSM_EXTENDED.has(character) ? 2 : 1;
+            if (!GSM.has(character) && !GSM_EXTENDED.has(character)) {
+                others.push({ at, size: character.length });
+            }
+            at += character.length;
+        }
+        return { count, others };
+    }
+
+    /**
+     * Puts a line of helpers below the field a message is typed into: a button that inserts a
+     * personalization string for an attribute of the business unit, the length of the message,
+     * and a button that marks what the GSM alphabet does not have. They work with the code
+     * editor and, but for the marks, with the plain field. A field that cannot be changed gets none.
+     *
+     * @param {HTMLTextAreaElement} input the field
+     * @param {Promise.<object|undefined>} editing the code editor of the field, once it is there; nothing when it is not to be had
+     */
+    function messageTools(input, editing) {
+        if (input.disabled) {
+            return;
+        }
+        const bar = make('div', 'tools');
+        let editor;
+        const person = make('button', 'person');
+        person.type = 'button';
+        person.title = PERSONALIZE;
+        person.setAttribute('aria-label', PERSONALIZE);
+        person.setAttribute('aria-haspopup', 'listbox');
+        person.setAttribute('aria-expanded', 'false');
+        person.append(personSign());
+        // not there until there is something to insert
+        person.hidden = true;
+        const size = make('span', 'count');
+        const reveal = make('button', 'keep', SHOW_NON_GSM);
+        reveal.type = 'button';
+        const drop = make('div', 'combo-drop');
+        const list = make('div', 'combo-list');
+        list.setAttribute('role', 'listbox');
+        list.setAttribute('aria-label', PERSONALIZE);
+        list.id = `${NAME}-personalize`;
+        list.tabIndex = -1;
+        drop.hidden = true;
+        drop.append(list);
+        bar.append(person, size, reveal, drop);
+
+        // the marks in the editor, which hold until the message is changed
+        let marks = [];
+        const unmark = () => {
+            for (const mark of marks) {
+                mark.clear();
+            }
+            marks = [];
+        };
+        const count = () => {
+            const { count: characters, others } = measure(input.value);
+            size.textContent = joined(
+                `${characters} ${characters === 1 ? 'character' : 'characters'}`,
+                others.length > 0 && `${others.length} not in the GSM alphabet`,
+                input.value.includes('%%') && 'length depends on personalization',
+            );
+            // only the editor can mark them
+            reveal.hidden = !editor || others.length === 0;
+        };
+        reveal.addEventListener('click', () => {
+            unmark();
+            // the editor has the text of the field, with the same line breaks
+            marks = measure(editor.getValue()).others.map(({ at, size: length }) =>
+                editor.markText(editor.posFromIndex(at), editor.posFromIndex(at + length), {
+                    className: `${NAME}-non-gsm`,
+                }),
+            );
+        });
+        input.addEventListener('input', count);
+        count();
+
+        let names = [];
+        let active = 0;
+        const close = () => {
+            drop.hidden = true;
+            person.setAttribute('aria-expanded', 'false');
+            list.removeAttribute('aria-activedescendant');
+        };
+        const insert = (name) => {
+            const text = `%%${name}%%`;
+            close();
+            if (editor) {
+                // the editor writes it to the field
+                editor.replaceSelection(text);
+                editor.focus();
+                return;
+            }
+            input.setRangeText(text, input.selectionStart, input.selectionEnd, 'end');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+        };
+        const draw = () => {
+            list.replaceChildren(
+                ...names.map((name, index) => {
+                    const option = make('div', 'combo-option');
+                    option.id = `${list.id}-${index}`;
+                    option.setAttribute('role', 'option');
+                    option.setAttribute('aria-selected', String(index === active));
+                    option.append(make('span', 'combo-name', name));
+                    option.addEventListener('mousedown', (event) => {
+                        // the cursor stays where the name goes
+                        event.preventDefault();
+                        insert(name);
+                    });
+                    if (index === active) {
+                        option.classList.add(`${NAME}-combo-active`);
+                    }
+                    return option;
+                }),
+            );
+            const at = list.children[active];
+            if (at) {
+                list.setAttribute('aria-activedescendant', at.id);
+                at.scrollIntoView({ block: 'nearest' });
+            } else {
+                list.removeAttribute('aria-activedescendant');
+            }
+        };
+        const move = (step) => {
+            active = (active + step + names.length) % names.length;
+            draw();
+        };
+        const keys = {
+            ArrowDown: () => move(1),
+            ArrowUp: () => move(-1),
+            Enter: () => insert(names[active]),
+            ' ': () => insert(names[active]),
+            // closes the list, not the panel
+            Escape: () => {
+                close();
+                person.focus();
+            },
+        };
+        list.addEventListener('keydown', (event) => {
+            if (!Object.hasOwn(keys, event.key)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            keys[event.key]();
+        });
+        // the Tab key and a click elsewhere leave the list
+        list.addEventListener('blur', close);
+        // a click on the button of an open list closes it: the list keeps the focus until then
+        person.addEventListener('mousedown', (event) => {
+            if (!drop.hidden) {
+                event.preventDefault();
+            }
+        });
+        person.addEventListener('click', () => {
+            if (!drop.hidden) {
+                close();
+                // the list had the focus, and is gone
+                person.focus();
+                return;
+            }
+            active = 0;
+            drop.hidden = false;
+            person.setAttribute('aria-expanded', 'true');
+            draw();
+            list.focus();
+        });
+        input.closest(`.${NAME}-field`).after(bar);
+
+        const offer = async () => {
+            const found = await readOffers('attributes', () => bar.isConnected);
+            names = (found ?? []).map((entry) => entry.value);
+            // without attributes, or without their list, there is no button
+            person.hidden = names.length === 0;
+        };
+        offer();
+        const mark = async () => {
+            editor = await editing;
+            if (!editor) {
+                return;
+            }
+
+            editor.on('change', unmark);
+            count();
+        };
+        mark();
     }
 
     /**
@@ -1480,8 +2138,9 @@
      * @param {HTMLFormElement} form the form
      * @param {Map.<string, HTMLElement>} inputs its fields by their path
      * @param {HTMLElement} says where a refusal is shown
+     * @param {{built: () => object[]}} [keys] the custom keys of the form, if its kind has them
      */
-    async function create(kind, form, inputs, says) {
+    async function create(kind, form, inputs, says, keys) {
         const buttons = [...form.querySelectorAll('button')];
         // one is on its way already (its buttons are switched off until it is answered), or a
         // required field is empty
@@ -1493,6 +2152,10 @@
             button.disabled = true;
         }
         const definition = toDefinition(kind.fields, inputs);
+        const added = keys?.built() ?? [];
+        if (added.length > 0) {
+            definition.options = { ...definition.options, customKeys: added };
+        }
         const called = `“${definition.name}” (key ${definition.definitionKey})`;
         try {
             await write(kind, definition.definitionKey, 'POST', definition);
@@ -1601,8 +2264,9 @@
      * @param {HTMLElement} says where a refusal is shown
      * @param {object} loaded the definition the form was filled from
      * @param {Map.<string, string|boolean>} filled what each field held when the form was filled
+     * @param {{isChanged: () => boolean, built: () => object[]}} [keys] the custom keys of the form, if its kind has them
      */
-    async function save(kind, form, inputs, says, loaded, filled) {
+    async function save(kind, form, inputs, says, loaded, filled, keys) {
         const buttons = [...form.querySelectorAll('button')];
         // one is on its way already, or a required field is empty
         if (buttons.some((button) => button.disabled) || !isComplete(form, inputs)) {
@@ -1610,6 +2274,15 @@
         }
         const key = loaded.definitionKey;
         const { changes, paths } = toChanges(kind.fields, inputs, loaded, filled);
+        if (keys?.isChanged()) {
+            // into the options that go out anyway, or into a copy of those that are stored: the
+            // list is sent whole, next to everything else the part holds
+            const { options } = loaded;
+            changes.options ??=
+                typeof options === 'object' && options !== null ? { ...options } : {};
+            changes.options.customKeys = keys.built();
+            paths.push(CUSTOM_KEYS);
+        }
         // what an earlier try said no longer holds
         says.hidden = true;
         if (paths.length === 0) {
@@ -1651,6 +2324,15 @@
             }
             const missed = paths.filter((path) => {
                 const sent = valueAt(changes, path);
+                // a list is held against the list that is there, key by key and each value as
+                // text, whatever else an entry holds and in whatever order; none counts as an
+                // empty one
+                if (Array.isArray(sent)) {
+                    const got = valueAt(now, path) ?? [];
+                    const pairs = (list) =>
+                        JSON.stringify(list.map((entry) => [entry?.key, String(entry?.value)]));
+                    return !Array.isArray(got) || pairs(got) !== pairs(sent);
+                }
                 // what is not there counts as not ticked, or as no text; a number as its digits
                 const got = valueAt(now, path) ?? (sent === false ? false : '');
                 return (typeof sent === 'boolean' ? got : String(got)) !== sent;
@@ -1709,7 +2391,12 @@
         const inputs = new Map();
         const number = ++forms;
         for (const [index, spec] of kind.fields.entries()) {
-            const { row, input } = field(spec, `${NAME}-list-${number}-${index}`, !loaded);
+            const { row, input } = field(
+                spec,
+                `${NAME}-list-${number}-${index}`,
+                !loaded,
+                valueAt(loaded, spec.path),
+            );
             inputs.set(spec.path, input);
             form.append(row);
             if (!loaded) {
@@ -1766,6 +2453,13 @@
                 dependent.checked &&= needed.checked;
             });
         }
+        const keyed = kind.fields.find((spec) => spec.isKeyed);
+        let keys;
+        if (keyed) {
+            const app = inputs.get(keyed.path);
+            keys = customKeys(app, loaded);
+            app.closest(`.${NAME}-field`).after(keys.element);
+        }
         const says = make('p', 'error');
         says.hidden = true;
         const send = make('button', 'save', loaded ? 'Save' : 'Create');
@@ -1778,10 +2472,14 @@
         form.append(says, send, cancel);
         form.addEventListener('submit', (event) => {
             event.preventDefault();
+            // a refusal may be left from lists that were dropped since
+            for (const input of inputs.values()) {
+                checks.get(input)?.();
+            }
             if (loaded) {
-                save(kind, form, inputs, says, loaded, filled);
+                save(kind, form, inputs, says, loaded, filled, keys);
             } else {
-                create(kind, form, inputs, says);
+                create(kind, form, inputs, says, keys);
             }
         });
         const second = kind.fields.find((spec) => spec.within);
@@ -1805,7 +2503,7 @@
         name.focus();
         for (const spec of kind.fields) {
             if (spec.input === 'textarea') {
-                codeEditor(inputs.get(spec.path));
+                messageTools(inputs.get(spec.path), codeEditor(inputs.get(spec.path)));
             }
         }
     }
@@ -1834,7 +2532,13 @@
         const named = new Map(
             kind.fields.filter((spec) => spec.isNamed).map((spec) => [spec.path, spec.suggest]),
         );
-        fill(...(notice ? [make('p', 'notice', notice)] : []), actions, show(definition, named));
+        const shown = show(definition, named);
+        fill(...(notice ? [make('p', 'notice', notice)] : []), actions, shown);
+        for (const { path, isSaid } of kind.fields) {
+            if (isSaid) {
+                showTexts(shown, path, valueAt(definition, path));
+            }
+        }
     }
 
     /**
@@ -2216,8 +2920,9 @@
         refresh.append(reloadSign());
         refresh.addEventListener('click', () => {
             lists.delete(kind.id);
-            // the names shown with the messages are read again as well
+            // the names shown with the messages are read again as well, and what their contents say
             offers.clear();
+            texts.clear();
             openList(kind);
         });
         const read = make(

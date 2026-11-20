@@ -5714,8 +5714,9 @@ test('the form of an SMS message leads to the code that is chosen, below the key
     const link = () => tools.querySelector('a');
     const help = () => tools.querySelector('.sfmc-ux-tools-transactional-help');
     assert.equal(at.field('subscriptions.keyword').closest(FIELD).nextElementSibling, tools);
-    // no code is chosen yet
+    // no code is chosen yet, and the link leads nowhere
     assert.deepEqual([link().hidden, help().hidden], [true, true]);
+    assert.equal(link().getAttribute('href'), null);
     choose(at, 'subscriptions.shortCode', '3197010240');
     assert.equal(link().hidden, false);
     assert.equal(link().href, CODE_SCREEN + encodeURIComponent(CODE_ID));
@@ -5798,6 +5799,108 @@ test('an untouched Edit form of an SMS message still sends nothing after its key
     await at.send();
     assert.deepEqual(at.written, []);
     assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+});
+
+/**
+ * Holds back every request to a path from now on, until it is let go.
+ *
+ * @param {{window: Window}} at the page
+ * @param {string} start what the path of such a request holds
+ * @returns {() => void} lets them go
+ */
+function holding(at, start) {
+    const { fetch } = at.window;
+    const { promise: gate, resolve: release } = Promise.withResolvers();
+    at.window.fetch = async (url, options) => {
+        if (url.includes(start)) {
+            await gate;
+        }
+        return fetch(url, options);
+    };
+    return release;
+}
+
+/**
+ * Draws the menu again, as Marketing Cloud does after a change of the business unit.
+ *
+ * @param {{document: Document}} at the page
+ */
+async function redrawMenu(at) {
+    at.document.body.insertAdjacentHTML('beforeend', MENU);
+    at.document.querySelector('[data-sfmc-ux-tools-transactional]').closest('ul').remove();
+    await settle();
+}
+
+test('keywords that are read again while the business unit changes do not bring the old lists back', async () => {
+    const has = { keywords: OFFERED[KEYWORDS].entry, down: [] };
+    const at = await form('sms', coded(undefined, has));
+    await settle();
+    has.down = [KEYWORDS];
+    const release = holding(at, KEYWORDS);
+    at.form().querySelector(`${CODE_TOOLS} button`).click();
+    await settle();
+    await redrawMenu(at);
+    release();
+    await settle();
+    has.down = [];
+    const before = [reads(at, CODES), reads(at, KEYWORDS)];
+    // the next form reads both lists: neither was put back from before the change
+    at.button('Cancel').click();
+    await settle();
+    at.panel().querySelector('.sfmc-ux-tools-transactional-new').click();
+    await settle();
+    assert.deepEqual([reads(at, CODES), reads(at, KEYWORDS)], [before[0] + 1, before[1] + 1]);
+    assert.equal(at.field('subscriptions.keyword').tagName, 'SELECT');
+});
+
+test('a save that reads the apps again while the business unit changes does not bring the old list back', async () => {
+    const down = [];
+    const at = await pushing({ definition: KEYED, down });
+    await at.details();
+    await at.press('Edit');
+    assert.deepEqual(gone(at).entries, ['legacy', 'count: 5']);
+    down.push(APPS);
+    const release = holding(at, APPS);
+    at.type('options.sound', 'new');
+    await at.send();
+    await redrawMenu(at);
+    release();
+    await settle();
+    assert.deepEqual(at.changes(), []);
+    assert.match(at.text(), /Not saved: the custom keys of the app could not be checked/);
+    // the group is drawn again, without a list of apps: every stored key is a field
+    assert.equal(gone(at), null);
+    assert.deepEqual(at.keys(), [
+        ['legacy', ''],
+        ['deeplink', 'shop://a'],
+        ['count', '5'],
+    ]);
+    down.length = 0;
+    const apps = () => at.looked.filter((path) => path === APPS).length;
+    const before = apps();
+    // whoever asks next reads the list: it was not put back from before the change
+    await at.press('Cancel');
+    assert.equal(apps(), before + 1);
+});
+
+test('a form can be saved while its keywords are read again', async () => {
+    const stored = {
+        ...DEFINITION,
+        subscriptions: { shortCode: '3197010240', keyword: 'ORDER' },
+    };
+    const at = await editing(stored, coded(stored));
+    await settle();
+    const release = holding(at, KEYWORDS);
+    const reload = at.form().querySelector(`${CODE_TOOLS} button`);
+    reload.click();
+    await settle();
+    assert.equal(reload.disabled, true);
+    at.type('content.message', 'new text');
+    await at.send();
+    await settle();
+    assert.equal(at.written.length, 1);
+    release();
+    await settle();
 });
 
 test('a changed custom key is sent with the whole list, the others as they are stored, in one part with a changed option', async () => {

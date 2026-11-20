@@ -512,6 +512,9 @@
     // read, with those who wait for them while they are being read. A list that could not be
     // read is not in here, and is asked for again the next time
     const offers = new Map();
+    // counts how often all of these lists were forgotten at once: what was kept of one before
+    // that is not put back afterwards
+    let cleared = 0;
     // what the mobile messages of Content Builder say, by their customer key, as it was read
     // for the details of a push message; kept until the lists are read again
     const texts = new Map();
@@ -647,6 +650,7 @@
     function forget() {
         lists.clear();
         offers.clear();
+        cleared++;
         texts.clear();
         for (const kept of details.values()) {
             kept.clear();
@@ -729,6 +733,31 @@
         offers.set(name, offer);
         offer.promise = isRead();
         return offer.promise;
+    }
+
+    /**
+     * Reads lists that fields offer to choose from again, not from what was kept. A list that
+     * could not be read stays the one it was, for everyone, unless the lists were forgotten
+     * meanwhile: what was kept is then that of another business unit, or older than a Refresh.
+     *
+     * @param {string[]} names codes, keywords, apps or contents
+     * @param {() => boolean} isWanted false once the one who asks no longer waits for them
+     * @returns {Promise.<({value: string, label: string}[] | undefined)[]>} the entries of each; nothing for one that could not be read
+     */
+    async function readOffersAgain(names, isWanted) {
+        const before = cleared;
+        const kept = names.map((name) => offers.get(name));
+        for (const name of names) {
+            offers.delete(name);
+        }
+        const fresh = await Promise.all(names.map((name) => readOffers(name, isWanted)));
+        for (const [index, name] of names.entries()) {
+            const old = kept.at(index);
+            if (before === cleared && old && !fresh.at(index) && !offers.has(name)) {
+                offers.set(name, old);
+            }
+        }
+        return fresh;
     }
 
     /**
@@ -1595,12 +1624,14 @@
         // below the keywords: the way to the code that is chosen, where a keyword can be added,
         // and what reads both lists again afterwards
         const tools = make('div', 'code-tools');
-        let link = codeLink();
+        // stands in until the first code is pointed to
+        let link = make('a');
         const help = make('span', 'help', 'Add a keyword there, then reload the keywords.');
         const point = () => {
             const id = all.find((entry) => entry.value === chosen.value)?.id;
-            const next = codeLink(id);
-            next.hidden = !(typeof id === 'string' && id);
+            const isKnown = typeof id === 'string' && id !== '';
+            const next = isKnown ? codeLink(id) : make('a');
+            next.hidden = !isKnown;
             link.replaceWith(next);
             link = next;
             help.hidden = next.hidden;
@@ -1612,17 +1643,18 @@
         reload.append(reloadSign());
         const failed = make('span', 'reload-failed');
         failed.hidden = true;
+        // a save does not wait for this reading, and switches the button on again when it fails
+        let isReading = false;
         reload.addEventListener('click', async () => {
+            if (isReading) {
+                return;
+            }
+            isReading = true;
             reload.disabled = true;
             failed.hidden = true;
-            const names = [first.choose, second.choose];
-            // not from what was kept, which is replaced by what comes
-            const kept = names.map((name) => offers.get(name));
-            for (const name of names) {
-                offers.delete(name);
-            }
-            const fresh = await Promise.all(
-                names.map((name) => readOffers(name, () => chosen.isConnected)),
+            const fresh = await readOffersAgain(
+                [first.choose, second.choose],
+                () => chosen.isConnected,
             );
             if (fresh.every((entries) => entries?.length)) {
                 [all, dependents] = fresh;
@@ -1631,17 +1663,12 @@
                 offerDependents(keyword);
                 point();
             } else {
-                // a list that could not be read stays the one it was, for everyone
-                for (const [index, name] of names.entries()) {
-                    const [read, old] = [fresh.at(index), kept.at(index)];
-                    if (!read && old && !offers.has(name)) {
-                        offers.set(name, old);
-                    }
-                }
                 failed.textContent = 'The lists could not be read again. They are as they were.';
                 failed.hidden = false;
             }
-            reload.disabled = false;
+            isReading = false;
+            // a form that is being sent keeps its buttons switched off
+            reload.disabled = Boolean(reload.form?.querySelector('[type="submit"]')?.disabled);
         });
         tools.append(link, help, reload, failed);
         dependent.closest(`.${NAME}-field`).after(tools);
@@ -2301,8 +2328,12 @@
     async function create(kind, form, inputs, says, keys) {
         const buttons = [...form.querySelectorAll('button')];
         // one is on its way already (its buttons are switched off until it is answered), or a
-        // required field is empty
-        if (buttons.some((button) => button.disabled) || !isComplete(form, inputs)) {
+        // required field is empty; the button that reads the keywords again is off while it
+        // reads, which holds nothing back
+        const isBusy = buttons.some(
+            (button) => button.disabled && !button.closest(`.${NAME}-code-tools`),
+        );
+        if (isBusy || !isComplete(form, inputs)) {
             return;
         }
         const mine = ++asked;
@@ -2426,10 +2457,16 @@
      */
     async function save(kind, form, inputs, says, loaded, filled, keys) {
         const buttons = [...form.querySelectorAll('button')];
-        // one is on its way already, or a required field is empty
-        if (buttons.some((button) => button.disabled) || !isComplete(form, inputs)) {
+        // one is on its way already, or a required field is empty; the button that reads the
+        // keywords again is off while it reads, which holds no save back
+        const isBusy = buttons.some(
+            (button) => button.disabled && !button.closest(`.${NAME}-code-tools`),
+        );
+        if (isBusy || !isComplete(form, inputs)) {
             return;
         }
+        // what is sent is what the box of the custom keys shows, by the list of apps as it is now
+        keys?.draw();
         const key = loaded.definitionKey;
         const collect = () => {
             const found = toChanges(kind.fields, inputs, loaded, filled);
@@ -2466,21 +2503,17 @@
                 // the list of apps is as old as the page: a key may have been set up on the app
                 // since. Nothing is removed on the word of an old list, so it is read again,
                 // and kept for everyone else
-                const old = offers.get('apps');
-                offers.delete('apps');
-                const fresh = await readOffers('apps', () => true);
-                if (!fresh && old && !offers.has('apps')) {
-                    offers.set('apps', old);
-                }
+                const [fresh] = await readOffersAgain(['apps'], () => true);
                 if (mine !== asked) {
                     return;
                 }
+                // by the list that is there now, also when it is the old one or none
+                keys.draw();
                 if (!fresh) {
                     throw new Error(
                         'the custom keys of the app could not be checked, so nothing was removed. Try again.',
                     );
                 }
-                keys.draw();
                 if (JSON.stringify(keys.printed()) !== JSON.stringify(removed)) {
                     throw new Error(
                         'the custom keys of the app have changed. Check the form and save again.',
@@ -3279,6 +3312,7 @@
             lists.delete(kind.id);
             // the names shown with the messages are read again as well, and what their contents say
             offers.clear();
+            cleared++;
             texts.clear();
             openList(kind);
         });

@@ -48,6 +48,11 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), st
             this.removeAttribute('open');
             this.dispatchEvent(new Event('close'));
         };
+        // nor does it scroll; what was asked to be scrolled to is noted by its id
+        globalThis.scrolled = [];
+        Element.prototype.scrollIntoView = function () {
+            globalThis.scrolled.push(this.id);
+        };
     `);
     // the entry is a preview feature that is off; the tests run with it switched on
     // a setting given as undefined was never saved, and Chrome then hands out the default
@@ -298,7 +303,7 @@ test('a click opens the panel on the SMS list and does not reach the page', asyn
     assert.equal(click.defaultPrevented, true);
     assert.equal(reached, 0);
     assert.equal(at.panel().hasAttribute('open'), true);
-    assert.deepEqual(at.asked, ['sms/definitions?$page=1&$pageSize=50']);
+    assert.deepEqual(at.asked, ['sms/definitions?$page=1&$pageSize=100']);
     assert.match(at.text(), /no transactional SMS messages/);
     const selected = [...at.panel().querySelectorAll('[role="tab"]')].map((item) => [
         item.textContent,
@@ -319,63 +324,99 @@ test('each tab reads its own list and shows the rows', async () => {
     }));
     await at.open();
     await tab(at, 'push');
-    assert.equal(at.asked.at(-1), 'push/definitions?$page=1&$pageSize=50');
+    assert.ok(at.asked.includes('push/definitions?$page=1&$pageSize=100'));
     const cells = [...rows(at)].map((row) => [...row.cells].map((cell) => cell.textContent));
+    // the dates as the reader's browser writes them; how that is done has a test of its own
+    const created = at.window.sfmcUxToolsFormatDate('2026-01-02T03:04:00');
+    const modified = at.window.sfmcUxToolsFormatDate('2026-01-03T03:04:00');
+    assert.notEqual(created, '2026-01-02T03:04:00');
     assert.deepEqual(cells, [
-        ['name of receipt', 'receipt', 'Active', '2026-01-02T03:04:00', '2026-01-03T03:04:00'],
-        ['name of alert', 'alert', 'Active', '2026-01-02T03:04:00', '2026-01-03T03:04:00'],
+        ['name of receipt', 'receipt', 'Active', '', '', created, modified],
+        ['name of alert', 'alert', 'Active', '', '', created, modified],
     ]);
+    // what the API returned can still be read
     assert.deepEqual(
-        [...at.panel().querySelectorAll('th')].map((cell) => cell.textContent),
-        ['Name', 'Key', 'Status', 'Created', 'Modified'],
+        [...rows(at)[0].cells].map((cell) => cell.title),
+        ['', '', '', '', '', '2026-01-02T03:04:00', '2026-01-03T03:04:00'],
     );
+    const titles = () => [...at.panel().querySelectorAll('th')].map((cell) => cell.textContent);
+    // what its kind of message has of its own stands after the status
+    assert.deepEqual(titles(), ['Name', 'Key', 'Status', 'App', 'Content', 'Created', 'Modified']);
     await tab(at, 'ott');
-    assert.equal(at.asked.at(-1), 'ott/definitions?$page=1&$pageSize=50');
+    assert.equal(at.asked.at(-1), 'ott/definitions?$page=1&$pageSize=100');
     assert.match(at.text(), /no transactional OTT messages/);
 });
 
-test('a long list is read page by page, and a count that is too high does not keep it reading', async () => {
-    const full = Array.from({ length: 50 }, (_, index) => ROW(`first-${index}`));
+// a page of a list that is as long as the API lets a page of definitions be
+const LARGEST = 100;
+const full = (name) => Array.from({ length: LARGEST }, (_, index) => ROW(`${name}-${index}`));
+
+/**
+ * Lists the pages of the OTT list that were asked for.
+ *
+ * @param {{asked: string[]}} at the page
+ * @returns {string[]} what was asked for
+ */
+function pagesRead(at) {
+    return at.asked.filter((path) => path.startsWith('ott/definitions?'));
+}
+
+/**
+ * Opens the panel on an OTT list that the API hands out in the given pages. That list reads
+ * nothing but its pages.
+ *
+ * @param {(number: number) => object} answer what the API answers when asked for a page, by its number from 1
+ * @returns {Promise.<object>} the page
+ */
+async function paged(answer) {
     const at = page(MENU, (path) => ({
-        // the count claims more rows than there are
-        body: { definitions: path.includes('$page=1&') ? full : [ROW('last')], count: 999 },
+        body: path.startsWith('ott/')
+            ? answer(Number(/\$page=(\d+)/.exec(path)[1]))
+            : { definitions: [] },
     }));
     await at.open();
-    assert.deepEqual(at.asked, [
-        'sms/definitions?$page=1&$pageSize=50',
-        'sms/definitions?$page=2&$pageSize=50',
+    await tab(at, 'ott');
+    return at;
+}
+
+test('a list longer than one page is read whole, although the count of every page is the number of its rows', async () => {
+    // as seen live: the count is that of the page, and the page after the last one is empty
+    const pages = { 1: full('a'), 2: full('b'), 3: [ROW('last')] };
+    const at = await paged((number) => ({
+        definitions: pages[number],
+        count: pages[number].length,
+        page: number,
+        pageSize: LARGEST,
+    }));
+    assert.deepEqual(pagesRead(at), [
+        'ott/definitions?$page=1&$pageSize=100',
+        'ott/definitions?$page=2&$pageSize=100',
+        'ott/definitions?$page=3&$pageSize=100',
     ]);
-    assert.equal(rows(at).length, 51);
+    assert.match(range(at), / of 201$/);
 });
 
-test('a full page that is the whole list ends the reading by its count', async () => {
-    const full = Array.from({ length: 50 }, (_, index) => ROW(`row-${index}`));
-    const at = page(MENU, () => ({ body: { definitions: full, count: 50 } }));
-    await at.open();
-    assert.equal(at.asked.length, 1);
-});
-
-// a page of a list that is as long as a page can be
-const full = (name) => Array.from({ length: 50 }, (_, index) => ROW(`${name}-${index}`));
-
-test('full pages without a count end when the rows repeat or run out', async () => {
-    // the page asked for is ignored: always the same 50 rows, and no count
-    const same = page(MENU, () => ({ body: { definitions: full('same') } }));
-    await same.open();
-    assert.equal(same.asked.length, 2);
-    assert.equal(rows(same).length, 50);
-    // the same with a count that is never reached
-    const counted = page(MENU, () => ({ body: { definitions: full('same'), count: 999 } }));
-    await counted.open();
-    assert.equal(counted.asked.length, 2);
-    // two full pages of different rows, then nothing more
-    const pages = { 1: full('a'), 2: full('b'), 3: [] };
-    const ends = page(MENU, (path) => ({
-        body: { definitions: pages[/\$page=(\d+)/.exec(path)[1]] },
+test('the reading of a list ends with a short page, an empty one or one that repeats, whatever the count says', async () => {
+    // a short first page is the whole list, also under a count that claims more
+    const short = await paged(() => ({ definitions: [ROW('only')], count: 999 }));
+    assert.equal(pagesRead(short).length, 1);
+    assert.equal(rows(short).length, 1);
+    // a full page that is the whole list is followed by an empty one
+    const exact = await paged((number) => ({
+        definitions: number === 1 ? full('row') : [],
+        count: number === 1 ? LARGEST : 0,
     }));
-    await ends.open();
-    assert.equal(ends.asked.length, 3);
-    assert.equal(rows(ends).length, 100);
+    assert.equal(pagesRead(exact).length, 2);
+    assert.match(range(exact), / of 100$/);
+    // the page asked for is ignored: always the same rows, with a count and without
+    for (const count of [undefined, LARGEST, 999]) {
+        const same = await paged(() => ({ definitions: full('same'), count }));
+        assert.equal(pagesRead(same).length, 2, count);
+        assert.match(range(same), / of 100$/);
+    }
+    // what is no list of rows ends it too
+    const odd = await paged((number) => ({ definitions: number === 1 ? full('row') : 'none' }));
+    assert.equal(pagesRead(odd).length, 2);
 });
 
 test('a list that is still being read stops when another tab is chosen or the panel is closed', async () => {
@@ -434,20 +475,15 @@ test('a row opens the details of its definition, and the way back shows the list
     assert.equal(keyless.hasAttribute('tabindex'), false);
     assert.deepEqual(
         [...keyless.cells].map((cell) => cell.textContent),
-        ['no key', '', '', '', ''],
+        ['no key', '', '', '', '', '', ''],
     );
     row.click();
     await tick();
     assert.equal(at.asked.at(-1), 'sms/definitions/we%2Flcome');
     const names = [...at.panel().querySelectorAll('dt')].map((item) => item.textContent);
     assert.ok(!names.includes('requestId'));
-    assert.deepEqual(names.slice(-5), [
-        'content',
-        'message',
-        'subscriptions',
-        'shortCode',
-        'keyword',
-    ]);
+    // under what the panel calls them, not under the names of the API
+    assert.deepEqual(names.slice(-5), ['Content', 'Message', 'Subscription', 'Code', 'Keyword']);
     assert.match(at.text(), /line 1\nline 2/);
     at.panel().querySelector('.sfmc-ux-tools-transactional-back').click();
     await tick();
@@ -519,26 +555,388 @@ test('the panel closes with its button and opens again on the first tab', async 
     await at.open();
     assert.equal(at.document.querySelectorAll('dialog').length, 1);
     assert.equal(at.panel().hasAttribute('open'), true);
-    assert.equal(at.asked.at(-1), 'sms/definitions?$page=1&$pageSize=50');
+    assert.equal(at.panel().querySelector('[role="tab"][aria-selected="true"]').textContent, 'SMS');
+    assert.match(at.text(), /no transactional SMS messages/);
+    // the list of the first tab was read before, and is not read again
+    assert.deepEqual(at.asked, [
+        'sms/definitions?$page=1&$pageSize=100',
+        'push/definitions?$page=1&$pageSize=100',
+    ]);
+});
+
+/**
+ * Counts how often the list of a kind of message was read.
+ *
+ * @param {{asked: string[]}} at the page
+ * @param {string} [kind] sms, push or ott
+ * @returns {number} the number of first pages that were asked for
+ */
+function listReads(at, kind = 'sms') {
+    return at.asked.filter((path) => path.startsWith(`${kind}/definitions?$page=1&`)).length;
+}
+
+/**
+ * Clicks something of the panel by the last part of its class, and waits for what comes of it.
+ *
+ * @param {{panel: () => Element}} at the page
+ * @param {string} part back, refresh, close and the like
+ */
+async function click(at, part) {
+    at.panel().querySelector(`.sfmc-ux-tools-transactional-${part}`).click();
+    await tick();
+    await tick();
+}
+
+test('a list that was read is shown again without another request: on its tab, on the way back from the details and when the panel opens again', async () => {
+    const at = page(MENU, (path) => ({
+        body: path.includes('/definitions/')
+            ? DEFINITION
+            : { definitions: [ROW('welcome')], count: 1 },
+    }));
+    await at.open();
+    await tab(at, 'push');
+    await tab(at, 'sms');
+    assert.equal(rows(at).length, 1);
+    rows(at)[0].click();
+    await tick();
+    await click(at, 'back');
+    assert.equal(rows(at).length, 1);
+    await click(at, 'close');
+    await at.open();
+    assert.equal(rows(at).length, 1);
+    await tab(at, 'push');
+    assert.equal(rows(at).length, 1);
+    assert.deepEqual([listReads(at), listReads(at, 'push'), listReads(at, 'ott')], [1, 1, 0]);
+    // the details are read every time they are opened, also when the list has read them before
+    const opened = () => at.asked.filter((path) => path === 'push/definitions/welcome').length;
+    assert.equal(opened(), 1);
+    rows(at)[0].click();
+    await tick();
+    assert.equal(opened(), 2);
+    await click(at, 'back');
+    rows(at)[0].click();
+    await tick();
+    assert.equal(opened(), 3);
+});
+
+test('a list whose reading was stopped is not kept, and is read from its start the next time', async () => {
+    const gate = Promise.withResolvers();
+    const at = page(MENU);
+    const quick = at.window.fetch;
+    at.window.fetch = async (url, options) => {
+        const response = await quick(url, options);
+        if (!url.includes('/sms/')) {
+            return response;
+        }
+        await gate.promise;
+        return { ...response, json: async () => ({ definitions: full('part') }) };
+    };
+    await at.open();
+    await tab(at, 'push');
+    gate.resolve();
+    await tick();
+    await tick();
+    assert.equal(listReads(at), 1);
+    at.window.fetch = quick;
+    await tab(at, 'sms');
+    assert.equal(listReads(at), 2);
+    // not the 50 rows of the page that came after the reader had left
+    assert.match(at.text(), /no transactional SMS messages/);
+});
+
+test('"Refresh" reads the list again and says when it was read', async () => {
+    let reads = 0;
+    const at = page(MENU, (path) => {
+        if (!path.startsWith('sms/')) {
+            return { body: { definitions: [] } };
+        }
+        return { body: { definitions: ++reads === 1 ? [ROW('a')] : [ROW('a'), ROW('b')] } };
+    });
+    await at.open();
+    assert.equal(rows(at).length, 1);
+    const refresh = at.panel().querySelector('.sfmc-ux-tools-transactional-refresh');
+    // a sign alone, named for whoever cannot see it or lets the mouse rest on it
+    assert.equal(refresh.textContent, '');
+    assert.equal(refresh.getAttribute('aria-label'), 'Refresh');
+    assert.equal(refresh.title, 'Refresh');
+    assert.equal(refresh.type, 'button');
+    const [sign] = refresh.children;
+    assert.equal(refresh.children.length, 1);
+    assert.equal(sign.localName, 'svg');
+    assert.equal(sign.namespaceURI, 'http://www.w3.org/2000/svg');
+    assert.equal(sign.getAttribute('aria-hidden'), 'true');
+    assert.equal(sign.getAttribute('stroke'), 'currentColor');
+    assert.equal(sign.querySelectorAll('path').length, 2);
+    for (const part of sign.querySelectorAll('*')) {
+        assert.equal(part.namespaceURI, sign.namespaceURI);
+        // drawn in the colour of the button, whatever that is
+        assert.equal(part.hasAttribute('fill') || part.hasAttribute('stroke'), false);
+    }
+    // when the list was read is said right after it
+    assert.equal(refresh.nextElementSibling.className, 'sfmc-ux-tools-transactional-read');
+    // next to the button for a new message
+    assert.equal(refresh.previousElementSibling.textContent, 'New SMS message');
+    assert.match(
+        at.panel().querySelector('.sfmc-ux-tools-transactional-read').textContent,
+        /^read \d{1,2}\D\d{2}/,
+    );
+    await click(at, 'refresh');
+    assert.equal(listReads(at), 2);
+    assert.equal(rows(at).length, 2);
+    // what was read last is what is kept
+    await tab(at, 'push');
+    await tab(at, 'sms');
+    assert.equal(listReads(at), 2);
+    assert.equal(rows(at).length, 2);
+    // an empty list can be read again too
+    await tab(at, 'push');
+    await click(at, 'refresh');
+    assert.equal(listReads(at, 'push'), 2);
+    assert.match(at.text(), /no transactional Push messages/);
+});
+
+test('the lists are forgotten when the menu is drawn again or the entry is switched on again', async () => {
+    const at = page('<div id="shell"></div>');
+    at.document.querySelector('#shell').innerHTML = MENU;
+    await at.open();
+    await click(at, 'close');
+    // as after a change of the business unit
+    at.document.querySelector('#shell').innerHTML = MENU;
+    await at.open();
+    assert.equal(listReads(at), 2);
+    await click(at, 'close');
+    // other changes of the page leave the lists alone
+    at.document.body.append(at.document.createElement('div'));
+    await at.open();
+    assert.equal(listReads(at), 2);
+    await click(at, 'close');
+    at.change({ transactionalMessages: 'off' });
+    at.change({ transactionalMessages: 'on' });
+    await at.open();
+    assert.equal(listReads(at), 3);
+});
+
+// rows whose order differs by every column, and whose dates sort another way once they are written out
+const SORTED = [
+    {
+        name: 'beta',
+        definitionKey: 'k-2',
+        status: 'Inactive',
+        createdDate: '2026-01-10T03:04:00',
+        modifiedDate: '2026-03-01T00:00:00',
+    },
+    {
+        name: 'Alpha',
+        definitionKey: 'k-3',
+        status: 'Active',
+        createdDate: '2026-01-09T03:04:00',
+        modifiedDate: '2026-02-01T00:00:00',
+    },
+    {
+        name: 'gamma',
+        definitionKey: 'K-1',
+        status: 'Draft',
+        createdDate: '2025-12-31T23:00:00',
+        modifiedDate: '2026-04-01T00:00:00',
+    },
+];
+
+/**
+ * Opens the panel on an SMS list of the given rows.
+ *
+ * @param {object[]} definitions the rows
+ * @returns {Promise.<object>} the page, with the names of the rows shown, the search field, a way to type into it and one to click the head of a column
+ */
+async function listing(definitions) {
+    const at = page(MENU, (path) => ({
+        body: { definitions: path.startsWith('sms/') ? definitions : [ROW('other')] },
+    }));
+    await at.open();
+    at.names = () => rows(at).map((row) => row.cells[0].textContent);
+    at.search = () => at.panel().querySelector('.sfmc-ux-tools-transactional-search');
+    at.look = (text) => {
+        at.search().value = text;
+        at.search().dispatchEvent(new at.window.Event('input', { bubbles: true }));
+    };
+    at.heads = () => [...at.panel().querySelectorAll('th')];
+    at.sort = (title) => {
+        at.heads()
+            .find((cell) => cell.textContent === title)
+            .querySelector('button')
+            .click();
+    };
+    at.sorted = () => at.heads().map((cell) => cell.getAttribute('aria-sort'));
+    return at;
+}
+
+test('the search narrows the list by name and key while typing, without a request and without leaving the field', async () => {
+    const at = await listing([
+        ROW('welcome'),
+        ROW('Order-Shipped'),
+        { ...ROW('zeta'), name: 'Alpha WELCOME back' },
+        // nothing to search in
+        { status: 'Active' },
+    ]);
+    const none = () => at.panel().querySelector('table').parentElement.nextElementSibling;
+    assert.equal(at.names().length, 4);
+    assert.equal(none().hidden, true);
+    const field = at.search();
+    field.focus();
+    const body = at.panel().querySelector('tbody');
+    at.look('  WEL ');
+    assert.deepEqual(at.names(), ['name of welcome', 'Alpha WELCOME back']);
+    // the field typed into is still the same one, and still has the focus
+    assert.equal(at.document.activeElement, field);
+    assert.equal(at.search(), field);
+    assert.equal(at.panel().querySelector('tbody'), body);
+    // by key, in whatever case
+    at.look('order-s');
+    assert.deepEqual(at.names(), ['name of Order-Shipped']);
+    // a row that is found still opens its details
+    assert.equal(rows(at)[0].tabIndex, 0);
+    // the status is not searched
+    at.look('active');
+    assert.deepEqual(at.names(), []);
+    assert.equal(none().hidden, false);
+    assert.match(none().textContent, /^No message matches/);
+    at.look('');
+    assert.equal(at.names().length, 4);
+    assert.equal(none().hidden, true);
+    assert.equal(listReads(at), 1);
+    // what was searched for stays with its list while the page lives
+    at.look('zeta');
+    await tab(at, 'push');
+    assert.equal(at.search().value, '');
+    assert.deepEqual(at.names(), ['name of other']);
+    await tab(at, 'sms');
+    assert.equal(at.search().value, 'zeta');
+    assert.deepEqual(at.names(), ['Alpha WELCOME back']);
+    await click(at, 'close');
+    await at.open();
+    assert.equal(at.search().value, 'zeta');
+    assert.deepEqual(at.names(), ['Alpha WELCOME back']);
+    // an empty list has nothing to search
+    const empty = await listing([]);
+    assert.equal(empty.search(), null);
+});
+
+test('a click on the head of a column sorts by it, another one turns the order around, and dates are sorted as the API writes them', async () => {
+    const at = await listing(SORTED);
+    // as the API returned them
+    assert.deepEqual(at.names(), ['beta', 'Alpha', 'gamma']);
+    assert.deepEqual(at.sorted(), ['none', 'none', 'none', 'none', 'none', 'none', 'none']);
+    at.sort('Name');
+    assert.deepEqual(at.names(), ['Alpha', 'beta', 'gamma']);
+    assert.deepEqual(at.sorted(), ['ascending', 'none', 'none', 'none', 'none', 'none', 'none']);
+    at.sort('Name');
+    assert.deepEqual(at.names(), ['gamma', 'beta', 'Alpha']);
+    assert.deepEqual(at.sorted(), ['descending', 'none', 'none', 'none', 'none', 'none', 'none']);
+    at.sort('Name');
+    assert.deepEqual(at.names(), ['Alpha', 'beta', 'gamma']);
+    // another column starts with its smallest value, whatever the one before was turned to
+    at.sort('Name');
+    at.sort('Key');
+    assert.deepEqual(at.names(), ['gamma', 'beta', 'Alpha']);
+    assert.deepEqual(at.sorted(), ['none', 'ascending', 'none', 'none', 'none', 'none', 'none']);
+    at.sort('Status');
+    assert.deepEqual(at.names(), ['Alpha', 'gamma', 'beta']);
+    // written out, the 10th would come before the 9th and December after January
+    at.sort('Created');
+    assert.deepEqual(at.names(), ['gamma', 'Alpha', 'beta']);
+    assert.deepEqual(at.sorted(), ['none', 'none', 'none', 'none', 'none', 'ascending', 'none']);
+    at.sort('Created');
+    assert.deepEqual(at.names(), ['beta', 'Alpha', 'gamma']);
+    assert.deepEqual(at.sorted(), ['none', 'none', 'none', 'none', 'none', 'descending', 'none']);
+    at.sort('Modified');
+    assert.deepEqual(at.names(), ['Alpha', 'beta', 'gamma']);
+    at.sort('Modified');
+    assert.deepEqual(at.names(), ['gamma', 'beta', 'Alpha']);
+    // the titles of the columns are as before, and nothing was asked for
+    assert.deepEqual(
+        at.heads().map((cell) => cell.textContent),
+        ['Name', 'Key', 'Status', 'Code', 'Keyword', 'Created', 'Modified'],
+    );
+    assert.equal(listReads(at), 1);
+    // what is searched for is sorted the same way
+    at.look('a');
+    assert.deepEqual(at.names(), ['gamma', 'beta', 'Alpha']);
+    at.look('et');
+    assert.deepEqual(at.names(), ['beta']);
+    at.look('');
+    // the order stays with its list while the page lives
+    await tab(at, 'push');
+    assert.deepEqual(at.sorted(), ['none', 'none', 'none', 'none', 'none', 'none', 'none']);
+    await tab(at, 'sms');
+    assert.deepEqual(at.names(), ['gamma', 'beta', 'Alpha']);
+    assert.deepEqual(at.sorted(), ['none', 'none', 'none', 'none', 'none', 'none', 'descending']);
+});
+
+test('a date is written in the language and time zone given, and left as it is when it is none', async () => {
+    const at = page(MENU, (path) => ({
+        body: path.includes('/definitions/')
+            ? { ...DEFINITION, modifiedDate: 'some day', content: { createdDate: 7 } }
+            : { definitions: [{ ...ROW('welcome'), modifiedDate: 'some day' }] },
+    }));
+    const format = at.window.sfmcUxToolsFormatDate;
+    assert.equal(format('2026-01-02T03:04:00Z', 'en-GB', 'Europe/Berlin'), '2 Jan 2026, 04:04');
+    assert.equal(format('2026-01-02T23:04:05.123Z', 'en-GB', 'Asia/Tokyo'), '3 Jan 2026, 08:04');
+    assert.equal(format('2026-07-02T03:04:00+02:00', 'en-GB', 'UTC'), '2 Jul 2026, 01:04');
+    assert.equal(format('2026-01-02T03:04:00Z', 'de-DE', 'Europe/Berlin'), '02.01.2026, 04:04');
+    // without a time zone of its own, a value keeps its hours wherever it is read
+    assert.equal(format('2026-01-02T03:04:00', 'en-GB', 'America/New_York'), '2 Jan 2026, 03:04');
+    assert.equal(format('2026-01-02T03:04:00', 'en-GB', 'Asia/Tokyo'), '2 Jan 2026, 03:04');
+    // what is no date and time stays as it is
+    for (const value of ['some day', '2026-13-45T03:04:00', '2026-01-02', '5', '']) {
+        assert.equal(format(value, 'en-GB', 'UTC'), value);
+    }
+    assert.equal(format(5, 'en-GB', 'UTC'), '5');
+    assert.equal(format(undefined, 'en-GB', 'UTC'), '');
+    assert.equal(format(null, 'en-GB', 'UTC'), '');
+    // the list and the details show it so, with what the API returned to be read on it
+    await at.open();
+    const [created, modified] = [...rows(at)[0].cells].slice(-2);
+    assert.equal(created.textContent, format('2026-01-02T03:04:00'));
+    assert.equal(created.title, '2026-01-02T03:04:00');
+    assert.equal(modified.textContent, 'some day');
+    assert.equal(modified.title, 'some day');
+    rows(at)[0].click();
+    await tick();
+    const shown = (path) =>
+        [...at.panel().querySelectorAll('dt')].find((item) => item.title === path)
+            .nextElementSibling.firstElementChild;
+    const createdAt = shown('createdDate');
+    assert.equal(createdAt.textContent, format('2026-01-02T03:04:00'));
+    assert.equal(createdAt.title, '2026-01-02T03:04:00');
+    assert.equal(shown('modifiedDate').textContent, 'some day');
+    // a value under that name that is no text is shown like any other, and other values have no such title
+    const notText = shown('content.createdDate');
+    assert.equal(notText.textContent, '7');
+    assert.equal(notText.title, '');
+    assert.equal(shown('name').title, '');
 });
 
 /**
  * Opens the panel on the details of the SMS definition "welcome".
  *
- * @param {(path: string, method: string) => object} [answer] what the API answers to anything but the list and the first read of the details
+ * @param {(path: string, method: string) => object} [answer] what the API answers to anything but the list, what the list reads for its columns before the row is clicked and the first read of the details
  * @param {object} [definition] what the first read of the details returns
  * @returns {Promise.<object>} the page, with a way to click a button of the details by its text
  */
 async function details(answer = () => ({ body: DEFINITION }), definition = DEFINITION) {
-    let reads = 0;
+    // counts the reads from the click on the row
+    let reads;
     const at = page(MENU, (path, method) => {
         if (path.startsWith('sms/definitions?')) {
             return { body: { definitions: [ROW('welcome')], count: 1 } };
         }
-        // the first read fills the details; what comes after is the test's business
-        return method === 'GET' && reads++ === 0 ? { body: definition } : answer(path, method);
+        // the list reads the details for its columns, and the first read after the click fills
+        // the details; what comes after is the test's business
+        return reads === undefined || (method === 'GET' && reads++ === 0)
+            ? { body: definition }
+            : answer(path, method);
     });
     await at.open();
+    reads = 0;
     rows(at)[0].click();
     await tick();
     at.press = async (text) => {
@@ -553,15 +951,17 @@ async function details(answer = () => ({ body: DEFINITION }), definition = DEFIN
 
 test('every request uses the session of the page, and every list leaves out what was deleted', async () => {
     const at = await details();
-    assert.equal(at.calls.length, 2);
+    // the list, the details that the list reads for its columns, and the details that were opened
+    assert.equal(at.calls.length, 3);
     for (const call of at.calls) {
         assert.equal(call.credentials, 'same-origin');
         assert.equal(call.redirect, 'error');
         assert.equal(call.method, 'GET');
         assert.ok(call.url.startsWith('/cloud/fuelapi/messaging/v1/sms/definitions'), call.url);
     }
-    assert.ok(at.calls[0].url.endsWith('?$page=1&$pageSize=50&$filter=status%20neq%20deleted'));
+    assert.ok(at.calls[0].url.endsWith('?$page=1&$pageSize=100&$filter=status%20neq%20deleted'));
     assert.ok(at.calls[1].url.endsWith('/definitions/welcome'));
+    assert.ok(at.calls[2].url.endsWith('/definitions/welcome'));
 });
 
 test('nothing is deleted before the question is answered with yes, and "Keep it" takes the question back', async () => {
@@ -603,10 +1003,10 @@ test('a confirmed delete is sent once, and the list comes back saying what was d
         await tick();
         await tick();
         assert.deepEqual(at.written, ['DELETE sms/definitions/welcome']);
-        assert.equal(at.calls.at(-2).method, 'DELETE');
-        assert.equal(at.calls.at(-2).credentials, 'same-origin');
+        const sent = at.calls.find((call) => call.method === 'DELETE');
+        assert.equal(sent.credentials, 'same-origin');
         // the list was read again
-        assert.equal(at.asked.at(-1), 'sms/definitions?$page=1&$pageSize=50');
+        assert.equal(listReads(at), 2);
         assert.match(at.text(), /^Deleted “name of welcome” \(key welcome\)\./);
         assert.equal(rows(at).length, 1);
     }
@@ -664,7 +1064,7 @@ test('a delete without an answer says that the outcome is unknown, and shows the
         at.text(),
         /^It is not known whether “name of welcome” \(key welcome\) was deleted/,
     );
-    assert.equal(at.asked.at(-1), 'sms/definitions?$page=1&$pageSize=50');
+    assert.equal(listReads(at), 2);
 });
 
 test('what became of a delete stays in view when the list cannot be read afterwards', async () => {
@@ -759,7 +1159,22 @@ test('a list that cannot be reached says so in plain words', async () => {
  * @returns {string[][]} value and label of every entry
  */
 function options(at, path) {
-    return [...at.field(path).list.children].map((item) => [item.value, item.label]);
+    return [...listOf(at.field(path)).children].map((item) => [
+        item.lastElementChild.textContent,
+        item.firstElementChild.textContent,
+    ]);
+}
+
+const FIELD = '.sfmc-ux-tools-transactional-field';
+
+/**
+ * Finds the list below a field of a form.
+ *
+ * @param {HTMLElement} input the field
+ * @returns {Element|null} the list; nothing when the field has none
+ */
+function listOf(input) {
+    return input.closest(FIELD).querySelector('[role="listbox"]');
 }
 
 /**
@@ -835,6 +1250,8 @@ test('a new SMS message is sent with what the form holds, and its details open',
             'subscriptions.countryCode',
             'subscriptions.autoAddSubscriber',
             'subscriptions.updateSubscriber',
+            'options.urlShortenerOptions.isLinkShorteningEnabled',
+            'options.urlShortenerOptions.isSubscriberTrackingEnabled',
         ],
     );
     at.type('name', '  Order shipped ');
@@ -852,7 +1269,8 @@ test('a new SMS message is sent with what the form holds, and its details open',
             name: 'Order shipped',
             definitionKey: 'Order_shipped',
             status: 'Active',
-            // the text of the message as typed; what was left empty is not sent
+            // the text of the message as typed; what was left empty is not sent, and neither
+            // are the options of the link shortener, which were not ticked
             content: { message: ' Your order is on its way.\n' },
             subscriptions: {
                 shortCode: '4912312345678',
@@ -1014,7 +1432,7 @@ test('a message sent twice in a row goes out once, and one without an answer is 
         at.text(),
         /^It is not known whether “Account reset” \(key Account_reset\) was created/,
     );
-    assert.equal(at.asked.at(-1), 'ott/definitions?$page=1&$pageSize=50');
+    assert.equal(at.asked.at(-1), 'ott/definitions?$page=1&$pageSize=100');
 });
 
 // where the mobile messages of Content Builder are read, and what is asked of them
@@ -1061,7 +1479,8 @@ test('the content of a push message is offered from the mobile messages of Conte
     const ott = await form('ott');
     await tick();
     assert.deepEqual(ott.looked, []);
-    assert.equal(ott.field('content.customerKey').list, null);
+    assert.equal(listOf(ott.field('content.customerKey')), null);
+    assert.equal(ott.field('content.customerKey').hasAttribute('role'), false);
 });
 
 test('the content field works without its list, and the rest of the list is not read for a form that is gone', async () => {
@@ -1069,7 +1488,7 @@ test('the content field works without its list, and the rest of the list is not 
         path.startsWith(CONTENTS) ? { status: 403, body: { message: 'No' } } : { body: [] },
     );
     await tick();
-    assert.deepEqual(options(down, 'content.customerKey'), []);
+    assert.equal(listOf(down.field('content.customerKey')), null);
     down.type('content.customerKey', 'typed');
     assert.equal(down.field('content.customerKey').value, 'typed');
 
@@ -1122,8 +1541,9 @@ test('the form offers the codes, keywords and apps of the business unit, and wor
     await tick();
     assert.deepEqual(sms.looked, ['legacy/v1/beta/mobile/code/', 'legacy/v1/beta/mobile/keyword/']);
     // only what can be chosen: a code that is no text is left out
-    assert.deepEqual(options(sms, 'subscriptions.shortCode'), [['4912312345678', 'DE']]);
-    assert.deepEqual(options(sms, 'subscriptions.keyword'), [['ORDER', '4912312345678']]);
+    assert.deepEqual(chosen(sms, 'subscriptions.shortCode').slice(1), [
+        ['4912312345678', '4912312345678 · DE'],
+    ]);
     const push = await form('push', answer);
     await tick();
     assert.deepEqual(push.looked, ['push/v1/application', `${CONTENTS}?$page=1&${OF_CONTENTS}`]);
@@ -1135,10 +1555,657 @@ test('the form offers the codes, keywords and apps of the business unit, and wor
         path.startsWith('legacy/') ? { isDown: true } : { body: { definitions: [] } },
     );
     await tick();
-    assert.deepEqual(options(down, 'subscriptions.shortCode'), []);
+    assert.equal(down.field('subscriptions.shortCode').type, 'text');
     down.type('subscriptions.shortCode', '12345');
     assert.equal(down.field('subscriptions.shortCode').value, '12345');
     assert.equal(down.panel().querySelector('form') !== null, true);
+});
+
+/**
+ * Lists what a field of a form lets choose, when it is a list and no text field.
+ *
+ * @param {object} at the page with the form
+ * @param {string} path name of the field
+ * @returns {string[][]} value and text of every entry
+ */
+function chosen(at, path) {
+    return [...at.field(path).options].map((item) => [item.value, item.textContent]);
+}
+
+/**
+ * Chooses an entry of a list of a form.
+ *
+ * @param {object} at the page with the form
+ * @param {string} path name of the field
+ * @param {string} value the entry
+ */
+function choose(at, path, value) {
+    at.field(path).value = value;
+    at.field(path).dispatchEvent(new at.window.Event('change', { bubbles: true }));
+}
+
+// two codes of one country, as seen live, and a keyword that both of them have
+const CODES = 'legacy/v1/beta/mobile/code/';
+const KEYWORDS = 'legacy/v1/beta/mobile/keyword/';
+const APPS = 'push/v1/application';
+const OFFERED = {
+    [CODES]: {
+        entry: [
+            { code: '3197010240', countryCode: 'NL', isShortCode: false, codeType: 'PRIVATE' },
+            { code: '8850', countryCode: 'NL', isShortCode: true, codeType: 'SHARED' },
+        ],
+    },
+    [KEYWORDS]: {
+        entry: [
+            { keyword: 'ORDER', code: { code: '3197010240' } },
+            { keyword: 'STOP', code: { code: '3197010240' } },
+            { keyword: 'ORDER', code: { code: '8850' } },
+            { keyword: 'PROMO', code: { code: '8850' } },
+        ],
+    },
+    [APPS]: [
+        { id: 'app-1', name: 'Shop app' },
+        { id: 'app-2', name: 'Staff app' },
+    ],
+    [CONTENTS]: {
+        count: 1,
+        items: [{ customerKey: 'receipt_push', name: 'Receipt', availableViews: ['push'] }],
+    },
+};
+
+/**
+ * Answers with the lists above, and with a definition or an empty list for the rest.
+ *
+ * @param {object} [definition] what is read under a key
+ * @param {string[]} [down] the lists that cannot be read
+ * @returns {(path: string, method: string) => object} what the API answers
+ */
+function offering(definition = DEFINITION, down = []) {
+    return (path, method) => {
+        const list = Object.keys(OFFERED).find((name) => path.startsWith(name));
+        if (list) {
+            return down.includes(list)
+                ? { status: 500, body: { message: 'No' } }
+                : { body: OFFERED[list] };
+        }
+        if (method !== 'GET') {
+            return { status: 200, body: {} };
+        }
+        return { body: path.includes('?') ? { definitions: [ROW('welcome')] } : definition };
+    };
+}
+
+/**
+ * Counts how often a list of a form was read.
+ *
+ * @param {{looked: string[]}} at the page
+ * @param {string} list where the list is
+ * @returns {number} the requests for its first page
+ */
+function reads(at, list) {
+    return at.looked.filter((path) => path === list || path.startsWith(`${list}?$page=1&`)).length;
+}
+
+test('the code is chosen from the codes of the business unit, told apart by more than their country', async () => {
+    const at = await form('sms', offering());
+    await tick();
+    assert.equal(at.field('subscriptions.shortCode').tagName, 'SELECT');
+    assert.equal(at.field('subscriptions.shortCode').required, true);
+    assert.deepEqual(chosen(at, 'subscriptions.shortCode'), [
+        ['', 'Choose a code …'],
+        ['3197010240', '3197010240 · NL · long code · PRIVATE'],
+        ['8850', '8850 · NL · short code · SHARED'],
+    ]);
+    assert.equal(at.field('subscriptions.shortCode').value, '');
+});
+
+test('the keywords follow the code: none before a code is chosen, and one that the new code lacks is taken out', async () => {
+    const at = await form('sms', offering());
+    await tick();
+    const keyword = () => at.field('subscriptions.keyword');
+    assert.equal(keyword().tagName, 'SELECT');
+    assert.equal(keyword().disabled, true);
+    assert.deepEqual(chosen(at, 'subscriptions.keyword'), [['', 'Choose the code first']]);
+    choose(at, 'subscriptions.shortCode', '3197010240');
+    assert.equal(keyword().disabled, false);
+    // each keyword once: only those of this code
+    assert.deepEqual(chosen(at, 'subscriptions.keyword'), [
+        ['', 'Choose a keyword …'],
+        ['ORDER', 'ORDER'],
+        ['STOP', 'STOP'],
+    ]);
+    choose(at, 'subscriptions.keyword', 'ORDER');
+    // the other code has this keyword too, so it stays
+    choose(at, 'subscriptions.shortCode', '8850');
+    assert.deepEqual(
+        chosen(at, 'subscriptions.keyword').map(([value]) => value),
+        ['', 'ORDER', 'PROMO'],
+    );
+    assert.equal(keyword().value, 'ORDER');
+    choose(at, 'subscriptions.keyword', 'PROMO');
+    choose(at, 'subscriptions.shortCode', '3197010240');
+    assert.equal(keyword().value, '');
+    choose(at, 'subscriptions.shortCode', '');
+    assert.equal(keyword().disabled, true);
+    assert.deepEqual(chosen(at, 'subscriptions.keyword'), [['', 'Choose the code first']]);
+});
+
+test('a chosen code and keyword are sent as the typed ones were, and a form without them is not sent', async () => {
+    const at = await form('sms', offering());
+    await tick();
+    at.type('name', 'Order shipped');
+    at.type('content.message', 'On its way.');
+    await at.send();
+    assert.deepEqual(at.written, []);
+    choose(at, 'subscriptions.shortCode', '8850');
+    await at.send();
+    assert.deepEqual(at.written, []);
+    choose(at, 'subscriptions.keyword', 'PROMO');
+    await at.send();
+    assert.deepEqual(at.sent(), [
+        {
+            name: 'Order shipped',
+            definitionKey: 'Order_shipped',
+            status: 'Active',
+            content: { message: 'On its way.' },
+            subscriptions: {
+                shortCode: '8850',
+                keyword: 'PROMO',
+                autoAddSubscriber: false,
+                updateSubscriber: false,
+            },
+        },
+    ]);
+});
+
+test('what was typed before the lists came is kept when the fields become lists', async () => {
+    const pending = Promise.withResolvers();
+    const at = page(MENU, offering());
+    await at.open();
+    const answering = at.window.fetch;
+    at.window.fetch = async (url, options) => {
+        const response = await answering(url, options);
+        if (url.includes('legacy/')) {
+            await pending.promise;
+        }
+        return response;
+    };
+    await click(at, 'new');
+    const field = (path) => at.panel().querySelector('form').elements[path];
+    assert.equal(field('subscriptions.shortCode').tagName, 'INPUT');
+    field('subscriptions.shortCode').value = ' 8850 ';
+    field('subscriptions.keyword').value = 'MINE';
+    pending.resolve();
+    await tick();
+    await tick();
+    assert.equal(field('subscriptions.shortCode').tagName, 'SELECT');
+    assert.equal(field('subscriptions.shortCode').value, '8850');
+    assert.equal(field('subscriptions.keyword').value, 'MINE');
+    assert.equal(
+        field('subscriptions.keyword').selectedOptions[0].textContent,
+        'MINE — not found in this business unit',
+    );
+});
+
+test('a stored code or keyword that the business unit does not have stays chosen, and an untouched form sends nothing', async () => {
+    const stored = {
+        ...DEFINITION,
+        subscriptions: { shortCode: '4912312345678', keyword: 'WELCOME' },
+    };
+    const at = await editing(stored, offering(stored));
+    await tick();
+    assert.equal(at.field('subscriptions.shortCode').value, '4912312345678');
+    assert.deepEqual(chosen(at, 'subscriptions.shortCode').at(-1), [
+        '4912312345678',
+        '4912312345678 — not found in this business unit',
+    ]);
+    assert.equal(at.field('subscriptions.keyword').value, 'WELCOME');
+    assert.equal(at.field('subscriptions.keyword').disabled, false);
+    assert.deepEqual(chosen(at, 'subscriptions.keyword'), [
+        ['', 'Choose a keyword …'],
+        ['WELCOME', 'WELCOME — not found in this business unit'],
+    ]);
+    const before = at.calls.length;
+    await at.send();
+    assert.equal(at.calls.length, before);
+    assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+    // it can be chosen again after a look at another code
+    choose(at, 'subscriptions.shortCode', '8850');
+    assert.equal(at.field('subscriptions.keyword').value, '');
+    assert.deepEqual(
+        chosen(at, 'subscriptions.keyword').map(([value]) => value),
+        ['', 'ORDER', 'PROMO'],
+    );
+    choose(at, 'subscriptions.shortCode', '4912312345678');
+    assert.equal(at.field('subscriptions.keyword').value, '');
+    choose(at, 'subscriptions.keyword', 'WELCOME');
+    await at.send();
+    assert.equal(at.calls.length, before);
+});
+
+test('a known code with a keyword of its own that the lists lack keeps that keyword, and a changed one is sent with its part', async () => {
+    const stored = {
+        ...DEFINITION,
+        subscriptions: { shortCode: '8850', keyword: 'OLD', countryCode: 'NL' },
+    };
+    const at = await editing(stored, (path, method, count) => {
+        const offered = offering(stored)(path, method);
+        if (method === 'GET' && path.endsWith('definitions/welcome') && count > 1) {
+            return {
+                body: {
+                    ...stored,
+                    subscriptions: { ...stored.subscriptions, keyword: 'PROMO' },
+                },
+            };
+        }
+        return offered;
+    });
+    await tick();
+    assert.deepEqual(
+        chosen(at, 'subscriptions.keyword').map(([value]) => value),
+        ['', 'ORDER', 'PROMO', 'OLD'],
+    );
+    assert.equal(at.field('subscriptions.keyword').value, 'OLD');
+    choose(at, 'subscriptions.keyword', 'PROMO');
+    await at.send();
+    assert.deepEqual(at.changes(), [
+        { subscriptions: { shortCode: '8850', keyword: 'PROMO', countryCode: 'NL' } },
+    ]);
+    assert.match(at.text(), /^Saved “name of welcome”/);
+});
+
+test('the code and the keyword stay text fields when one of their lists cannot be read or is empty', async () => {
+    for (const down of [[CODES], [KEYWORDS], [CODES, KEYWORDS]]) {
+        const at = await form('sms', offering(DEFINITION, down));
+        await tick();
+        assert.equal(at.field('subscriptions.shortCode').type, 'text', down.join(' '));
+        assert.equal(at.field('subscriptions.keyword').type, 'text', down.join(' '));
+        assert.equal(at.field('subscriptions.keyword').disabled, false);
+        at.type('name', 'Order shipped');
+        at.type('content.message', 'On its way.');
+        at.type('subscriptions.shortCode', '12345');
+        at.type('subscriptions.keyword', 'ANY');
+        await at.send();
+        assert.deepEqual(at.sent()[0].subscriptions, {
+            shortCode: '12345',
+            keyword: 'ANY',
+            autoAddSubscriber: false,
+            updateSubscriber: false,
+        });
+    }
+    // a business unit without keywords has nothing to choose from
+    const empty = await form('sms', (path) =>
+        path === KEYWORDS ? { body: { entry: [] } } : offering()(path, 'GET'),
+    );
+    await tick();
+    assert.equal(empty.field('subscriptions.shortCode').type, 'text');
+    // a list that failed is asked for again by the next form, and the fields become lists then
+    let isDown = true;
+    const later = await form('sms', (path, method) =>
+        offering(DEFINITION, isDown ? [KEYWORDS] : [])(path, method),
+    );
+    await tick();
+    assert.equal(later.field('subscriptions.keyword').type, 'text');
+    isDown = false;
+    later.button('Cancel').click();
+    await tick();
+    await click(later, 'new');
+    await tick();
+    assert.equal(later.field('subscriptions.keyword').tagName, 'SELECT');
+    // the codes were kept, the keywords were not
+    assert.deepEqual([reads(later, CODES), reads(later, KEYWORDS)], [1, 2]);
+});
+
+test('a keyword that names no code is offered with every code', async () => {
+    const at = await form('sms', (path, method) =>
+        path === KEYWORDS
+            ? {
+                  body: {
+                      entry: [
+                          { keyword: 'ANYWHERE' },
+                          { keyword: 'ORDER', code: { code: '8850' } },
+                      ],
+                  },
+              }
+            : offering()(path, method),
+    );
+    await tick();
+    choose(at, 'subscriptions.shortCode', '3197010240');
+    assert.deepEqual(
+        chosen(at, 'subscriptions.keyword').map(([value]) => value),
+        ['', 'ANYWHERE'],
+    );
+});
+
+test('the details call the fields by readable names, with the name of the API to be read on them', async () => {
+    const at = await details(undefined, {
+        ...DEFINITION,
+        definitionId: 'id-1',
+        somethingNew: 'x',
+        subscriptions: { ...DEFINITION.subscriptions, unknownPart: 1 },
+        options: {
+            isReconcilable: false,
+            urlShortenerOptions: { isLinkShorteningEnabled: true, shortenerType: 'SFMC' },
+        },
+    });
+    const names = [...at.panel().querySelectorAll('dt')].map((item) => [
+        item.textContent,
+        item.title,
+    ]);
+    assert.deepEqual(names, [
+        ['Name', 'name'],
+        ['Key', 'definitionKey'],
+        ['Status', 'status'],
+        ['Created', 'createdDate'],
+        ['Modified', 'modifiedDate'],
+        ['Content', 'content'],
+        ['Message', 'content.message'],
+        ['Subscription', 'subscriptions'],
+        ['Code', 'subscriptions.shortCode'],
+        ['Keyword', 'subscriptions.keyword'],
+        // what the panel has no name for keeps the one of the API
+        ['unknownPart', 'subscriptions.unknownPart'],
+        ['ID', 'definitionId'],
+        ['somethingNew', 'somethingNew'],
+        ['Options', 'options'],
+        ['Reconcilable', 'options.isReconcilable'],
+        ['Link shortener', 'options.urlShortenerOptions'],
+        ['Shorten links', 'options.urlShortenerOptions.isLinkShorteningEnabled'],
+        ['Shortener type', 'options.urlShortenerOptions.shortenerType'],
+    ]);
+    // an SMS message has nothing that a list names, and reads none for its details
+    assert.deepEqual(at.looked, []);
+    assert.equal(at.panel().querySelector(RESOLVED), null);
+});
+
+const RESOLVED = '.sfmc-ux-tools-transactional-resolved';
+const PUSH = {
+    ...ROW('receipt'),
+    status: 'Draft',
+    applicationId: 'app-2',
+    content: { customerKey: 'receipt_push' },
+};
+
+/**
+ * Opens the panel on the details of the push definition "receipt".
+ *
+ * @param {object} [definition] the definition
+ * @param {string[]} [down] the lists that cannot be read
+ * @returns {Promise.<object>} the page, with the names shown next to the values of the details
+ */
+async function pushDetails(definition = PUSH, down = []) {
+    const at = page(MENU, (path, method) =>
+        path.startsWith('push/definitions?')
+            ? { body: { definitions: [ROW('receipt')] } }
+            : offering(definition, down)(path, method),
+    );
+    await at.open();
+    await tab(at, 'push');
+    rows(at)[0].click();
+    await tick();
+    await tick();
+    at.named = () =>
+        Object.fromEntries(
+            [...at.panel().querySelectorAll(RESOLVED)].map((item) => [
+                item.closest('dd').previousElementSibling.title,
+                item.hidden ? null : item.textContent,
+            ]),
+        );
+    return at;
+}
+
+test('the details of a push message name its app and its content next to their id and key', async () => {
+    const at = await pushDetails();
+    assert.deepEqual(at.named(), {
+        applicationId: 'Staff app',
+        'content.customerKey': 'Receipt',
+    });
+    // the id and the key stay as they are
+    const value = (path) =>
+        [...at.panel().querySelectorAll('dt')].find((item) => item.title === path)
+            .nextElementSibling.firstElementChild.textContent;
+    assert.equal(value('applicationId'), 'app-2');
+    assert.equal(value('content.customerKey'), 'receipt_push');
+    assert.equal(
+        [...at.panel().querySelectorAll('dt')].find((item) => item.title === 'applicationId')
+            .textContent,
+        'App',
+    );
+    // what the lists do not hold has no name
+    const unknown = await pushDetails({ ...PUSH, applicationId: 'app-9' });
+    assert.deepEqual(unknown.named(), { applicationId: null, 'content.customerKey': 'Receipt' });
+});
+
+test('details are shown without the names when a list cannot be read, and the list is asked for again the next time', async () => {
+    const at = await pushDetails(PUSH, [APPS]);
+    assert.deepEqual(at.named(), { applicationId: null, 'content.customerKey': 'Receipt' });
+    assert.match(at.text(), /app-2/);
+    await click(at, 'back');
+    rows(at)[0].click();
+    await tick();
+    await tick();
+    // the list that failed is read again by whatever names with it, the list of messages and
+    // the details, each time it is shown; the one that was read is not
+    assert.deepEqual([reads(at, APPS), reads(at, CONTENTS)], [4, 1]);
+    const none = await pushDetails(PUSH, [APPS, CONTENTS]);
+    assert.deepEqual(none.named(), { applicationId: null, 'content.customerKey': null });
+    assert.ok(none.panel().querySelector('dl'));
+});
+
+test('the lists of names are read once for the details and the forms, until "Refresh" or another business unit', async () => {
+    const at = await pushDetails();
+    const count = () => [reads(at, APPS), reads(at, CONTENTS)];
+    assert.deepEqual(count(), [1, 1]);
+    // the form of the message, the details again and a new form use what was read
+    const press = async (text) => {
+        [...at.panel().querySelectorAll('button')]
+            .find((item) => item.textContent === text)
+            .click();
+        await tick();
+        await tick();
+    };
+    await press('Edit');
+    const field = (path) => at.panel().querySelector('form').elements[path];
+    assert.deepEqual(
+        [...listOf(field('applicationId')).children].map((item) => item.textContent),
+        ['Shop appapp-1', 'Staff appapp-2'],
+    );
+    await press('Cancel');
+    assert.equal(at.named().applicationId, 'Staff app');
+    await click(at, 'back');
+    await click(at, 'new');
+    assert.equal(listOf(field('content.customerKey')).children.length, 1);
+    assert.deepEqual(count(), [1, 1]);
+    await press('Cancel');
+    // "Refresh" reads them again, for the list that it shows
+    await click(at, 'refresh');
+    assert.deepEqual(count(), [2, 2]);
+    rows(at)[0].click();
+    await tick();
+    await tick();
+    assert.deepEqual(count(), [2, 2]);
+    assert.equal(at.named().applicationId, 'Staff app');
+    // and so does a menu that is drawn again, as after a change of the business unit
+    await click(at, 'back');
+    at.document.querySelector('#mobile').closest('body').insertAdjacentHTML('beforeend', MENU);
+    at.document.querySelector('[data-sfmc-ux-tools-transactional]').closest('ul').remove();
+    await tick();
+    await tab(at, 'push');
+    rows(at)[0].click();
+    await tick();
+    await tick();
+    assert.deepEqual(count(), [3, 3]);
+});
+
+test('the form names the app and the content under their fields, while typing and for what is stored', async () => {
+    const at = await form('push', offering());
+    await tick();
+    const named = (path) => {
+        const place = at.field(path).closest(FIELD).querySelector(RESOLVED);
+        return place.hidden ? null : place.textContent;
+    };
+    assert.equal(named('applicationId'), null);
+    assert.equal(named('content.customerKey'), null);
+    at.type('applicationId', 'app-1');
+    assert.equal(named('applicationId'), 'Shop app');
+    at.type('applicationId', 'app-');
+    assert.equal(named('applicationId'), null);
+    at.type('applicationId', ' app-2 ');
+    assert.equal(named('applicationId'), 'Staff app');
+    at.type('content.customerKey', 'receipt_push');
+    assert.equal(named('content.customerKey'), 'Receipt');
+    // only the fields that hold an id or a key have such a place
+    assert.equal(at.form().querySelectorAll(RESOLVED).length, 2);
+    // the form of a message that exists names what it holds
+    const stored = await pushDetails();
+    [...stored.panel().querySelectorAll('button')]
+        .find((item) => item.textContent === 'Edit')
+        .click();
+    await tick();
+    await tick();
+    const places = [...stored.panel().querySelectorAll(`form ${RESOLVED}`)];
+    assert.deepEqual(
+        places.map((item) => item.textContent),
+        ['Staff app', 'Receipt'],
+    );
+    // without the lists the form works, and names nothing
+    const down = await form('push', offering(DEFINITION, [APPS, CONTENTS]));
+    await tick();
+    down.type('applicationId', 'app-1');
+    assert.equal(down.field('applicationId').value, 'app-1');
+    assert.equal(down.form().querySelector(`${RESOLVED}:not([hidden])`), null);
+});
+
+/**
+ * Lists the statuses a form lets choose.
+ *
+ * @param {object} at the page with the form
+ * @returns {string[]} the statuses
+ */
+function statuses(at) {
+    return [...at.field('status').options].map((item) => item.value);
+}
+
+test('only push has the status Draft, and only its new form says what becomes of a new message', async () => {
+    const note = /Marketing Cloud stores a new push message as Draft unless it is Active\./;
+    const push = await form('push');
+    assert.deepEqual(statuses(push), ['Active', 'Inactive', 'Draft']);
+    assert.match(push.field('status').closest('label').textContent, note);
+    assert.equal(push.field('status').value, 'Active');
+    const sms = await form('sms');
+    assert.deepEqual(statuses(sms), ['Active', 'Inactive']);
+    assert.doesNotMatch(sms.text(), note);
+    const ott = await form('ott');
+    assert.deepEqual(statuses(ott), ['Active', 'Inactive']);
+    assert.doesNotMatch(ott.text(), note);
+    // a push message that exists is whatever it is stored as
+    const stored = await pushDetails();
+    [...stored.panel().querySelectorAll('button')]
+        .find((item) => item.textContent === 'Edit')
+        .click();
+    await tick();
+    assert.equal(stored.panel().querySelector('form').elements.status.value, 'Draft');
+    assert.equal(stored.panel().querySelector('form').elements.status.options.length, 3);
+    assert.doesNotMatch(stored.text(), note);
+});
+
+const SHORTEN = 'options.urlShortenerOptions.isLinkShorteningEnabled';
+const TRACK = 'options.urlShortenerOptions.isSubscriberTrackingEnabled';
+
+test('a new SMS message names the options of the link shortener only when they are ticked', async () => {
+    const at = await form('sms', () => ({ body: {} }));
+    at.type('name', 'Order shipped');
+    at.type('content.message', 'On its way.');
+    at.type('subscriptions.shortCode', '8850');
+    at.type('subscriptions.keyword', 'ORDER');
+    await at.send();
+    assert.equal(Object.hasOwn(at.sent()[0], 'options'), false);
+    const ticked = await form('sms', () => ({ body: {} }));
+    ticked.type('name', 'Order shipped');
+    ticked.type('content.message', 'On its way.');
+    ticked.type('subscriptions.shortCode', '8850');
+    ticked.type('subscriptions.keyword', 'ORDER');
+    ticked.tick(SHORTEN);
+    await ticked.send();
+    assert.deepEqual(ticked.sent()[0].options, {
+        urlShortenerOptions: { isLinkShorteningEnabled: true },
+    });
+});
+
+test('a changed option of the link shortener is sent with its whole part, and held against what is stored afterwards', async () => {
+    const held = {
+        ...DEFINITION,
+        options: {
+            isReconcilable: false,
+            urlShortenerOptions: { isLinkShorteningEnabled: true, shortenerType: 'SFMC' },
+        },
+    };
+    const before = JSON.stringify(held);
+    const sent = {
+        isReconcilable: false,
+        urlShortenerOptions: {
+            isLinkShorteningEnabled: false,
+            shortenerType: 'SFMC',
+            isSubscriberTrackingEnabled: true,
+        },
+    };
+    const run = async (after) => {
+        const at = await editing(held, (path, method, count) => {
+            if (method !== 'GET') {
+                return { status: 200 };
+            }
+            return { body: count === 1 ? held : after };
+        });
+        assert.equal(at.field(SHORTEN).checked, true);
+        assert.equal(at.field(TRACK).checked, false);
+        at.field(SHORTEN).click();
+        at.field(TRACK).click();
+        await at.send();
+        return at;
+    };
+    // the tick that was taken out is simply gone afterwards: that counts as saved
+    const saved = await run({
+        ...held,
+        options: {
+            isReconcilable: false,
+            urlShortenerOptions: { shortenerType: 'SFMC', isSubscriberTrackingEnabled: true },
+        },
+    });
+    assert.deepEqual(saved.changes(), [{ options: sent }]);
+    assert.match(saved.text(), /^Saved “name of welcome”/);
+    // the definition the form was filled from is not altered by what was sent
+    assert.equal(JSON.stringify(held), before);
+    // what Marketing Cloud did not take is named by its whole path
+    const missed = await run(held);
+    assert.deepEqual(missed.changes(), [{ options: sent }]);
+    assert.match(
+        missed.text(),
+        /these fields are not as they were sent: options\.urlShortenerOptions\.isLinkShorteningEnabled, options\.urlShortenerOptions\.isSubscriberTrackingEnabled\./,
+    );
+});
+
+test('an option of a message that has no options yet is sent alone, and untouched options are not sent', async () => {
+    const at = await editing(DEFINITION, (path, method, count) => {
+        if (method !== 'GET') {
+            return { status: 200 };
+        }
+        const options = { urlShortenerOptions: { isSubscriberTrackingEnabled: true } };
+        return { body: count === 1 ? DEFINITION : { ...DEFINITION, options } };
+    });
+    at.field(TRACK).click();
+    await at.send();
+    assert.deepEqual(at.changes(), [
+        { options: { urlShortenerOptions: { isSubscriberTrackingEnabled: true } } },
+    ]);
+    assert.match(at.text(), /^Saved “name of welcome”/);
+    const ticked = {
+        ...DEFINITION,
+        options: { urlShortenerOptions: { isLinkShorteningEnabled: true } },
+    };
+    const other = await editing(ticked, () => ({ status: 200, body: ticked }));
+    other.type('description', 'new words');
+    await other.send();
+    assert.equal(Object.hasOwn(other.changes()[0], 'options'), false);
 });
 
 test('"Cancel" leaves the form without sending anything', async () => {
@@ -1560,6 +2627,766 @@ test('a required field that was emptied keeps a change from being sent', async (
     assert.equal(at.calls.filter((call) => call.method !== 'GET').length, 0);
 });
 
+/**
+ * Fills the form of a new SMS message with everything it must have.
+ *
+ * @param {{type: (path: string, text: string) => void}} at the page with the form
+ */
+function fillSms(at) {
+    at.type('name', 'Order shipped');
+    at.type('content.message', 'text');
+    at.type('subscriptions.shortCode', '4912312345678');
+    at.type('subscriptions.keyword', 'ORDER');
+}
+
+/**
+ * Answers a new message as given, a list with no rows and anything else with the definition.
+ *
+ * @param {object} toPost the answer to a new message
+ * @returns {(path: string, method: string) => object} what the API answers
+ */
+function answering(toPost) {
+    return (path, method) => {
+        if (method === 'POST') {
+            return toPost;
+        }
+        return { body: path.includes('?') ? { definitions: [] } : DEFINITION };
+    };
+}
+
+test('the list is read again after a message was created, whatever became of the request', async () => {
+    // created: its details open, and the way back reads the list
+    const done = await form('sms', answering({ status: 201, body: {} }));
+    assert.equal(listReads(done), 1);
+    fillSms(done);
+    await done.send();
+    assert.equal(listReads(done), 1);
+    await click(done, 'back');
+    assert.equal(listReads(done), 2);
+    // and that list is kept again
+    await tab(done, 'push');
+    await tab(done, 'sms');
+    assert.equal(listReads(done), 2);
+    // refused: nobody knows what the refusal left behind
+    const refused = await form('sms', answering({ status: 400, body: { message: 'No' } }));
+    fillSms(refused);
+    await refused.send();
+    refused.button('Cancel').click();
+    await tick();
+    assert.equal(listReads(refused), 2);
+    // a form that was left without sending anything changes nothing
+    const left = await form('sms', answering({ status: 201 }));
+    fillSms(left);
+    left.button('Cancel').click();
+    await tick();
+    assert.equal(listReads(left), 1);
+    // the lists of the other kinds are kept
+    await tab(refused, 'push');
+    await tab(refused, 'sms');
+    await tab(refused, 'push');
+    assert.equal(listReads(refused, 'push'), 1);
+});
+
+test('the list is read again after a message was changed, whatever became of the request', async () => {
+    const outcomes = {
+        saved: (path, method, reads) => {
+            if (method !== 'GET') {
+                return { status: 200 };
+            }
+            return { body: reads === 1 ? DEFINITION : { ...DEFINITION, name: 'New name' } };
+        },
+        refused: (path, method) =>
+            method === 'GET' ? { body: DEFINITION } : { status: 400, body: { message: 'No' } },
+        unanswered: (path, method) => (method === 'GET' ? { body: DEFINITION } : { isDown: true }),
+    };
+    for (const [outcome, answer] of Object.entries(outcomes)) {
+        const at = await editing(DEFINITION, answer);
+        at.type('name', 'New name');
+        await at.send();
+        await tick();
+        assert.deepEqual(at.written, ['POST sms/definitions/welcome'], outcome);
+        // a refusal leaves the form, from which the way back leads over the details
+        if (at.form()) {
+            [...at.form().elements].find((item) => item.textContent === 'Cancel').click();
+            await tick();
+        }
+        assert.equal(listReads(at), 1, outcome);
+        await click(at, 'back');
+        assert.equal(listReads(at), 2, outcome);
+    }
+    // a change that was never sent leaves the list as it was read
+    const unsent = await editing(DEFINITION, () => ({ body: { ...DEFINITION, name: 'Other' } }));
+    unsent.type('name', 'New name');
+    await unsent.send();
+    assert.deepEqual(unsent.written, []);
+    [...unsent.form().elements].find((item) => item.textContent === 'Cancel').click();
+    await tick();
+    await click(unsent, 'back');
+    assert.equal(listReads(unsent), 1);
+});
+
+test('the list is read again after a refused delete, and not after one that was never sent', async () => {
+    const refused = await details((path, method) =>
+        method === 'DELETE' ? { status: 400, body: { message: 'In use' } } : { body: DEFINITION },
+    );
+    await refused.press('Delete');
+    await refused.press('Delete it');
+    assert.deepEqual(refused.written, ['DELETE sms/definitions/welcome']);
+    assert.equal(listReads(refused), 1);
+    await click(refused, 'back');
+    assert.equal(listReads(refused), 2);
+    // the check before the delete failed: nothing went out
+    const unsent = await details(() => ({ body: { ...DEFINITION, definitionId: 'another' } }));
+    await unsent.press('Delete');
+    await unsent.press('Delete it');
+    assert.deepEqual(unsent.written, []);
+    await click(unsent, 'back');
+    assert.equal(listReads(unsent), 1);
+});
+
+test('a list that was read while a change was on its way is shown, but not kept', async () => {
+    const sent = Promise.withResolvers();
+    const read = Promise.withResolvers();
+    const at = await form('sms', (path, method) => ({
+        status: method === 'POST' ? 201 : 200,
+        body: { definitions: [] },
+    }));
+    const quick = at.window.fetch;
+    let isHeld = true;
+    at.window.fetch = async (url, options) => {
+        const response = await quick(url, options);
+        if (options.method === 'POST') {
+            await sent.promise;
+        } else if (isHeld && url.includes('/sms/definitions?')) {
+            await read.promise;
+        }
+        return response;
+    };
+    fillSms(at);
+    at.form().dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
+    await tick();
+    // the reader does not wait for the answer, and the list is asked for before it has come
+    await tab(at, 'sms');
+    assert.equal(listReads(at), 2);
+    sent.resolve();
+    await tick();
+    await tick();
+    read.resolve();
+    await tick();
+    await tick();
+    assert.match(at.text(), /no transactional SMS messages/);
+    isHeld = false;
+    await tab(at, 'push');
+    await tab(at, 'sms');
+    // it may have been the list from before the message was created
+    assert.equal(listReads(at), 3);
+});
+
+/**
+ * Reads the note of the pager: which rows of how many are on show.
+ *
+ * @param {{panel: () => Element}} at the page
+ * @returns {string} the note
+ */
+function range(at) {
+    return at.panel().querySelector('.sfmc-ux-tools-transactional-range').textContent;
+}
+
+// what a list says of a message: less than its definition holds
+const LISTED = ({ name, definitionKey, status, createdDate, modifiedDate }) => ({
+    name,
+    definitionKey,
+    status,
+    createdDate,
+    modifiedDate,
+});
+const SMS = (key, more) => ({
+    ...ROW(key),
+    content: { message: 'text' },
+    subscriptions: { shortCode: `code-${key}`, keyword: `KW-${key}` },
+    ...more,
+});
+const PUSHED = (key, appId, customerKey) => ({
+    ...ROW(key),
+    applicationId: appId,
+    content: { customerKey },
+});
+const CODED = (key, code) => {
+    const definition = SMS(key);
+    definition.subscriptions.shortCode = code;
+    return definition;
+};
+const NUMBERED = (count) =>
+    Array.from({ length: count }, (_, index) => SMS(`m-${String(index).padStart(3, '0')}`));
+
+/**
+ * Opens the panel on the list of a kind of message, over an API that hands out the list in
+ * pages, with the count of each page, and every definition under its key. The test can hold the
+ * reads of single definitions back and let them through, let some of them fail, and change what
+ * the API holds.
+ *
+ * @param {string} kind sms, push or ott
+ * @param {object[]} definitions the definitions the API holds
+ * @param {{isHeld?: boolean, down?: string[]}} [options] whether a read of a definition waits to be let through, and the lists of names that cannot be read
+ * @returns {Promise.<object>} the page, with: held (the definitions by key) and list (the rows of the list), both to be changed; failing (keys that cannot be read); wanted (the keys of the definitions asked for, in that order); flying and most (reads of definitions on their way now, and at most); release (lets held reads through); and ways to look at the list
+ */
+async function messages(kind, definitions, { isHeld = false, down = [] } = {}) {
+    const lists = offering(undefined, down);
+    const at = page(MENU, (path, method) => {
+        if (!path.startsWith(`${kind}/definitions`)) {
+            return path.includes('/definitions')
+                ? { body: { definitions: [] } }
+                : lists(path, method);
+        }
+        if (path.includes('?')) {
+            const number = Number(/\$page=(\d+)/.exec(path)[1]);
+            const found = at.list.slice((number - 1) * LARGEST, number * LARGEST);
+            return { body: { definitions: found, count: found.length } };
+        }
+        const key = decodeURIComponent(path.split('/').at(-1));
+        if (method !== 'GET') {
+            at.onWrite(key);
+            return { status: 200, body: {} };
+        }
+        return at.failing.has(key) || !at.held.has(key)
+            ? { status: 500, body: { message: 'No' } }
+            : { body: { requestId: 'r', ...at.held.get(key) } };
+    });
+    Object.assign(at, {
+        held: new Map(definitions.map((definition) => [definition.definitionKey, definition])),
+        list: definitions.map((definition) => LISTED(definition)),
+        failing: new Set(),
+        isHeld,
+        wanted: [],
+        waiting: [],
+        flying: 0,
+        most: 0,
+        onWrite: () => {},
+    });
+    const single = new RegExp(`/${kind}/definitions/([^?]+)$`);
+    const quick = at.window.fetch;
+    at.window.fetch = async (url, options) => {
+        const key = options.method === 'GET' && single.exec(url)?.[1];
+        if (!key) {
+            return quick(url, options);
+        }
+        at.wanted.push(key);
+        at.flying++;
+        at.most = Math.max(at.most, at.flying);
+        if (at.isHeld) {
+            await new Promise((resolve) => {
+                at.waiting.push(resolve);
+            });
+        }
+        at.flying--;
+        return quick(url, options);
+    };
+    at.release = async (count = at.waiting.length) => {
+        for (const letThrough of at.waiting.splice(0, count)) {
+            letThrough();
+        }
+        await tick();
+        await tick();
+    };
+    at.times = (key) => at.wanted.filter((item) => item === key).length;
+    at.names = () => rows(at).map((row) => row.cells[0].textContent);
+    at.cells = (from, to) =>
+        rows(at).map((row) => [...row.cells].slice(from, to).map((cell) => cell.textContent));
+    at.part = (name) => at.panel().querySelector(`.sfmc-ux-tools-transactional-${name}`);
+    at.progress = () => (at.part('progress').hidden ? null : at.part('progress').textContent);
+    at.look = (text) => {
+        at.part('search').value = text;
+        at.part('search').dispatchEvent(new at.window.Event('input', { bubbles: true }));
+    };
+    at.head = (title) =>
+        [...at.panel().querySelectorAll(':scope th button')].find(
+            (item) => item.textContent === title,
+        );
+    at.sorted = () =>
+        [...at.panel().querySelectorAll('th')].map((cell) => cell.getAttribute('aria-sort'));
+    at.press = async (text) => {
+        [...at.panel().querySelectorAll('button')]
+            .find((item) => item.textContent === text)
+            .click();
+        await tick();
+        await tick();
+    };
+    await at.open();
+    if (kind !== 'sms') {
+        await tab(at, kind);
+    }
+    return at;
+}
+
+// the columns that the details of a message fill: the two after the status
+const DETAILS = [3, 5];
+const ROWS_SHOWN = 50;
+
+test('a long list is shown in pages of 50 rows, with buttons to turn them and a note of what is on show', async () => {
+    const at = await messages('sms', NUMBERED(120));
+    const [body, search] = [at.panel().querySelector('tbody'), at.part('search')];
+    assert.equal(at.part('pager').hidden, false);
+    assert.equal(range(at), '1–50 of 120');
+    assert.equal(rows(at).length, ROWS_SHOWN);
+    assert.deepEqual([at.part('previous').disabled, at.part('next').disabled], [true, false]);
+    assert.deepEqual(
+        [at.part('previous').textContent, at.part('next').textContent],
+        ['← Previous', 'Next →'],
+    );
+    // below the table
+    assert.equal(
+        at.part('pager').previousElementSibling.previousElementSibling.firstElementChild.tagName,
+        'TABLE',
+    );
+    await click(at, 'next');
+    assert.equal(range(at), '51–100 of 120');
+    assert.equal(at.names()[0], 'name of m-050');
+    assert.deepEqual([at.part('previous').disabled, at.part('next').disabled], [false, false]);
+    await click(at, 'next');
+    assert.equal(range(at), '101–120 of 120');
+    assert.equal(rows(at).length, 20);
+    assert.deepEqual([at.part('previous').disabled, at.part('next').disabled], [false, true]);
+    await click(at, 'previous');
+    assert.equal(range(at), '51–100 of 120');
+    // only the rows and the pager were drawn again, and the list was read once
+    assert.equal(at.panel().querySelector('tbody'), body);
+    assert.equal(at.part('search'), search);
+    assert.equal(listReads(at), 1);
+});
+
+test('searching and sorting take the whole list and go back to its first page', async () => {
+    const at = await messages('sms', NUMBERED(120));
+    await click(at, 'next');
+    await click(at, 'next');
+    // found on all pages, shown from the first one
+    at.look('m-11');
+    assert.equal(rows(at).length, 10);
+    assert.equal(at.names()[0], 'name of m-110');
+    // what fits on one page needs no pager
+    assert.equal(at.part('pager').hidden, true);
+    at.look('m-0');
+    assert.equal(range(at), '1–50 of 100');
+    await click(at, 'next');
+    at.look('');
+    assert.equal(range(at), '1–50 of 120');
+    await click(at, 'next');
+    at.head('Name').click();
+    assert.equal(range(at), '1–50 of 120');
+    assert.equal(at.names()[0], 'name of m-000');
+    await click(at, 'next');
+    // the last of the whole list comes first, not the last of the page
+    at.head('Name').click();
+    assert.equal(range(at), '1–50 of 120');
+    assert.equal(at.names()[0], 'name of m-119');
+    await click(at, 'next');
+    assert.equal(at.names()[0], 'name of m-069');
+});
+
+test('the page on show is kept with its list, and a list of one page has no pager', async () => {
+    const at = await messages('sms', NUMBERED(120));
+    await click(at, 'next');
+    assert.equal(range(at), '51–100 of 120');
+    // another list starts on its own first page
+    await tab(at, 'push');
+    await tab(at, 'sms');
+    assert.equal(range(at), '51–100 of 120');
+    await click(at, 'close');
+    await at.open();
+    assert.equal(range(at), '51–100 of 120');
+    await click(at, 'next');
+    // a list that got shorter shows its last page in place of one that is gone
+    at.list = at.list.slice(0, 60);
+    await click(at, 'refresh');
+    assert.equal(range(at), '51–60 of 60');
+    at.list = at.list.slice(0, ROWS_SHOWN);
+    await click(at, 'refresh');
+    assert.equal(rows(at).length, ROWS_SHOWN);
+    assert.equal(at.part('pager').hidden, true);
+    const few = await messages('push', [PUSHED('r1', 'app-1', 'k')]);
+    assert.equal(few.part('pager').hidden, true);
+});
+
+test('the details of a message are read once and used again after "Refresh"; only a new message and one that was changed are read', async () => {
+    const at = await messages('sms', [SMS('a'), SMS('b'), SMS('c')]);
+    assert.deepEqual(at.wanted, ['a', 'b', 'c']);
+    assert.deepEqual(at.cells(...DETAILS), [
+        ['code-a', 'KW-a'],
+        ['code-b', 'KW-b'],
+        ['code-c', 'KW-c'],
+    ]);
+    // the code and the keyword of an SMS message are shown as they are, with nothing behind them
+    assert.equal(rows(at)[0].cells[DETAILS[0]].title, '');
+    await click(at, 'refresh');
+    await tab(at, 'push');
+    await tab(at, 'sms');
+    assert.equal(listReads(at), 2);
+    assert.deepEqual(at.wanted, ['a', 'b', 'c']);
+    assert.deepEqual(at.cells(...DETAILS)[1], ['code-b', 'KW-b']);
+    // changed by someone else: the list says so by its date
+    const changed = SMS('b', { modifiedDate: '2026-02-01T10:00:00' });
+    changed.subscriptions.keyword = 'OTHER';
+    at.held.set('b', changed);
+    at.held.set('d', SMS('d'));
+    at.list = at.held
+        .values()
+        .map((definition) => LISTED(definition))
+        .toArray();
+    await click(at, 'refresh');
+    assert.deepEqual(at.wanted, ['a', 'b', 'c', 'b', 'd']);
+    assert.deepEqual(at.cells(...DETAILS), [
+        ['code-a', 'KW-a'],
+        ['code-b', 'OTHER'],
+        ['code-c', 'KW-c'],
+        ['code-d', 'KW-d'],
+    ]);
+    assert.equal(at.progress(), null);
+});
+
+test('a message that was changed here is read again, although the list has the same date for it', async () => {
+    // without the list of keywords the keyword stays a field to type into
+    const at = await messages('sms', [SMS('a'), SMS('b')], { down: [KEYWORDS] });
+    rows(at)[0].click();
+    await tick();
+    await at.press('Edit');
+    const form = at.panel().querySelector('form');
+    form.elements['subscriptions.keyword'].value = 'NEW';
+    // within the minute of the change before: the date of the list stays as it is
+    at.onWrite = (key) => {
+        const stored = SMS(key);
+        stored.subscriptions.keyword = 'NEW';
+        at.held.set(key, stored);
+    };
+    form.dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
+    await tick();
+    await tick();
+    await tick();
+    assert.match(at.text(), /^Saved “name of a”/);
+    const before = at.times('a');
+    await click(at, 'back');
+    assert.equal(listReads(at), 2);
+    assert.equal(at.times('a'), before + 1);
+    assert.equal(at.times('b'), 1);
+    assert.deepEqual(at.cells(...DETAILS), [
+        ['code-a', 'NEW'],
+        ['code-b', 'KW-b'],
+    ]);
+});
+
+test('details that were opened are fresh every time, and the list shows what they read', async () => {
+    const at = await messages('sms', [SMS('a'), SMS('b')]);
+    at.failing.add('b');
+    await click(at, 'refresh');
+    // a list that is read again shows what was read of its messages before, and asks for none
+    assert.deepEqual(at.cells(...DETAILS)[1], ['code-b', 'KW-b']);
+    const fresh = await messages('sms', [SMS('a'), SMS('b')]);
+    assert.deepEqual([fresh.times('a'), fresh.times('b')], [1, 1]);
+    // what Marketing Cloud holds now, not what the list has read
+    const other = SMS('b');
+    other.subscriptions.keyword = 'LATER';
+    fresh.held.set('b', other);
+    rows(fresh)[1].click();
+    await tick();
+    assert.equal(fresh.times('b'), 2);
+    assert.match(fresh.text(), /LATER/);
+    await click(fresh, 'back');
+    // the list uses them, without asking again
+    assert.deepEqual(fresh.cells(...DETAILS)[1], ['code-b', 'LATER']);
+    assert.equal(fresh.times('b'), 2);
+    assert.equal(listReads(fresh), 1);
+});
+
+test('another business unit forgets the details that were read', async () => {
+    const at = await messages('sms', [SMS('a'), SMS('b')]);
+    assert.deepEqual(at.wanted, ['a', 'b']);
+    await click(at, 'close');
+    // the menu is drawn again, as after a change of the business unit
+    at.document.body.insertAdjacentHTML('beforeend', MENU);
+    at.document.querySelector('[data-sfmc-ux-tools-transactional]').closest('ul').remove();
+    await at.open();
+    assert.deepEqual(at.wanted, ['a', 'b', 'a', 'b']);
+    assert.deepEqual(at.cells(...DETAILS)[0], ['code-a', 'KW-a']);
+});
+
+test('the details of all messages are read in the background, four at a time, those of the page on show first', async () => {
+    const definitions = NUMBERED(120);
+    const keys = definitions.map((definition) => definition.definitionKey);
+    const at = await messages('sms', definitions, { isHeld: true });
+    // the list is on show before any of them has come
+    assert.equal(rows(at).length, ROWS_SHOWN);
+    assert.deepEqual(at.cells(...DETAILS)[0], ['', '']);
+    assert.deepEqual(at.wanted, keys.slice(0, 4));
+    assert.equal(at.flying, 4);
+    // what the reader looks at now comes next
+    await click(at, 'next');
+    await at.release(4);
+    assert.deepEqual(at.wanted.slice(4), keys.slice(50, 54));
+    assert.equal(at.flying, 4);
+    at.isHeld = false;
+    await at.release();
+    assert.equal(at.flying, 0);
+    assert.equal(at.most, 4);
+    // then the rest, in the order of the list, and each of them once
+    assert.deepEqual(at.wanted, [
+        ...keys.slice(0, 4),
+        ...keys.slice(50, 100),
+        ...keys.slice(4, 50),
+        ...keys.slice(100),
+    ]);
+    assert.deepEqual(at.cells(...DETAILS)[0], ['code-m-050', 'KW-m-050']);
+    assert.equal(at.progress(), null);
+    // the list itself was read once, whole
+    assert.equal(listReads(at), 1);
+    assert.equal(range(at), '51–100 of 120');
+});
+
+test('the reading of details pauses when the list is left or the panel closed, and goes on where it stopped', async () => {
+    const definitions = NUMBERED(120);
+    const keys = definitions.map((definition) => definition.definitionKey);
+    const at = await messages('sms', definitions, { isHeld: true });
+    await tab(at, 'push');
+    await at.release();
+    // what was on its way is kept, and nothing more is asked for
+    assert.deepEqual(at.wanted, keys.slice(0, 4));
+    await tab(at, 'sms');
+    assert.deepEqual(at.wanted, keys.slice(0, 8));
+    assert.equal(at.progress(), 'details 4 of 120');
+    assert.deepEqual(at.cells(...DETAILS)[0], ['code-m-000', 'KW-m-000']);
+    await click(at, 'close');
+    await at.release();
+    assert.equal(at.wanted.length, 8);
+    await at.open();
+    assert.deepEqual(at.wanted, keys.slice(0, 12));
+    assert.equal(at.progress(), 'details 8 of 120');
+    // the details of a message stop it as well
+    rows(at)[0].click();
+    await tick();
+    // the message that is opened does not wait for the four that are on their way
+    assert.equal(at.flying, 5);
+    await at.release();
+    assert.deepEqual(at.wanted, [...keys.slice(0, 12), keys[0]]);
+    await click(at, 'back');
+    assert.equal(at.wanted.length, 17);
+    at.most = 0;
+    // a list that is shown again while its details are on their way waits for them
+    await tab(at, 'push');
+    await tab(at, 'sms');
+    assert.equal(at.wanted.length, 17);
+    assert.equal(at.flying, 4);
+    await at.release();
+    assert.deepEqual(at.cells(...DETAILS)[12], ['code-m-012', 'KW-m-012']);
+    at.isHeld = false;
+    await at.release();
+    assert.equal(at.most, 4);
+    assert.equal(at.progress(), null);
+    // every message was asked for once, and the one that was opened once more
+    assert.equal(at.wanted.length, keys.length + 1);
+    assert.equal(new Set(at.wanted).size, keys.length);
+});
+
+test('details that cannot be read leave their cells empty, keep the others coming and are asked for again when the list is shown next', async () => {
+    const down = await messages('sms', [SMS('a'), SMS('b'), SMS('c')], { isHeld: true });
+    down.failing.add('b');
+    await down.release();
+    assert.deepEqual(down.cells(...DETAILS), [
+        ['code-a', 'KW-a'],
+        ['', ''],
+        ['code-c', 'KW-c'],
+    ]);
+    assert.equal(down.progress(), 'details 2 of 3');
+    assert.match(down.part('progress').title, /could not be read/);
+    assert.deepEqual(down.wanted, ['a', 'b', 'c']);
+    down.failing.clear();
+    down.isHeld = false;
+    await tab(down, 'push');
+    await tab(down, 'sms');
+    assert.deepEqual(down.wanted, ['a', 'b', 'c', 'b']);
+    assert.deepEqual(down.cells(...DETAILS)[1], ['code-b', 'KW-b']);
+    assert.equal(down.progress(), null);
+});
+
+test('the bar says how many details are read while they come, and the cells fill in where they stand', async () => {
+    const at = await messages('sms', NUMBERED(6), { isHeld: true });
+    const progress = at.part('progress');
+    // in the bar, before the search
+    assert.equal(progress.parentElement.className, 'sfmc-ux-tools-transactional-bar');
+    assert.equal(progress.nextElementSibling, at.part('search'));
+    assert.equal(at.progress(), 'details 0 of 6');
+    assert.equal(progress.title, '');
+    at.part('search').focus();
+    const before = rows(at);
+    await at.release(4);
+    assert.equal(at.progress(), 'details 4 of 6');
+    assert.equal(progress.title, '');
+    assert.deepEqual(
+        at.cells(...DETAILS).map(([code]) => code),
+        ['code-m-000', 'code-m-001', 'code-m-002', 'code-m-003', '', ''],
+    );
+    // the rows are the ones that stood there, and the field typed into is still in use
+    assert.ok(rows(at).every((row, index) => row === before[index]));
+    assert.equal(at.document.activeElement, at.part('search'));
+    await at.release();
+    assert.equal(at.progress(), null);
+    assert.ok(rows(at).every((row, index) => row === before[index]));
+    // a list without messages, and one whose kind has no such columns, say nothing
+    const none = await messages('sms', []);
+    assert.equal(none.part('progress'), null);
+    const ott = await messages('ott', [ROW('x')]);
+    assert.equal(ott.progress(), null);
+});
+
+test('a push list names the app and the content of a message, with the id and the key to be read on them', async () => {
+    const definitions = [
+        PUSHED('r1', 'app-2', 'receipt_push'),
+        PUSHED('r2', 'app-9', 'other_key'),
+        { ...ROW('r3') },
+    ];
+    const at = await messages('push', definitions);
+    const titles = (of) =>
+        rows(of).map((row) => [...row.cells].slice(...DETAILS).map((cell) => cell.title));
+    assert.deepEqual(
+        [...at.panel().querySelectorAll('th')].map((cell) => cell.textContent),
+        ['Name', 'Key', 'Status', 'App', 'Content', 'Created', 'Modified'],
+    );
+    assert.deepEqual(at.cells(...DETAILS), [
+        ['Staff app', 'Receipt'],
+        // what the lists of the business unit do not hold is shown as it is stored
+        ['app-9', 'other_key'],
+        ['', ''],
+    ]);
+    assert.deepEqual(titles(at), [
+        ['app-2', 'receipt_push'],
+        ['app-9', 'other_key'],
+        ['', ''],
+    ]);
+    // the lists of names are read once for the list of messages
+    assert.deepEqual([reads(at, APPS), reads(at, CONTENTS)], [1, 1]);
+    // without a list of names, the id stays
+    const down = await messages('push', definitions, { down: [APPS] });
+    assert.deepEqual(down.cells(...DETAILS)[0], ['app-2', 'Receipt']);
+    assert.deepEqual(titles(down)[0], ['app-2', 'receipt_push']);
+    // names that come after the details fill in as well
+    const late = await messages('push', definitions);
+    const gate = Promise.withResolvers();
+    const quick = late.window.fetch;
+    late.window.fetch = async (url, options) => {
+        if (url.includes(APPS)) {
+            await gate.promise;
+        }
+        return quick(url, options);
+    };
+    await click(late, 'refresh');
+    assert.deepEqual(late.cells(...DETAILS)[0], ['app-2', 'Receipt']);
+    const before = rows(late);
+    gate.resolve();
+    await tick();
+    assert.deepEqual(late.cells(...DETAILS)[0], ['Staff app', 'Receipt']);
+    assert.ok(rows(late).every((row, index) => row === before[index]));
+});
+
+test('an SMS list shows the code and the keyword, and an OTT list is as it was and reads no details', async () => {
+    const sms = await messages('sms', [SMS('a')]);
+    assert.deepEqual(
+        [...sms.panel().querySelectorAll('th')].map((cell) => cell.textContent),
+        ['Name', 'Key', 'Status', 'Code', 'Keyword', 'Created', 'Modified'],
+    );
+    assert.deepEqual(sms.cells(...DETAILS), [['code-a', 'KW-a']]);
+    // it names nothing, and reads no list of names for its rows
+    assert.deepEqual(sms.looked, []);
+    const ott = await messages('ott', [ROW('x'), ROW('y')]);
+    assert.deepEqual(
+        [...ott.panel().querySelectorAll('th')].map((cell) => cell.textContent),
+        ['Name', 'Key', 'Status', 'Created', 'Modified'],
+    );
+    assert.equal(rows(ott)[0].cells.length, 5);
+    assert.deepEqual(ott.wanted, []);
+    assert.equal(ott.part('search').placeholder, 'Search name or key');
+});
+
+test('the search also finds a message by what its details show: the value and its name', async () => {
+    const push = await messages('push', [
+        PUSHED('r1', 'app-2', 'receipt_push'),
+        PUSHED('r2', 'app-9', 'other_key'),
+    ]);
+    assert.equal(push.part('search').placeholder, 'Search name, key, app, or content');
+    assert.equal(
+        push.part('search').getAttribute('aria-label'),
+        'Search the Push messages by name, key, app, or content',
+    );
+    for (const [text, found] of [
+        ['staff', ['name of r1']],
+        ['APP-2', ['name of r1']],
+        ['receipt_p', ['name of r1']],
+        ['Receipt', ['name of r1']],
+        ['other_', ['name of r2']],
+        ['app', ['name of r1', 'name of r2']],
+        ['nothing', []],
+    ]) {
+        push.look(text);
+        assert.deepEqual(push.names(), found, text);
+    }
+    // a message whose details are not read yet is found by them once they have come
+    const first = SMS('a', { name: 'x1 first' });
+    const second = SMS('b');
+    second.subscriptions.keyword = 'X1WORD';
+    const sms = await messages('sms', [first, second, SMS('c')], { isHeld: true });
+    sms.look('x1');
+    assert.deepEqual(sms.names(), ['x1 first']);
+    // the row in use stays in use when the rows are drawn again
+    rows(sms)[0].focus();
+    assert.equal(sms.document.activeElement, rows(sms)[0]);
+    await sms.release();
+    assert.deepEqual(sms.names(), ['x1 first', 'name of b']);
+    assert.equal(sms.document.activeElement, rows(sms)[0]);
+    assert.equal(sms.part('search').value, 'x1');
+    sms.look('code-c');
+    assert.deepEqual(sms.names(), ['name of c']);
+});
+
+test('a column of details can be sorted by once the details of all messages are read', async () => {
+    const at = await messages('sms', [CODED('a', '300'), CODED('b', '100'), CODED('c', '200')], {
+        isHeld: true,
+    });
+    for (const title of ['Code', 'Keyword']) {
+        assert.equal(at.head(title).disabled, true, title);
+        assert.match(at.head(title).title, /once the details of all messages are read/);
+    }
+    assert.equal(at.head('Name').disabled, false);
+    assert.match(at.head('Name').title, /^Sort by this column/);
+    await at.release(2);
+    assert.equal(at.head('Code').disabled, true);
+    await at.release();
+    assert.equal(at.head('Code').disabled, false);
+    assert.match(at.head('Code').title, /^Sort by this column/);
+    at.head('Code').click();
+    assert.deepEqual(at.names(), ['name of b', 'name of c', 'name of a']);
+    assert.deepEqual(at.sorted(), ['none', 'none', 'none', 'ascending', 'none', 'none', 'none']);
+    at.head('Code').click();
+    assert.deepEqual(at.names(), ['name of a', 'name of c', 'name of b']);
+    at.head('Code').click();
+    // a list that is read again with a message whose details are missing waits for them
+    at.held.set('d', CODED('d', '050'));
+    at.list = at.held
+        .values()
+        .map((definition) => LISTED(definition))
+        .toArray();
+    await click(at, 'refresh');
+    assert.deepEqual(at.names(), ['name of a', 'name of b', 'name of c', 'name of d']);
+    assert.equal(at.head('Code').disabled, true);
+    assert.deepEqual(at.sorted(), ['none', 'none', 'none', 'none', 'none', 'none', 'none']);
+    await at.release();
+    assert.deepEqual(at.names(), ['name of d', 'name of b', 'name of c', 'name of a']);
+    assert.equal(at.sorted()[DETAILS[0]], 'ascending');
+    // a push list is sorted by the names it shows
+    const push = await messages('push', [
+        PUSHED('r1', 'app-2', 'k1'),
+        PUSHED('r2', 'app-1', 'k2'),
+        PUSHED('r3', 'app-0', 'k3'),
+    ]);
+    push.head('App').click();
+    // "app-0" has no name, "Shop app" is app-1 and "Staff app" is app-2
+    assert.deepEqual(push.names(), ['name of r3', 'name of r2', 'name of r1']);
+});
+
 test('the entry and the panel carry the icon of the extension, which names it', async () => {
     const at = page(MENU);
     const manifest = JSON.parse(read('../src/manifest.json'));
@@ -1602,6 +3429,539 @@ test('the entry and the panel carry the icon of the extension, which names it', 
     assert.match(rule, /width: 16px;\s+height: 16px;/);
     assert.match(rule, /chrome-extension:\/\/__MSG_@@extension_id__\/icons\/icon16\.png/);
     assert.equal(manifest.icons['16'], 'icons/icon16.png');
+});
+
+const APP_FIELD = 'applicationId';
+const ACTIVE = 'sfmc-ux-tools-transactional-combo-active';
+const STATUS = '.sfmc-ux-tools-transactional-combo-status';
+
+/**
+ * Sends an event to an element.
+ *
+ * @param {Element} target the element
+ * @param {Event} event the event
+ * @returns {Event} the event, to see what became of it
+ */
+function fire(target, event) {
+    target.dispatchEvent(event);
+    return event;
+}
+
+/**
+ * Gives a page with a form ways to use the list below one of its fields.
+ *
+ * @param {object} at the page with the form
+ * @param {string} [path] name of the field
+ * @returns {object} the field, and ways to read and to use its list
+ */
+function picker(at, path = APP_FIELD) {
+    const input = at.field(path);
+    const list = listOf(input);
+    const drop = list?.parentElement;
+    return {
+        input,
+        list,
+        isOpen: () => !drop.hidden && input.getAttribute('aria-expanded') === 'true',
+        // the entries on show: id or key, name, whether it is what the field holds
+        shown: () =>
+            [...list.children].map((item) => [
+                item.lastElementChild.textContent,
+                item.firstElementChild.textContent,
+                item.getAttribute('aria-selected') === 'true',
+            ]),
+        status: () => {
+            const place = drop.querySelector(STATUS);
+            return place.hidden ? null : place.textContent;
+        },
+        // the entry the arrow keys are at, by its id or key
+        at: () => {
+            const id = input.getAttribute('aria-activedescendant');
+            const item = id ? at.document.querySelector(`#${id}`) : null;
+            assert.equal(item?.classList.contains(ACTIVE) ?? false, Boolean(id));
+            assert.equal(list.querySelectorAll(`.${ACTIVE}`).length, id ? 1 : 0);
+            return item ? item.lastElementChild.textContent : null;
+        },
+        click: () => fire(input, new at.window.MouseEvent('click', { bubbles: true })),
+        key: (key) =>
+            fire(
+                input,
+                new at.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+            ),
+        pick: (value) =>
+            fire(
+                [...list.children].find((item) => item.lastElementChild.textContent === value),
+                new at.window.MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+            ),
+    };
+}
+
+/**
+ * Opens the form that changes the push definition "receipt", whose app is "app-2".
+ *
+ * @returns {Promise.<object>} the page, with ways to reach the fields and to send the form
+ */
+async function editingPush() {
+    const at = await pushDetails();
+    [...at.panel().querySelectorAll('button')].find((item) => item.textContent === 'Edit').click();
+    await tick();
+    await tick();
+    at.form = () => at.panel().querySelector('form');
+    at.field = (path) => at.form().elements[path];
+    at.send = async () => {
+        at.form().dispatchEvent(new at.window.Event('submit', { bubbles: true, cancelable: true }));
+        await tick();
+        await tick();
+        await tick();
+    };
+    at.changes = () =>
+        at.calls.filter((call) => call.method !== 'GET').map((call) => JSON.parse(call.body));
+    return at;
+}
+
+const ALL_APPS = [
+    ['app-1', 'Shop app', false],
+    ['app-2', 'Staff app', false],
+];
+
+test('the list of a field is part of the form, below the field, and the field says so to a screen reader', async () => {
+    const at = await form('push', offering());
+    await tick();
+    const { input, list, isOpen } = picker(at);
+    const row = input.closest(FIELD);
+    assert.equal(at.form().querySelector('datalist'), null);
+    assert.equal(input.hasAttribute('list'), false);
+    assert.equal(input.type, 'text');
+    assert.equal(input.getAttribute('role'), 'combobox');
+    assert.equal(input.getAttribute('aria-autocomplete'), 'list');
+    assert.equal(input.getAttribute('aria-controls'), list.id);
+    assert.equal(input.getAttribute('aria-expanded'), 'false');
+    assert.equal(isOpen(), false);
+    // in the flow of the form, right after the field: nothing that floats over the panel
+    assert.equal(input.nextElementSibling, list.parentElement);
+    assert.ok(row.contains(list));
+    assert.deepEqual(
+        [...list.children].map((item) => item.getAttribute('role')),
+        ['option', 'option'],
+    );
+    assert.equal(new Set([...list.children].map((item) => item.id)).size, 2);
+    // the words of the field are its label
+    assert.equal(row.querySelector('label').htmlFor, input.id);
+    assert.equal(row.querySelector('label').textContent, 'App *');
+    // every field with such a list has one of its own
+    const content = picker(at, 'content.customerKey');
+    assert.notEqual(content.list.id, list.id);
+    assert.deepEqual(content.shown(), [['receipt_push', 'Receipt', false]]);
+    // the lists to choose a code and a keyword from stay what they were
+    const sms = await form('sms', offering());
+    await tick();
+    assert.equal(sms.field('subscriptions.shortCode').tagName, 'SELECT');
+    assert.equal(sms.form().querySelector('[role="listbox"]'), null);
+});
+
+test('the list opens on focus and on every click, always with all entries, and marks what the field holds', async () => {
+    const at = await form('push', offering());
+    await tick();
+    const app = picker(at);
+    app.input.focus();
+    assert.equal(app.isOpen(), true);
+    assert.deepEqual(app.shown(), ALL_APPS);
+    assert.equal(app.status(), null);
+    assert.equal(app.at(), null);
+    app.input.blur();
+    assert.equal(app.isOpen(), false);
+    // a value that narrows the list down to one entry: a click still shows them all
+    app.input.focus();
+    at.type(APP_FIELD, 'app-2');
+    assert.deepEqual(app.shown(), [['app-2', 'Staff app', true]]);
+    app.key('Escape');
+    assert.equal(app.isOpen(), false);
+    app.click();
+    assert.equal(app.isOpen(), true);
+    assert.deepEqual(app.shown(), [ALL_APPS[0], ['app-2', 'Staff app', true]]);
+    // the keys start at it, and it is scrolled to
+    assert.equal(app.at(), 'app-2');
+    assert.equal(at.window.scrolled.at(-1), app.input.getAttribute('aria-activedescendant'));
+    // a click into the open list of a field that holds something leaves all of it there
+    app.click();
+    assert.equal(app.shown().length, 2);
+    // the same in the form of a message that exists
+    const stored = await editingPush();
+    const kept = picker(stored);
+    kept.input.focus();
+    assert.equal(kept.isOpen(), true);
+    assert.deepEqual(kept.shown(), [ALL_APPS[0], ['app-2', 'Staff app', true]]);
+    assert.equal(kept.at(), 'app-2');
+});
+
+test('typing narrows the list down by name and by id or key, whatever the case, and an emptied field shows all again', async () => {
+    const at = await form('push', offering());
+    await tick();
+    const app = picker(at);
+    app.input.focus();
+    at.type(APP_FIELD, 'sHOP');
+    assert.equal(app.isOpen(), true);
+    assert.deepEqual(app.shown(), [ALL_APPS[0]]);
+    at.type(APP_FIELD, ' APP-2 ');
+    assert.deepEqual(app.shown(), [ALL_APPS[1]]);
+    at.type(APP_FIELD, 'app');
+    assert.deepEqual(app.shown(), ALL_APPS);
+    // nothing is put where the keys are until the user moves there
+    assert.equal(app.at(), null);
+    at.type(APP_FIELD, 'nothing like it');
+    assert.deepEqual(app.shown(), []);
+    assert.match(app.status(), /Nothing in the list matches/);
+    assert.equal(app.input.value, 'nothing like it');
+    at.type(APP_FIELD, '');
+    assert.deepEqual(app.shown(), ALL_APPS);
+    assert.equal(app.status(), null);
+    // typing opens a list that was closed
+    app.key('Escape');
+    at.type(APP_FIELD, 'staff');
+    assert.equal(app.isOpen(), true);
+    assert.deepEqual(app.shown(), [ALL_APPS[1]]);
+});
+
+test('the arrow keys move through the list, Enter chooses without sending the form, Escape closes the list and not the panel', async () => {
+    const at = await form('push', offering());
+    await tick();
+    const app = picker(at);
+    let submits = 0;
+    let escapes = 0;
+    at.form().addEventListener('submit', () => submits++);
+    at.panel().addEventListener('keydown', (event) => {
+        escapes += event.key === 'Escape' ? 1 : 0;
+    });
+    app.input.focus();
+    assert.equal(app.key('ArrowDown').defaultPrevented, true);
+    assert.equal(app.at(), 'app-1');
+    app.key('ArrowDown');
+    assert.equal(app.at(), 'app-2');
+    assert.equal(at.window.scrolled.at(-1), app.input.getAttribute('aria-activedescendant'));
+    // round the ends
+    app.key('ArrowDown');
+    assert.equal(app.at(), 'app-1');
+    assert.equal(app.key('ArrowUp').defaultPrevented, true);
+    assert.equal(app.at(), 'app-2');
+    app.key('ArrowUp');
+    assert.equal(app.at(), 'app-1');
+    // moving alone changes nothing
+    assert.equal(app.input.value, '');
+    const enter = app.key('Enter');
+    assert.equal(enter.defaultPrevented, true);
+    assert.equal(app.input.value, 'app-1');
+    assert.equal(app.isOpen(), false);
+    assert.equal(app.input.hasAttribute('aria-activedescendant'), false);
+    // with the list closed, Enter is the form's again
+    assert.equal(app.key('Enter').defaultPrevented, false);
+    // an arrow key opens the list again, on what the field holds
+    app.key('ArrowUp');
+    assert.equal(app.isOpen(), true);
+    assert.deepEqual(app.shown(), [['app-1', 'Shop app', true], ALL_APPS[1]]);
+    assert.equal(app.at(), 'app-1');
+    const escape = app.key('Escape');
+    assert.equal(escape.defaultPrevented, true);
+    assert.equal(escapes, 0);
+    assert.equal(app.isOpen(), false);
+    assert.equal(at.panel().hasAttribute('open'), true);
+    assert.ok(at.form().isConnected);
+    // with the list closed, Escape is the panel's again
+    assert.equal(app.key('Escape').defaultPrevented, false);
+    assert.equal(escapes, 1);
+    // Enter in an open list with nothing chosen closes it and keeps what was typed
+    at.type(APP_FIELD, 'my-own');
+    assert.equal(app.isOpen(), true);
+    assert.equal(app.key('Enter').defaultPrevented, true);
+    assert.equal(app.isOpen(), false);
+    assert.equal(app.input.value, 'my-own');
+    // Tab leaves the field as ever, and the list closes
+    app.key('ArrowDown');
+    assert.equal(app.isOpen(), true);
+    assert.equal(app.key('Tab').defaultPrevented, false);
+    assert.equal(app.isOpen(), false);
+    assert.equal(submits, 0);
+    assert.deepEqual(at.written, []);
+});
+
+test('an entry is chosen with the mouse before the field loses the focus, and the form and the name under the field hear of it', async () => {
+    const at = await form('push', offering());
+    await tick();
+    const app = picker(at);
+    const heard = [];
+    for (const type of ['input', 'change']) {
+        at.form().addEventListener(type, (event) => {
+            heard.push(`${type} ${event.target.name}`);
+        });
+    }
+    const named = () => {
+        const place = app.input.closest(FIELD).querySelector(RESOLVED);
+        return place.hidden ? null : place.textContent;
+    };
+    app.input.focus();
+    const down = app.pick('app-2');
+    // the focus stays in the field, so the list is still there when the click lands
+    assert.equal(down.defaultPrevented, true);
+    assert.equal(at.document.activeElement, app.input);
+    assert.equal(app.input.value, 'app-2');
+    assert.deepEqual(heard, [`input ${APP_FIELD}`, `change ${APP_FIELD}`]);
+    assert.equal(named(), 'Staff app');
+    assert.equal(app.isOpen(), false);
+    // the next click offers everything again, the chosen one marked
+    app.click();
+    assert.deepEqual(app.shown(), [ALL_APPS[0], ['app-2', 'Staff app', true]]);
+    app.pick('app-1');
+    assert.equal(named(), 'Shop app');
+    // what is sent is the id and the key, as ever
+    at.type('name', 'Receipt');
+    picker(at, 'content.customerKey').pick('receipt_push');
+    await at.send();
+    assert.deepEqual(at.sent(), [
+        {
+            name: 'Receipt',
+            definitionKey: 'Receipt',
+            status: 'Active',
+            applicationId: 'app-1',
+            content: { customerKey: 'receipt_push' },
+        },
+    ]);
+});
+
+test('a field with a list takes and sends what no entry has', async () => {
+    const at = await form('push', offering());
+    await tick();
+    at.type('name', 'Receipt');
+    picker(at).input.focus();
+    at.type(APP_FIELD, ' 7d00d57d-0d94-4a5d-85bd-b51a47ba1b9f ');
+    picker(at).input.blur();
+    at.type('content.customerKey', 'a key of my own');
+    await at.send();
+    assert.equal(at.sent()[0].applicationId, '7d00d57d-0d94-4a5d-85bd-b51a47ba1b9f');
+    assert.deepEqual(at.sent()[0].content, { customerKey: 'a key of my own' });
+});
+
+test('looking at the lists of a message that exists changes nothing, and a chosen entry is sent alone', async () => {
+    const at = await editingPush();
+    const app = picker(at);
+    const content = picker(at, 'content.customerKey');
+    for (const one of [app, content]) {
+        one.input.focus();
+        one.click();
+        one.key('ArrowDown');
+        one.key('Escape');
+        one.input.blur();
+    }
+    assert.equal(app.input.value, 'app-2');
+    assert.equal(content.input.value, 'receipt_push');
+    await at.send();
+    assert.deepEqual(at.changes(), []);
+    assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+    // choosing what the field holds already is no change either
+    app.click();
+    app.pick('app-2');
+    await at.send();
+    assert.deepEqual(at.changes(), []);
+    app.click();
+    app.pick('app-1');
+    await at.send();
+    assert.deepEqual(at.changes(), [{ applicationId: 'app-1' }]);
+});
+
+test('a field whose list cannot be read is a plain text field with a note', async () => {
+    const at = await form('push', offering(DEFINITION, [APPS]));
+    await tick();
+    const input = at.field(APP_FIELD);
+    const row = input.closest(FIELD);
+    assert.equal(listOf(input), null);
+    for (const name of ['role', 'aria-expanded', 'aria-controls', 'aria-autocomplete']) {
+        assert.equal(input.hasAttribute(name), false, name);
+    }
+    assert.match(row.textContent, /The list to choose from could not be read\./);
+    // nothing opens, and the keys are the form's
+    input.focus();
+    input.dispatchEvent(new at.window.MouseEvent('click', { bubbles: true }));
+    for (const key of ['ArrowDown', 'Enter', 'Escape']) {
+        const event = new at.window.KeyboardEvent('keydown', {
+            key,
+            bubbles: true,
+            cancelable: true,
+        });
+        input.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, false, key);
+    }
+    assert.equal(row.querySelector('[role="option"]'), null);
+    // the other field has its list
+    assert.deepEqual(picker(at, 'content.customerKey').shown(), [
+        ['receipt_push', 'Receipt', false],
+    ]);
+    at.type('name', 'Receipt');
+    at.type(APP_FIELD, 'app-1');
+    at.type('content.customerKey', 'receipt_push');
+    await at.send();
+    assert.equal(at.sent()[0].applicationId, 'app-1');
+});
+
+test('a list that is still being read says so, and keeps what was typed and stays open when its entries come', async () => {
+    const gate = Promise.withResolvers();
+    // no message is listed, so nothing but the form asks for the apps
+    const at = page(MENU, (path, method) =>
+        path.startsWith('push/definitions?')
+            ? { body: { definitions: [] } }
+            : offering()(path, method),
+    );
+    await at.open();
+    await tab(at, 'push');
+    const quick = at.window.fetch;
+    at.window.fetch = async (url, options) => {
+        if (url.includes(APPS)) {
+            await gate.promise;
+        }
+        return quick(url, options);
+    };
+    await click(at, 'new');
+    at.form = () => at.panel().querySelector('form');
+    at.field = (path) => at.form().elements[path];
+    const app = picker(at);
+    app.input.focus();
+    assert.equal(app.isOpen(), true);
+    assert.equal(app.status(), 'reading …');
+    assert.deepEqual(app.shown(), []);
+    app.input.value = 'staff';
+    app.input.dispatchEvent(new at.window.Event('input', { bubbles: true }));
+    assert.equal(app.status(), 'reading …');
+    gate.resolve();
+    await tick();
+    await tick();
+    assert.equal(app.isOpen(), true);
+    assert.equal(app.input.value, 'staff');
+    assert.deepEqual(app.shown(), [ALL_APPS[1]]);
+    assert.equal(app.status(), null);
+    // a business unit without any says so, and its field still takes what is typed
+    const none = await form('push', (path) =>
+        path.startsWith(APPS) ? { body: [] } : offering()(path, 'GET'),
+    );
+    await tick();
+    const empty = picker(none);
+    empty.input.focus();
+    assert.match(empty.status(), /nothing to choose from/);
+    none.type(APP_FIELD, 'app-9');
+    assert.equal(empty.input.value, 'app-9');
+});
+
+/**
+ * Reads the stylesheet of the panel without its comments.
+ *
+ * @returns {{css: string, rule: (selector: string) => string}} the rules, and what one of them sets
+ */
+function stylesheet() {
+    const css = read('../src/transactional-messages.css').replaceAll(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector) => {
+        const found = css
+            .matchAll(/([^{}]+)\{([^}]*)\}/g)
+            .find(([, list]) => list.split(',').some((one) => one.trim() === selector));
+        assert.ok(found, selector);
+        return found[2];
+    };
+    return { css, rule };
+}
+
+test('an entry of a list is shown whole, and the list scrolls by itself', () => {
+    const { css, rule } = stylesheet();
+    const option = rule('.sfmc-ux-tools-transactional-combo-option');
+    assert.match(option, /overflow-wrap:\s*anywhere/);
+    assert.match(option, /white-space:\s*normal/);
+    // nothing of the panel is cut short with dots or kept on one line
+    assert.doesNotMatch(css, /text-overflow|nowrap/);
+    const list = rule('.sfmc-ux-tools-transactional-combo-list');
+    assert.match(list, /max-height:/);
+    assert.match(list, /overflow-y:\s*auto/);
+    // in the flow of the form: the panel cannot cut it off
+    assert.doesNotMatch(rule('.sfmc-ux-tools-transactional-combo-drop'), /position/);
+});
+
+const LISTING = 'sfmc-ux-tools-transactional-listing';
+
+test('in a list only the rows scroll: the table alone is in the place that scrolls, the bar and the pager are outside it', async () => {
+    const at = await messages('sms', NUMBERED(120));
+    const scroll = at.part('rows');
+    const body = at.part('body');
+    // the table and nothing else
+    assert.deepEqual(
+        [...scroll.children].map((item) => item.tagName),
+        ['TABLE'],
+    );
+    assert.equal(scroll.firstElementChild, at.panel().querySelector('table'));
+    assert.ok(scroll.querySelector(':scope thead th'));
+    // the bar above it, the pager below it, all of them straight in the body of the panel
+    assert.deepEqual(
+        [...body.children].map((item) =>
+            item.className.replace('sfmc-ux-tools-transactional-', ''),
+        ),
+        ['bar', 'rows', 'hint', 'pager'],
+    );
+    for (const part of ['new', 'refresh', 'read', 'progress', 'search']) {
+        assert.equal(at.part(part).parentElement, at.part('bar'), part);
+    }
+    assert.equal(at.part('pager').hidden, false);
+    // the head of the panel and the tabs are outside the body, which is the last of the panel
+    assert.deepEqual(
+        [...at.panel().children].map((item) =>
+            item.className.replace('sfmc-ux-tools-transactional-', ''),
+        ),
+        ['head', 'tabs', 'note', 'body'],
+    );
+    // the panel is told that it shows a list, and keeps that through searching and paging
+    assert.equal(at.panel().classList.contains(LISTING), true);
+    await click(at, 'next');
+    assert.equal(at.panel().classList.contains(LISTING), true);
+    assert.equal(at.part('rows'), scroll);
+});
+
+test('the details, the forms and an empty list scroll as the panel does, and a list after them is a list again', async () => {
+    const at = await messages('sms', NUMBERED(3));
+    const isListing = () => at.panel().classList.contains(LISTING);
+    assert.equal(isListing(), true);
+    rows(at)[0].click();
+    await tick();
+    await tick();
+    assert.ok(at.panel().querySelector('dl'));
+    assert.equal(isListing(), false);
+    await click(at, 'back');
+    assert.equal(isListing(), true);
+    await click(at, 'new');
+    assert.ok(at.panel().querySelector('form'));
+    assert.equal(isListing(), false);
+    // a list without messages has no rows to scroll
+    await tab(at, 'push');
+    assert.match(at.text(), /no transactional Push messages/);
+    assert.equal(isListing(), false);
+    assert.equal(at.part('rows'), null);
+    await tab(at, 'sms');
+    assert.equal(isListing(), true);
+});
+
+test('the stylesheet lets the rows scroll under the names of their columns, and nothing else of a list', () => {
+    const { rule } = stylesheet();
+    const panel = rule('.sfmc-ux-tools-transactional-listing[open]');
+    assert.match(panel, /overflow:\s*hidden/);
+    assert.match(panel, /display:\s*flex/);
+    assert.match(panel, /flex-direction:\s*column/);
+    const scroll = rule('.sfmc-ux-tools-transactional-body > .sfmc-ux-tools-transactional-rows');
+    assert.match(scroll, /overflow:\s*auto/);
+    assert.match(scroll, /min-height:\s*0/);
+    const head = rule('.sfmc-ux-tools-transactional-list thead th');
+    assert.match(head, /position:\s*sticky/);
+    assert.match(head, /top:\s*0/);
+    // the rows do not show through, and the buttons of the columns are above them
+    assert.match(head, /background:\s*#fff/);
+    assert.match(head, /z-index:\s*1/);
+    // the columns keep their width when the details come in
+    assert.match(rule('.sfmc-ux-tools-transactional-list'), /table-layout:\s*fixed/);
+    // a row that gets the focus is scrolled to below the names of the columns
+    assert.match(rule('.sfmc-ux-tools-transactional-list tbody tr'), /scroll-margin-top:/);
+    // the panel without a list scrolls as before
+    assert.match(rule('.sfmc-ux-tools-transactional-panel'), /overflow:\s*auto/);
+    // the button that reads again shows when the keyboard is at it
+    assert.match(rule('.sfmc-ux-tools-transactional-refresh:focus-visible'), /outline:/);
+    assert.match(rule('.sfmc-ux-tools-transactional-refresh'), /align-self:\s*stretch/);
 });
 
 test('the manifest runs the script on the Marketing Cloud page only, in its top frame', () => {

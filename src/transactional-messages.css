@@ -114,13 +114,61 @@
     cursor: default;
     opacity: 0.5;
 }
+.sfmc-ux-tools-transactional-bar {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 12px;
+}
+.sfmc-ux-tools-transactional-bar button {
+    margin: 0;
+}
+/* the button that reads the list again: a sign alone, as tall as the button next to it */
+.sfmc-ux-tools-transactional-refresh {
+    align-items: center;
+    align-self: stretch;
+    aspect-ratio: 1;
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    color: #181818;
+    cursor: pointer;
+    display: inline-flex;
+    justify-content: center;
+    padding: 0;
+}
+.sfmc-ux-tools-transactional-refresh:hover {
+    background: #f3f3f3;
+}
+.sfmc-ux-tools-transactional-refresh:focus-visible {
+    outline: 2px solid #0176d3;
+    outline-offset: 2px;
+}
+.sfmc-ux-tools-transactional-sign {
+    height: 16px;
+    width: 16px;
+}
+.sfmc-ux-tools-transactional-read {
+    color: #5c5c5c;
+}
+.sfmc-ux-tools-transactional-search {
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font: inherit;
+    margin-left: auto;
+    max-width: 100%;
+    padding: 4px 8px;
+    width: 260px;
+}
 .sfmc-ux-tools-transactional-title {
     font-size: 15px;
     font-weight: 600;
     margin: 0 0 12px;
 }
 .sfmc-ux-tools-transactional-form {
-    max-width: 560px;
+    max-width: 760px;
 }
 .sfmc-ux-tools-transactional-field {
     display: block;
@@ -140,6 +188,73 @@
     font: inherit;
     padding: 4px 8px;
     width: 100%;
+}
+.sfmc-ux-tools-transactional-field textarea {
+    /* room for a whole message; it can be drawn taller, not wider than the form */
+    min-height: 12em;
+    resize: vertical;
+}
+.sfmc-ux-tools-transactional-field select:disabled {
+    background: #f3f3f3;
+    color: #5c5c5c;
+}
+/* the name of what a field or a value of the details holds, such as the app behind an id */
+.sfmc-ux-tools-transactional-resolved {
+    color: #5c5c5c;
+    font-style: italic;
+}
+.sfmc-ux-tools-transactional-field .sfmc-ux-tools-transactional-resolved {
+    display: block;
+}
+.sfmc-ux-tools-transactional-fields .sfmc-ux-tools-transactional-resolved {
+    margin-left: 8px;
+}
+.sfmc-ux-tools-transactional-resolved[hidden] {
+    display: none;
+}
+/* the list below a field to choose from: in the flow of the form, never cut off by the panel */
+.sfmc-ux-tools-transactional-combo-drop {
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    margin-top: 2px;
+}
+.sfmc-ux-tools-transactional-combo-drop[hidden],
+.sfmc-ux-tools-transactional-combo-status[hidden] {
+    display: none;
+}
+.sfmc-ux-tools-transactional-combo-list {
+    max-height: 16em;
+    overflow-y: auto;
+}
+.sfmc-ux-tools-transactional-combo-status {
+    color: #5c5c5c;
+    font-style: italic;
+    padding: 4px 8px;
+}
+/* an entry is shown whole: a long name or key goes on in the next line */
+.sfmc-ux-tools-transactional-combo-option {
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    padding: 4px 8px;
+    white-space: normal;
+}
+.sfmc-ux-tools-transactional-combo-option:hover,
+.sfmc-ux-tools-transactional-combo-active {
+    background: #f3f3f3;
+}
+.sfmc-ux-tools-transactional-combo-option[aria-selected='true'] {
+    border-left-color: #0176d3;
+}
+.sfmc-ux-tools-transactional-combo-option[aria-selected='true'] .sfmc-ux-tools-transactional-combo-name {
+    font-weight: 600;
+}
+.sfmc-ux-tools-transactional-combo-name,
+.sfmc-ux-tools-transactional-combo-value {
+    display: block;
+}
+.sfmc-ux-tools-transactional-combo-value {
+    color: #5c5c5c;
 }
 .sfmc-ux-tools-transactional-field input[type='checkbox'] {
     margin-right: 6px;
@@ -183,15 +298,117 @@
     color: #ba0517;
     margin: 12px 0;
 }
+/*
+ * A list of messages: the panel itself does not scroll, only the rows do. The head of the panel,
+ * the tabs, the bar above the table and the pager below it stay where they are.
+ */
+.sfmc-ux-tools-transactional-listing[open] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.sfmc-ux-tools-transactional-listing > * {
+    flex: none;
+}
+.sfmc-ux-tools-transactional-listing > .sfmc-ux-tools-transactional-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+}
+.sfmc-ux-tools-transactional-body > * {
+    flex: none;
+}
+.sfmc-ux-tools-transactional-body > .sfmc-ux-tools-transactional-rows {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
 .sfmc-ux-tools-transactional-list {
     border-collapse: collapse;
+    /* the columns keep their width when the details of the rows come in */
+    table-layout: fixed;
     width: 100%;
+}
+.sfmc-ux-tools-transactional-list th[data-field='name'] {
+    width: 24%;
+}
+.sfmc-ux-tools-transactional-list td {
+    overflow-wrap: anywhere;
+}
+/* the names of the columns stay above the rows, which do not show through */
+.sfmc-ux-tools-transactional-list thead th {
+    background: #fff;
+    /* the line below them: a border would scroll away with the rows */
+    box-shadow: inset 0 -1px 0 #c9c9c9;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+/* a row that the keyboard goes to is scrolled to below the names of the columns, not behind
+   them: by a line of text with the padding and the border of its cell */
+.sfmc-ux-tools-transactional-list tbody tr {
+    scroll-margin-top: calc(1.5em + 13px);
 }
 .sfmc-ux-tools-transactional-list th,
 .sfmc-ux-tools-transactional-list td {
     border-bottom: 1px solid #e5e5e5;
     padding: 6px 8px;
     text-align: left;
+}
+.sfmc-ux-tools-transactional-sort {
+    background: none;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    padding: 0;
+}
+.sfmc-ux-tools-transactional-list th[aria-sort='ascending'] .sfmc-ux-tools-transactional-sort::after {
+    content: ' ▲';
+}
+.sfmc-ux-tools-transactional-list th[aria-sort='descending'] .sfmc-ux-tools-transactional-sort::after {
+    content: ' ▼';
+}
+/* a column that cannot be sorted by yet */
+.sfmc-ux-tools-transactional-sort:disabled {
+    cursor: default;
+}
+/* how many details of the list are read so far */
+.sfmc-ux-tools-transactional-progress {
+    color: #5c5c5c;
+    font-style: italic;
+}
+.sfmc-ux-tools-transactional-progress[hidden],
+.sfmc-ux-tools-transactional-pager[hidden] {
+    display: none;
+}
+/* the buttons to page through a long list, with what is on show between them */
+.sfmc-ux-tools-transactional-pager {
+    align-items: center;
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin: 12px 0 0;
+}
+.sfmc-ux-tools-transactional-previous,
+.sfmc-ux-tools-transactional-next {
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    color: #181818;
+    cursor: pointer;
+    font: inherit;
+    padding: 4px 12px;
+}
+.sfmc-ux-tools-transactional-previous:disabled,
+.sfmc-ux-tools-transactional-next:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+.sfmc-ux-tools-transactional-range {
+    color: #5c5c5c;
 }
 .sfmc-ux-tools-transactional-list tbody tr[tabindex] {
     cursor: pointer;

@@ -194,6 +194,38 @@
     min-height: 12em;
     resize: vertical;
 }
+/*
+ * The message of an SMS in a code editor: the field stays where it is, out of sight, for the form
+ * to read and to check, and the editor stands below the line of the field.
+ */
+.sfmc-ux-tools-transactional-field textarea.sfmc-ux-tools-transactional-coded {
+    border: 0;
+    height: 1px;
+    min-height: 0;
+    opacity: 0;
+    padding: 0;
+    pointer-events: none;
+    position: absolute;
+    resize: none;
+    width: 1px;
+}
+.sfmc-ux-tools-transactional-field:has(.sfmc-ux-tools-transactional-coded) {
+    margin-bottom: 0;
+}
+.sfmc-ux-tools-transactional-code {
+    margin: 0 0 12px;
+}
+.sfmc-ux-tools-transactional-code .CodeMirror {
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    height: 16em;
+}
+/* the field holds the cursor while the browser says that the message is missing */
+.sfmc-ux-tools-transactional-field:has(.sfmc-ux-tools-transactional-coded:focus)
+    + .sfmc-ux-tools-transactional-code
+    .CodeMirror {
+    outline: 2px solid #0176d3;
+}
 .sfmc-ux-tools-transactional-field select:disabled {
     background: #f3f3f3;
     color: #5c5c5c;

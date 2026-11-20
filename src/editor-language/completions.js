@@ -115,7 +115,12 @@ function didShow(cm) {
         ) {
             return false;
         }
-        showHint(cm, hint, { completeSingle: false });
+        showHint(cm, hint, {
+            completeSingle: false,
+            // a dialog that is open covers everything that is not inside of it; without one
+            // the list goes to the end of the page, as the hint addon has it
+            container: cm.getWrapperElement().closest?.('dialog') ?? null,
+        });
         return true;
     } catch (ex) {
         report(ex);

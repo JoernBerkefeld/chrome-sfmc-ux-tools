@@ -169,6 +169,7 @@ export default [
             'src/editor-language.js',
             'src/editor-format.js',
             'src/editor-typescript.js',
+            'src/editor-codemirror.js',
             'src/editor-language/**/*.js',
         ],
 

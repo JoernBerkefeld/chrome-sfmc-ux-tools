@@ -13,6 +13,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Tidy code with one click:** the **{ }** button or **Shift+Alt+F**, and **Ctrl+S** saves.
 - **Readable keys instead of random ones:** new automations, activities, data extensions, journeys, API events, sender profiles, send classifications, file locations, roles and users get a key made from their name, such as `Welcome_series`.
 - **No more "New Journey - 18 November…":** Journey Builder asks you for a real name before a new journey is saved.
+- **Transactional SMS, push and OTT messages in a list:** a new entry in the Mobile Studio menu shows them, and lets you create, change and delete them. Marketing Cloud itself has no place for this.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
 
@@ -35,6 +36,7 @@ Everything below works on its own after installing; there is nothing to set up. 
 - **Setup**: the pages for a new sender profile, send classification, delivery profile, file location, role or user, for readable keys.
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
 - **Setup → Installed Packages**: the dialog with the list of scopes.
+- **The Mobile Studio menu** at the top of Marketing Cloud: the entry for [transactional messages](#transactional-messages-sms-push-and-ott).
 - **Marketing Cloud Next, content editor**: the code of an email made with **Create with HTML**, and the **HTML** component in emails, landing pages and the content blocks for both.
     - **Explanations for every AMPscript function Marketing Cloud Next has:** point at a function to read what it does, with all its parameters, an example and links.
         - The editor explains 41 functions itself, in one sentence each. While the mouse is on AMPscript, the extension hides that box and shows its own, so you never get two explanations at once. On a Handlebars helper it is the other way round: the editor's box shows and ours does not.
@@ -252,6 +254,68 @@ When you add or edit an API integration under **Setup → Platform Tools → App
 - Nothing is saved until you press the dialog's own **Save** button.
 - Works in every language of Marketing Cloud, when adding a component and when editing one.
 
+### Transactional messages: SMS, push and OTT
+
+Marketing Cloud can send transactional SMS, push and OTT messages (OTT covers WhatsApp and similar channels). They are set up through the API only: no app of Marketing Cloud shows which ones exist. The extension adds a place to see, create, change and delete them.
+
+- **A new entry in the menu:** point at **Mobile Studio** at the top of Marketing Cloud. Below MobileConnect, MobilePush and GroupConnect you find **Transactional Messages**. The small icon behind it is this extension's, to show who added the entry.
+- **A list per channel:** the panel that opens has the tabs **SMS**, **Push** and **OTT**. Each lists the messages of the business unit you are in.
+    - **Columns:** name, key, status, and the dates a message was created and last changed, in your local date and time. SMS also shows **Code** and **Keyword**, push shows **App** and **Content** by their names.
+    - **Search:** type into the search box to filter by name, key and the channel columns.
+    - **Sorting:** click a column heading; click again to turn the order round.
+    - **Pages:** 50 messages per page, with **Previous** and **Next**.
+    - **Only the rows scroll.** The column headings, the bar above the list and the page buttons below it stay in place.
+    - **Long lists are read completely.** The panel reads 100 messages per request until Marketing Cloud has no more.
+- **The list is kept, not read again and again:** switching tabs, coming back from a message and reopening the panel show the list from memory.
+    - It is read again after you created, changed or deleted a message in the panel, when you click the **Refresh** button, and after you reload the page.
+    - **Refresh** is the button with the reload sign next to **New … message**. Point at it to read its name.
+    - A note beside it says when the list was read, such as "read 14:05".
+    - It is also dropped when you change the business unit.
+- **Code, keyword, app and content come a moment later:** Marketing Cloud's list does not contain them, so the panel reads each message once in the background, a few at a time, and says how far it is ("details 120 of 312").
+    - What was read is kept for as long as the page is open. After a refresh, only messages that are new or were changed are read again.
+    - Until all are read, sorting by these columns is switched off, and a search finds them only in the messages already read.
+    - On the first opening of a list with several hundred messages, that many requests go out once.
+- **The details of one message:** click a row to see everything Marketing Cloud stores for it, with plain labels such as **Key**, **Message** or **Code**. Point at a label to see the name of the field in the API. For a push message the name of its app and of its content stands next to their IDs. **← All … messages** takes you back.
+- **Create a message:** every list has a **New … message** button. It opens a form with the fields of that channel:
+    - **SMS:** name, key, description, status, the text of the message, the code and keyword it is sent with, the country code of a short code, and whether the recipient is added or updated as a subscriber.
+    - **Push:** name, key, description, status, the app, the content (the customer key of the push message in Content Builder), sound and badge.
+    - **OTT:** name, key, description, status, the sender (WhatsApp and its phone number) and the content.
+- **The text of an SMS is written in a code editor**, like the code view of Content Builder:
+    - **Colours** for AMPscript and personalisation strings, in the light or dark theme chosen in the options.
+    - **Suggestions** while you type and on **Ctrl+Space**, **explanations** when you point at a function, **help with a function's inputs**, and **underlined mistakes**.
+    - **Keys:** **Tab** moves on to the next field. **Esc** closes an open list of suggestions and leaves the form open. **Ctrl+S** does nothing here; the message is saved with the button of the form.
+    - There is no formatting (**Shift+Alt+F**) in this editor.
+    - If the editor cannot be loaded, the plain text field stays and works as before.
+    - The forms for push and OTT have no such field and are unchanged.
+- **The key follows the name** while you type, as with [readable keys](#readable-keys) elsewhere, until you type a key yourself. The **Readable keys** option switches this off.
+- **SMS code and keyword are two lists:** choose the code first; the keyword list then shows only the keywords of that code. A code reads like `8850 · NL · short code · SHARED`.
+    - If Marketing Cloud's lists cannot be read, both are plain text fields.
+    - When you edit a message whose code or keyword is not in the lists, it stays chosen and is marked as not found.
+    - The lists show what Marketing Cloud returns in its first answer, which is up to 50 codes and 50 keywords.
+- **App and content of a push message are chosen from a list** that opens below the field:
+    - **It opens on every click** into the field, also when the field already holds something, and shows all entries.
+    - **Every entry is shown in full length:** its name and, beside it, its ID or key. A long one continues on the next line.
+    - **Type to narrow it down:** the list keeps the entries whose name or ID contains what you typed.
+    - **Keys:** the arrow keys move through the list, **Enter** takes the marked entry, **Esc** closes the list and leaves the form open.
+    - **The field still takes any ID or key you type**, also one that is not in the list.
+    - **App:** the list has the apps of the business unit. The name of the app you chose stands under the field.
+    - **Content:** the list has the push messages of Content Builder. Choosing one fills in its customer key. Messages written for SMS or for in-app are left out: on an account with push messages, every transactional one held a message written for push.
+    - If Marketing Cloud's list cannot be read, the field is a plain text field.
+- **What Marketing Cloud refuses is shown:** if a message cannot be created, the form says why in Marketing Cloud's words and keeps what you typed.
+- **A new message starts as Active** unless you choose another status in the form. An active message can be sent at once by anything that knows its key.
+    - **Push has three statuses:** Active, Inactive and Draft. Marketing Cloud stores a new push message as Draft unless it is Active, also when you choose Inactive.
+- **Links in an SMS:** two optional boxes switch on Marketing Cloud's link shortening and its tracking of the shortened links per subscriber.
+- **Change a message:** the details have an **Edit** button. It opens the same form, filled in. The key cannot be changed.
+    - Only what you changed is sent. If you change nothing, nothing is sent.
+    - Right before saving, the panel reads the message again. If someone changed it meanwhile, or you changed the business unit in another browser tab, nothing is saved and the form says so.
+    - After saving, the panel reads the message once more and compares it with what you sent. If Marketing Cloud answered "saved" but holds something else, the panel names the fields that differ.
+- **Delete a message:** the details have a **Delete** button. The panel then asks once more, with the name, key and status of the message, and only **Delete it** deletes. Marketing Cloud cannot bring a deleted message back, and whatever still sends with its key will fail.
+- **A safeguard against the wrong business unit:** right before deleting, the panel reads the message again. If it is no longer the one on screen, for example because you changed the business unit in another browser tab, nothing is deleted.
+- **Creating, changing and deleting were tried on real messages:** on a business unit with SMS and push, a test message of each kind was created, changed and deleted through the panel, and nothing else on that business unit changed. OTT could not be tried, see the last point.
+- **What Marketing Cloud does with a deleted message:** it keeps it, marked as deleted, and replaces its key and name with a random ID, so the key is free again. The panel leaves deleted messages out.
+- **Always marked as ours:** the panel shows the icon and **SFMC UX Tools** at its top, so nobody takes it for a part of Marketing Cloud.
+- **OTT is untested:** it was built from Salesforce's documentation, because we have no account with WhatsApp or a similar channel. If you have one, please tell us whether it works, in the [issues on GitHub](https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues). The tab says so too.
+
 ### Options
 
 Click the extension's icon in Chrome's toolbar. Every change applies at once; no reload is needed.
@@ -304,7 +368,7 @@ The extension runs on eight places of Marketing Cloud Engagement and on one of M
 - Email Studio (`https://*.exacttarget.com/C12/Default.aspx`), where it also does only that, in the dialog that creates a data extension, and on the page that creates a triggered send (`https://*.exacttarget.com/Content/Interactions/TriggeredSendConfiguration.aspx`). Chrome asks you to accept the wider site access when the extension is updated.
 - Setup (`https://*.exacttarget.com/Content/Administration/SendManagement/`), where it does the same on the pages for a new sender profile, send classification, delivery profile or file location, and on the pages for a new role (`…/Roles/RoleDetails.aspx`) and a new user (`…/EmployeeDetails.aspx`).
 - Journey Builder (`https://jbinteractions.<stack>.marketingcloudapps.com`), where it reads the name of the journey and of its API event, changes the key in the request that Journey Builder sends when a new journey or API event is saved, and holds a save back while the journey has its made-up name. Before it uses a key, it asks Journey Builder's own server, the one the page is talking to anyway, whether that key is free.
-- the Marketing Cloud page around the apps (`https://mc.<stack>.exacttarget.com/cloud/`), where it adds nothing and makes no requests unless the preview feature **Transactional Messages** was switched on in the options. That feature is off after installing. Switched on, it adds an entry to the Mobile Studio menu. When you open its panel, it asks Marketing Cloud's own server, through the page you are logged in to, for the list of transactional SMS, push and OTT messages, and for the details of the one you click. It shows them to you and keeps nothing. When you open the form for a new message, it asks the same server for the SMS codes and keywords, or the push apps and the names and keys of the mobile messages in Content Builder with what each was written for, of the business unit, to offer them in the form. When you send that form, it sends the new message, or what you changed of an existing one, to that server, and when you delete a message and confirm it, it sends that one delete request. Before a change or a delete it reads the message again, and after a change once more. The page loads one file of the extension, its icon.
+- the Marketing Cloud page around the apps (`https://mc.<stack>.exacttarget.com/cloud/`), where it adds the entry **Transactional Messages** to the Mobile Studio menu. It makes no requests until you open the panel of that entry. When you open it, it asks Marketing Cloud's own server, through the page you are logged in to, for the list of transactional SMS, push and OTT messages, and for the details of the one you click. It shows them to you and keeps nothing. When you open the form for a new message, it asks the same server for the SMS codes and keywords, or the push apps and the names and keys of the mobile messages in Content Builder with what each was written for, of the business unit, to offer them in the form. When you send that form, it sends the new message, or what you changed of an existing one, to that server, and when you delete a message and confirm it, it sends that one delete request. Before a change or a delete it reads the message again, and after a change once more. The page loads one file of the extension, its icon. When you open the form of an SMS message, the extension also loads four of its own files into that page, the code editor for the text of the message with its colours and language features; they read that text inside the page only, and no code is loaded from anywhere else.
 - the content editor of Marketing Cloud Next (`https://<your domain>.lightning.force.com/cmsAuthor/contentEditor.app`), where it adds explanations, parameter help, error underlines with quick fixes and formatting on **Shift+Alt+F** to the code editor of an HTML email and of the HTML component. The built-in language service and formatter read your code to do this, inside the page only. It makes no requests there and changes nothing but the code you format. The page loads one file of the extension, its icon, which marks the extension's boxes; the same goes for Content Builder and Automation Studio. Chrome's site-access prompt names `lightning.force.com` as a whole because the first part of the address differs per account; the extension itself is restricted to the address of the content editor.
 
 The questions about a free key in Journey Builder and Content Builder, the lists and details of transactional messages with the lists their form offers, a new or changed transactional message that you sent and the delete of one that you confirmed, are the only requests the extension ever makes. They go to Marketing Cloud's own servers and nowhere else.
@@ -321,7 +385,7 @@ npm run build
 ```
 
 - `src/` holds the extension's sources. `npm run build` writes the loadable extension to `dist/extension` and packs that folder as `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store. For **Load unpacked**, always pick `dist/extension`, not `src`.
-- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.5.1) into one classic script each with esbuild. A third bundle, `src/editor-typescript.js`, holds TypeScript (6.0.3, the exact version the service is built for), the SSJS service of `sfmc-language-lsp/typescript` and the text of `ssjs-data`'s `sfmc-globals.d.ts`; it alone is minified. The build fails if a bundle calls `eval` or `new Function`, which Chrome does not allow. All other files are copied as they are.
+- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.5.1) into one classic script each with esbuild. A third bundle, `src/editor-typescript.js`, holds TypeScript (6.0.3, the exact version the service is built for), the SSJS service of `sfmc-language-lsp/typescript` and the text of `ssjs-data`'s `sfmc-globals.d.ts`; it alone is minified. The build fails if a bundle calls `eval` or `new Function`, which Chrome does not allow. A fourth bundle, `src/editor-codemirror.js`, holds CodeMirror 5 with its HTML mode and hint addon, and `src/editor-codemirror.css` becomes CodeMirror's stylesheet: the code editor for the text of a transactional SMS, the only place where the extension brings an editor instead of working on the page's own. `src/transactional-messages.js` loads that bundle, `language-data.js`, `editor-highlight.js` and `editor-language.js` with `import()` into its own (isolated) world when an SMS form opens, which is why the manifest lists them as web accessible for `exacttarget.com`. All other files are copied as they are.
 - `src/editor-language/core` holds the editor-independent logic (text and a position in, plain data out), and the files next to it bind it to CodeMirror.
 - The TypeScript bundle is about 4 MB, so it is not a content script. When the language script sets up its first editor in a frame, it dispatches `sfmc-ux-tools:need-typescript` on the document; `src/editor-typescript-loader.js` (extension world) passes that on, and the service worker `src/background.js` injects `editor-typescript.js` into the page world of the document that asked with `chrome.scripting.executeScript` and answers whether that worked; after a failure the next editor that is set up asks again. TypeScript's diagnostics only run in the check after typing has paused. The language script looks the TypeScript API up at every use and falls back to the catalogue without it.
 - `node scripts/measure-typescript.mjs` (after a build) prints the size of the TypeScript bundle and how long it takes to start and to answer for a 1,500-line document.
@@ -329,7 +393,7 @@ npm run build
 - `npm run icons` redraws the icons in `src/icons/`.
 - `npm run generate` rewrites `src/language-data.js` from the `ampscript-data` and `ssjs-data` packages; run it after updating either dependency. A test fails if the file is out of date.
 - In `package.json`, `dependencies` are the packages whose code or data ends up in the shipped extension; `devDependencies` are tools for building, linting and testing. The package is never installed from npm, so the split is for clarity only.
-- `codemirror` is fixed to the exact version Content Builder ships (5.65.21), so that the tests run against the editor the extension meets in the page. Change it only when Marketing Cloud updates its editor.
+- `codemirror` is fixed to the exact version Content Builder ships (5.65.21), so that the tests run against the editor the extension meets in the page. Change it only when Marketing Cloud updates its editor. The same version is bundled for the code editor of a transactional SMS, so it is listed under `dependencies`.
 - `ace-builds` is fixed to the exact version of the Ace editor in Automation Studio's script activity (1.4.12), for the same reason. It is only used by the tests: `src/editor-language/ace` builds its mode at run time from the Ace of the page and bundles no copy of it.
 - Keep `version` in `package.json` and `src/manifest.json` identical; a test checks this.
 - `npm run verify:bundled-latest` compares the SFMC packages in `package-lock.json` (`sfmc-language-lsp`, `prettier-plugin-sfmc`, the data packages and what they bring along) with the newest versions on npm and fails if one is behind. The release workflow runs it before building, because the build inlines these packages. Update them with `npm install <package>@latest`.

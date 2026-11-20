@@ -79,6 +79,7 @@ test('what ships is a dependency, tools are devDependencies, and the editor vers
     const { dependencies, devDependencies } = JSON.parse(read('../package.json'));
     assert.deepEqual(Object.keys(dependencies), [
         'ampscript-data',
+        'codemirror',
         'prettier',
         'prettier-plugin-sfmc',
         'sfmc-language-lsp',
@@ -87,9 +88,10 @@ test('what ships is a dependency, tools are devDependencies, and the editor vers
     ]);
     // the version the SSJS service was built for; the build inlines it
     assert.match(dependencies.typescript, /^\d+\.\d+\.\d+$/);
-    for (const tool of ['esbuild', 'eslint', 'jsdom', 'codemirror']) {
+    for (const tool of ['esbuild', 'eslint', 'jsdom']) {
         assert.ok(Object.hasOwn(devDependencies, tool), tool);
     }
-    // the version Content Builder ships; a range would let the tests drift away from it
-    assert.match(devDependencies.codemirror, /^\d+\.\d+\.\d+$/);
+    // the version Content Builder ships; a range would let the tests drift away from it. It
+    // ships too, as the code editor for the text of a transactional SMS
+    assert.match(dependencies.codemirror, /^\d+\.\d+\.\d+$/);
 });

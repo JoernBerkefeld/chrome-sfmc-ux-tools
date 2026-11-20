@@ -9,9 +9,10 @@ const GAP = 4;
  *
  * @param {Document} document document of the editor
  * @param {string} className class of the box, next to "sfmc-tooltip"
+ * @param {Element} [near] element of the editor, which may stand in a dialog
  * @returns {{element: HTMLElement, show: (content: Node, anchor: object) => void, hide: () => void, isShown: () => boolean}} the box
  */
-export function createTooltip(document, className) {
+export function createTooltip(document, className, near) {
     const element = document.createElement('div');
     element.className = `sfmc-tooltip ${className}`;
     return {
@@ -25,7 +26,8 @@ export function createTooltip(document, className) {
         show(content, anchor) {
             element.replaceChildren(content);
             if (!element.isConnected) {
-                document.body.append(element);
+                // a dialog that is open covers everything that is not inside of it
+                (near?.closest?.('dialog') ?? document.body).append(element);
             }
             element.scrollTop = 0;
             const view = document.defaultView;

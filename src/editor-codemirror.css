@@ -1,0 +1,6 @@
+/*
+ * SFMC UX Tools - the styles CodeMirror 5 needs to lay out an editor, for the editor the
+ * extension brings itself (see editor-codemirror.js). `npm run build` puts CodeMirror's own
+ * stylesheet in the place of this file. The colours come from editor-highlight.css.
+ */
+@import 'codemirror/lib/codemirror.css';

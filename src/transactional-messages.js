@@ -2,8 +2,8 @@
  * SFMC UX Tools — content script for the Marketing Cloud page that holds the app menu.
  *
  * Transactional SMS, push and OTT (WhatsApp and the like) messages exist in Marketing Cloud's
- * API only; no app shows them. When switched on in the options, where it is a preview feature
- * that is off, this adds an entry "Transactional Messages" to the Mobile Studio menu, which
+ * API only; no app shows them. This adds an entry "Transactional Messages" to the Mobile Studio
+ * menu, which
  * opens a panel that lists those definitions, shows the details of one, creates and changes one
  * from a form and deletes one on request. The lists and the details come from
  * Marketing Cloud's own server, through the page's session, and so do the codes, keywords, apps
@@ -19,9 +19,6 @@
     'use strict';
 
     const TITLE = 'Transactional Messages';
-    // the setting that shows the entry; it is off until someone switches it on in the options
-    const SETTING = 'transactionalMessages';
-    const ON = 'on';
     // said wherever this script adds something, so that nobody takes it for Marketing Cloud's own
     const MADE_BY = 'SFMC UX Tools';
     const ICON = chrome.runtime.getURL('icons/icon16.png');
@@ -56,6 +53,17 @@
     const MOBILE_MESSAGE = 230;
     // lines of the field a message is typed into
     const MESSAGE_ROWS = 8;
+    // what makes a code editor of that field, in the order it is loaded: CodeMirror, then what
+    // the extension adds to every code editor of Marketing Cloud, the colours and the language
+    // features. They are files of the extension, loaded when a form with a message is opened
+    const EDITOR_SCRIPTS = [
+        'editor-codemirror.js',
+        'language-data.js',
+        'editor-highlight.js',
+        'editor-language.js',
+    ];
+    // the name Marketing Cloud's editors have for their mode, by which those scripts know an editor
+    const EDITOR_MODE = 'ampScriptHtmlMixed';
     // said of a stored code or keyword that the lists of the business unit do not hold
     const NOT_FOUND = ' — not found in this business unit';
     // set on the panel while it shows a list of messages: only the rows of the list scroll then
@@ -1254,6 +1262,10 @@
             'label',
             spec.label + (spec.isRequired ? ' *' : ''),
         );
+        if (spec.input === 'textarea') {
+            // names the code editor that may take the place of the field
+            title.id = `${id}-title`;
+        }
         if (spec.suggest) {
             input.id = `${id}-field`;
             title.htmlFor = input.id;
@@ -1275,6 +1287,122 @@
             row.append(make('span', 'help', spec.whenNew));
         }
         return { row, input };
+    }
+
+    /**
+     * Loads a script of the extension into the world of this script.
+     *
+     * @param {string} file name of the script
+     * @returns {Promise.<unknown>} settles when the script ran; fails when it could not be loaded
+     */
+    function load(file) {
+        const url = chrome.runtime.getURL(file);
+        // the tests, which cannot load a script this way, put their own way here
+        return globalThis.sfmcUxToolsImport ? globalThis.sfmcUxToolsImport(url) : import(url);
+    }
+
+    /**
+     * Puts a code editor in the place of the field a message is typed into: with colours for
+     * AMPscript, suggestions, explanations and underlined mistakes, as in Content Builder. The
+     * field stays in the form, out of sight, and stays what the form reads: the editor writes
+     * to it what the user changes. Without the editor, which is loaded for this, the field
+     * stays as it is.
+     *
+     * @param {HTMLTextAreaElement} input the field
+     */
+    async function codeEditor(input) {
+        const row = input.closest(`.${NAME}-field`);
+        const mount = make('div', 'code');
+        let editor;
+        try {
+            for (const file of EDITOR_SCRIPTS) {
+                await load(file);
+            }
+            // the form was left meanwhile, or the field cannot be changed
+            if (!input.isConnected || input.disabled) {
+                return;
+            }
+            // outside of the label that the line of the field is: a click into the editor is
+            // none on the label
+            row.after(mount);
+            editor = new globalThis.CodeMirror(mount, {
+                value: input.value,
+                mode: EDITOR_MODE,
+                lineNumbers: true,
+                lineWrapping: true,
+                extraKeys: {
+                    // the form is sent with its button; the browser's dialog for saving the
+                    // page stays away
+                    'Ctrl-S': () => {},
+                    'Cmd-S': () => {},
+                    // these are left to the browser, as everywhere in the form: on to the next
+                    // field, back to the last one, and out of the panel
+                    Tab: false,
+                    'Shift-Tab': false,
+                    Esc: false,
+                },
+            });
+        } catch (ex) {
+            mount.remove();
+            // eslint-disable-next-line no-console -- the only trace of why the field is a plain one
+            console.warn(`${MADE_BY}: the code editor for the message could not be loaded`, ex);
+            return;
+        }
+        const typing = editor.getInputField();
+        typing.setAttribute('aria-labelledby', row.querySelector(`.${NAME}-label`).id);
+        typing.setAttribute('aria-required', String(input.required));
+        // only what the user changes: an editor that was just filled changes nothing, so a
+        // form that was not touched still sends nothing
+        editor.on('change', () => {
+            const value = editor.getValue();
+            if (value === input.value) {
+                return;
+            }
+
+            input.value = value;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        // typed into the field itself, which holds the cursor after the form pointed at it as empty
+        input.addEventListener('input', () => {
+            if (input.value === editor.getValue()) {
+                return;
+            }
+
+            editor.setValue(input.value);
+            editor.focus();
+            editor.setCursor(editor.lineCount(), 0);
+        });
+        // a click on the title of the field goes to the field; the browser's note that the
+        // message is missing needs the cursor to stay in it
+        input.addEventListener('focus', () => {
+            if (input.validity.valid) {
+                editor.focus();
+            }
+        });
+        // Escape closes an open list of suggestions, not the panel
+        let isSuggesting = false;
+        mount.addEventListener(
+            'keydown',
+            () => {
+                isSuggesting = Boolean(editor.state.completionActive);
+            },
+            { capture: true },
+        );
+        mount.addEventListener('keydown', (event) => {
+            if (!(isSuggesting && event.key === 'Escape')) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        const isFocused = document.activeElement === input;
+        input.classList.add(`${NAME}-coded`);
+        // still reachable for the form's check, no stop for the Tab key
+        input.tabIndex = -1;
+        if (isFocused) {
+            editor.focus();
+        }
     }
 
     /**
@@ -1666,6 +1794,11 @@
             form,
         );
         name.focus();
+        for (const spec of kind.fields) {
+            if (spec.input === 'textarea') {
+                codeEditor(inputs.get(spec.path));
+            }
+        }
     }
 
     /**
@@ -2240,39 +2373,6 @@
 
     // the menu is drawn after the page has loaded, and drawn again when the business unit changes
     const menu = new MutationObserver(addEntry);
-
-    /**
-     * Shows the entry, or takes it away; anything but "on" hides it. A panel that is open stays
-     * until it is closed.
-     *
-     * @param {unknown} value the setting
-     */
-    function apply(value) {
-        if (value === ON) {
-            addEntry();
-            menu.observe(document.documentElement, { childList: true, subtree: true });
-        } else {
-            menu.disconnect();
-            document.querySelector(`[${CSS.escape(MARK)}]`)?.remove();
-        }
-    }
-
-    /**
-     * Reads whether the entry is switched on.
-     */
-    async function readSetting() {
-        try {
-            const values = await chrome.storage.sync.get({ [SETTING]: 'off' });
-            apply(values[SETTING]);
-        } catch {
-            // without the setting the entry stays hidden
-        }
-    }
-
-    chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'sync' && Object.hasOwn(changes, SETTING)) {
-            apply(changes[SETTING].newValue);
-        }
-    });
-    readSetting();
+    addEntry();
+    menu.observe(document.documentElement, { childList: true, subtree: true });
 })();

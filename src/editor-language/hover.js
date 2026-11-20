@@ -123,7 +123,7 @@ export function renderBox(document, problems, markdown, onFix, colourCode) {
  */
 export function registerHover(cm) {
     const wrapper = cm.getWrapperElement();
-    const tooltip = createTooltip(wrapper.ownerDocument, 'sfmc-hover');
+    const tooltip = createTooltip(wrapper.ownerDocument, 'sfmc-hover', wrapper);
     const timers = { show: undefined, hide: undefined };
     let shown = '';
     // the content the fixes on show were worked out for

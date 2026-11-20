@@ -77,7 +77,7 @@ export function renderSignature(document, signature, active) {
  */
 export function registerSignature(cm) {
     const document = cm.getWrapperElement().ownerDocument;
-    const tooltip = createTooltip(document, 'sfmc-signature');
+    const tooltip = createTooltip(document, 'sfmc-signature', cm.getWrapperElement());
     let timer;
 
     const hide = () => {

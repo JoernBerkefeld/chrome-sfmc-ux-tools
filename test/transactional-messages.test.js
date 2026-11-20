@@ -1,12 +1,29 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { JSDOM } from 'jsdom';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 // in the order of the manifest
 const script = read('../src/key-rule.js') + read('../src/transactional-messages.js');
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+// what makes the code editor of a message, as the build ships it; "npm test" builds first
+const EDITOR_FILES = [
+    'editor-codemirror.js',
+    'language-data.js',
+    'editor-highlight.js',
+    'editor-language.js',
+];
+const EXTENSION = 'chrome-extension://id/';
+/**
+ * Leaves the scripts of the code editor on their way for good, so the field of a message stays
+ * the plain one.
+ *
+ * @returns {Promise.<never>} never settles
+ */
+const neverLoaded = () => new Promise(() => {});
+// how a page loads the scripts of the code editor; a test that wants the editor puts its way here
+const importing = { load: neverLoaded };
 const APP = (name) =>
     `<li class="mc-app-group-dropdown-app"><a href="/cloud/#app/${name}"><span class="mc-app-name">${name}</span></a></li>`;
 const MENU = `<ul class="mc-app-group-dropdown-apps">${APP('Email')}</ul>
@@ -54,31 +71,28 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), st
             globalThis.scrolled.push(this.id);
         };
     `);
-    // the entry is a preview feature that is off; the tests run with it switched on
-    // a setting given as undefined was never saved, and Chrome then hands out the default
-    const settings = Object.fromEntries(
-        Object.entries({ transactionalMessages: 'on', ...stored }).filter(
-            ([, value]) => value !== undefined,
-        ),
-    );
-    const listeners = [];
+    // what the script asked the settings for; the entry itself depends on none
+    const settingsRead = [];
     window.chrome = {
         runtime: { getURL: (path) => `chrome-extension://id/${path}` },
         storage: {
             sync: {
-                // isBroken fails the settings a form reads, isUnreadable every setting
-                get: (defaults) =>
-                    stored.isUnreadable ||
-                    (stored.isBroken && Object.hasOwn(defaults, 'readableKeys'))
+                // isBroken fails the settings a form reads
+                get: (defaults) => {
+                    settingsRead.push(defaults);
+                    return stored.isBroken
                         ? Promise.reject(new Error('broken'))
-                        : Promise.resolve({ ...defaults, ...settings }),
-            },
-            onChanged: {
-                addListener: (listener) => {
-                    listeners.push(listener);
+                        : Promise.resolve({ ...defaults, ...stored });
                 },
             },
         },
+    };
+    // the files of the extension the script loaded into its page
+    const imported = [];
+    const { load } = importing;
+    window.sfmcUxToolsImport = (url) => {
+        imported.push(url);
+        return load(window, url);
     };
     const asked = [];
     const looked = [];
@@ -126,18 +140,12 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), st
         looked,
         written,
         calls,
+        imported,
         entry,
         panel,
-        change: (values, area = 'sync') => {
-            const changes = Object.fromEntries(
-                Object.entries(values).map(([key, newValue]) => [key, { newValue }]),
-            );
-            for (const listener of listeners) {
-                listener(changes, area);
-            }
-        },
+        settingsRead,
         open: async () => {
-            // the entry is added once the setting was read
+            // a menu that was put into the page is seen a moment later
             await tick();
             entry().dispatchEvent(
                 new window.MouseEvent('click', { bubbles: true, cancelable: true }),
@@ -207,44 +215,28 @@ test('a page without the Mobile Studio menu is left alone', async () => {
     assert.equal(at.panel(), null);
 });
 
-test('the entry is a preview feature: off until it is switched on, and gone when switched off', async () => {
-    const at = page(MENU, undefined, { transactionalMessages: 'off' });
-    await tick();
-    assert.equal(at.entry(), null);
-    // a menu that is drawn again does not bring it
-    at.document.body.append(at.document.createElement('div'));
-    await tick();
-    assert.equal(at.entry(), null);
-    // another setting, or the same one somewhere else, changes nothing
-    at.change({ readableKeys: 'off' });
-    at.change({ transactionalMessages: 'on' }, 'local');
-    assert.equal(at.entry(), null);
-    at.change({ transactionalMessages: 'on' });
-    assert.ok(at.entry());
-    at.change({ transactionalMessages: 'off' });
-    assert.equal(at.entry(), null);
-    at.document.body.append(at.document.createElement('div'));
-    await tick();
-    assert.equal(at.entry(), null);
-    assert.deepEqual(at.calls, []);
-});
-
-test('the entry stays hidden when the setting was never saved or cannot be read', async () => {
-    const fresh = page(MENU, undefined, { transactionalMessages: undefined });
-    const unreadable = page(MENU, undefined, { isUnreadable: true });
-    await tick();
-    assert.equal(fresh.entry(), null);
-    assert.equal(unreadable.entry(), null);
+test('the entry is there without any setting: it is no preview feature and cannot be switched off', async () => {
+    // a setting left over from when the entry was a preview feature is not looked at
+    for (const stored of [{}, { transactionalMessages: 'off' }, { isBroken: true }]) {
+        const at = page(MENU, undefined, stored);
+        // at once, without waiting for anything
+        assert.ok(at.entry());
+        await tick();
+        assert.ok(at.entry());
+        assert.deepEqual(at.settingsRead, []);
+        assert.deepEqual(at.calls, []);
+    }
 });
 
 /**
  * Opens the options page with the given saved settings.
  *
  * @param {Object.<string, string>} stored saved settings
+ * @param {string} [html] the page, when it is not the one of the extension as it is
  * @returns {Promise.<{window: Window, preview: Element, saved: object[]}>} the page, the group of preview features and what was saved
  */
-async function optionsPage(stored) {
-    const { window } = new JSDOM(read('../src/options.html'), { runScripts: 'outside-only' });
+async function optionsPage(stored, html = read('../src/options.html')) {
+    const { window } = new JSDOM(html, { runScripts: 'outside-only' });
     const saved = [];
     window.chrome = {
         storage: {
@@ -261,35 +253,53 @@ async function optionsPage(stored) {
     return { window, preview: window.document.querySelector('#preview'), saved };
 }
 
-test('the options keep the preview features out of sight until asked for', async () => {
+test('the options keep the preview features out of sight until asked for, and say that there are none', async () => {
     const fresh = await optionsPage({});
     const click = (altKey) =>
         fresh.window.document
             .querySelector('#copyright')
             .dispatchEvent(new fresh.window.MouseEvent('click', { bubbles: true, altKey }));
-    const radios = [...fresh.preview.querySelectorAll('input[name="transactionalMessages"]')];
-    assert.deepEqual(
-        radios.map((radio) => [radio.value, radio.checked]),
-        [
-            ['off', true],
-            ['on', false],
-        ],
-    );
     assert.equal(fresh.preview.hidden, true);
     click(false);
     assert.equal(fresh.preview.hidden, true);
     click(true);
     assert.equal(fresh.preview.hidden, false);
-    radios[1].click();
-    assert.deepEqual(fresh.saved, [{ transactionalMessages: 'on' }]);
+    assert.equal(fresh.preview.querySelector('legend').textContent, 'Preview features');
+    assert.equal(
+        fresh.preview.querySelector('p').textContent,
+        'There are no preview features at the moment.',
+    );
+    assert.equal(fresh.preview.querySelectorAll('input').length, 0);
+    assert.deepEqual(fresh.saved, []);
 
+    // other settings off their default do not show it, and neither does what was saved for
+    // Transactional Messages while they were a preview feature
+    const other = await optionsPage({
+        readableKeys: 'off',
+        editorTheme: 'dark',
+        transactionalMessages: 'on',
+    });
+    assert.equal(other.preview.hidden, true);
+});
+
+test('a preview feature that is switched on shows its group by itself', async () => {
+    // the group holds no feature at the moment, so one is put in as a later version would have it
+    const html = read('../src/options.html').replace(
+        '<legend>Preview features</legend>',
+        `<legend>Preview features</legend>
+        <label><input type="radio" name="comingSoon" value="off" />off</label>
+        <label><input type="radio" name="comingSoon" value="on" />on</label>`,
+    );
+    assert.match(html, /name="comingSoon"/);
+    const off = await optionsPage({}, html);
+    assert.equal(off.preview.hidden, true);
+    assert.equal(off.preview.querySelector('input[value="off"]').checked, true);
+    off.preview.querySelector('input[value="on"]').click();
+    assert.deepEqual(off.saved, [{ comingSoon: 'on' }]);
     // switched on, it shows by itself, so that it can be switched off again
-    const on = await optionsPage({ transactionalMessages: 'on' });
+    const on = await optionsPage({ comingSoon: 'on' }, html);
     assert.equal(on.preview.hidden, false);
     assert.equal(on.preview.querySelector('input[value="on"]').checked, true);
-    // other settings off their default do not show it
-    const other = await optionsPage({ readableKeys: 'off', editorTheme: 'dark' });
-    assert.equal(other.preview.hidden, true);
 });
 
 test('a click opens the panel on the SMS list and does not reach the page', async () => {
@@ -695,7 +705,7 @@ test('"Refresh" reads the list again and says when it was read', async () => {
     assert.match(at.text(), /no transactional Push messages/);
 });
 
-test('the lists are forgotten when the menu is drawn again or the entry is switched on again', async () => {
+test('the lists are forgotten when the menu is drawn again', async () => {
     const at = page('<div id="shell"></div>');
     at.document.querySelector('#shell').innerHTML = MENU;
     await at.open();
@@ -709,11 +719,6 @@ test('the lists are forgotten when the menu is drawn again or the entry is switc
     at.document.body.append(at.document.createElement('div'));
     await at.open();
     assert.equal(listReads(at), 2);
-    await click(at, 'close');
-    at.change({ transactionalMessages: 'off' });
-    at.change({ transactionalMessages: 'on' });
-    await at.open();
-    assert.equal(listReads(at), 3);
 });
 
 // rows whose order differs by every column, and whose dates sort another way once they are written out
@@ -3410,8 +3415,9 @@ test('the entry and the panel carry the icon of the extension, which names it', 
     // the header stays while the list and the details change below it
     await tab(at, 'ott');
     assert.equal(inPanel.isConnected, true);
-    // a page may only load that one file of the extension; the pages with a code editor show it in
-    // the boxes of the language features
+    // a page may load that one file of the extension; the pages with a code editor show it in
+    // the boxes of the language features. The page of the panel may also load the code editor
+    // of a message, which has a test of its own
     assert.deepEqual(manifest.web_accessible_resources, [
         {
             resources: ['icons/icon16.png'],
@@ -3420,6 +3426,10 @@ test('the entry and the panel carry the icon of the extension, which names it', 
                 'https://*.marketingcloudapps.com/*',
                 'https://*.lightning.force.com/*',
             ],
+        },
+        {
+            resources: EDITOR_FILES,
+            matches: ['https://*.exacttarget.com/*'],
         },
     ]);
     // every box of the language features carries it in its corner, at its 16 pixels
@@ -3973,9 +3983,15 @@ test('the manifest runs the script on the Marketing Cloud page only, in its top 
     const [entry] = entries;
     assert.deepEqual(entry.matches, ['https://*.exacttarget.com/cloud/*']);
     assert.deepEqual(entry.include_globs, ['https://mc.*']);
-    assert.deepEqual(entry.css, ['transactional-messages.css']);
-    // the rule that makes a key from a name comes first, for the form of a new message
-    assert.deepEqual(entry.js, ['key-rule.js', 'transactional-messages.js']);
+    // the styles of the code editor of a message come first, so that the panel's own win
+    assert.deepEqual(entry.css, [
+        'editor-codemirror.css',
+        'editor-highlight.css',
+        'transactional-messages.css',
+    ]);
+    // the rule that makes a key from a name comes first, for the form of a new message; the
+    // theme of the code editor is the one chosen in the options
+    assert.deepEqual(entry.js, ['key-rule.js', 'editor-theme.js', 'transactional-messages.js']);
     // the menu is in the page itself, not in the frames of the apps
     assert.equal(entry.all_frames, undefined);
     // the script uses the page's session through its own requests; it needs no place in the page's world
@@ -3992,4 +4008,294 @@ test('every rule of the stylesheet is limited to the panel', () => {
     for (const selector of selectors) {
         assert.match(selector.trim(), /^\.sfmc-ux-tools-transactional-/);
     }
+});
+
+// an editor keeps timers running, which keep the tests from ending
+const withEditors = new Set();
+after(() => {
+    for (const window of withEditors) {
+        window.close();
+    }
+});
+
+/**
+ * Loads a script of the code editor into a page, as the browser would.
+ *
+ * @param {Window} window the page
+ * @param {string} url address of the file of the extension
+ */
+async function loadEditorFile(window, url) {
+    withEditors.add(window);
+    // jsdom has no layout; CodeMirror only needs these to exist
+    window.Range.prototype.getBoundingClientRect = () => ({ left: 0, right: 0, top: 0, bottom: 0 });
+    window.Range.prototype.getClientRects = () => [];
+    const file = url.slice(EXTENSION.length);
+    assert.ok(url.startsWith(EXTENSION) && EDITOR_FILES.includes(file), url);
+    window.eval(read(`../dist/extension/${file}`));
+}
+
+/**
+ * Opens something in a page that loads the scripts of the code editor in a given way.
+ *
+ * @template T
+ * @param {() => Promise.<T>} open opens the page
+ * @param {(window: Window, url: string) => Promise.<void>} [load] how the page loads a script
+ * @returns {Promise.<T>} what was opened, once the editor had the time to be set up
+ */
+async function withEditor(open, load = loadEditorFile) {
+    importing.load = load;
+    try {
+        const at = await open();
+        // the scripts are loaded one after the other
+        for (let waited = 0; waited <= EDITOR_FILES.length; waited++) {
+            await tick();
+        }
+        at.editor = () => at.panel().querySelector('.CodeMirror')?.CodeMirror;
+        return at;
+    } finally {
+        importing.load = neverLoaded;
+    }
+}
+
+/**
+ * Presses a key in the code editor of a form.
+ *
+ * @param {object} at the page
+ * @param {object} key what the key is: key, keyCode and the keys held with it
+ * @returns {KeyboardEvent} the event, after the page handled it
+ */
+function press(at, key) {
+    const event = new at.window.KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        ...key,
+    });
+    at.editor().getInputField().dispatchEvent(event);
+    return event;
+}
+
+const MESSAGE = 'content.message';
+const pause = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+test('the form of an SMS message gets a code editor for the message, and keeps its field', async () => {
+    const at = await withEditor(() => form('sms'));
+    assert.deepEqual(
+        at.imported,
+        EDITOR_FILES.map((file) => EXTENSION + file),
+    );
+    const editor = at.editor();
+    assert.ok(editor, 'the editor is there');
+    assert.equal(editor.getOption('mode'), 'ampScriptHtmlMixed');
+    const wrapper = editor.getWrapperElement();
+    assert.equal(at.form().contains(wrapper), true);
+    // a click into the editor is none on the label of the field
+    assert.equal(wrapper.closest('label'), null);
+    const field = at.field(MESSAGE);
+    assert.equal(field.localName, 'textarea');
+    assert.equal(field.required, true);
+    assert.equal(field.classList.contains('sfmc-ux-tools-transactional-coded'), true);
+    assert.equal(field.tabIndex, -1);
+    assert.equal(field.closest('label').nextElementSibling, wrapper.parentNode);
+    // the editor is called what the field is called
+    const typing = editor.getInputField();
+    const title = at.document.querySelector(`#${typing.getAttribute('aria-labelledby')}`);
+    assert.equal(title.textContent, 'Message *');
+    assert.equal(typing.getAttribute('aria-required'), 'true');
+    // the Tab key moves on to the next field
+    assert.equal(editor.getOption('extraKeys').Tab, false);
+});
+
+test('the forms of push and OTT messages load no code editor', async () => {
+    for (const kind of ['push', 'ott']) {
+        const at = await withEditor(() => form(kind));
+        assert.deepEqual(at.imported, []);
+        assert.equal(at.editor(), undefined);
+        assert.equal(at.form().querySelector('textarea'), null);
+    }
+});
+
+test('what is changed in the code editor goes to the field, and so into the new message', async () => {
+    const at = await withEditor(() =>
+        form('sms', (path, method) => {
+            if (method === 'POST') {
+                return { status: 201, body: { definitionKey: 'Order_shipped' } };
+            }
+            return { body: path.includes('?') ? { definitions: [] } : DEFINITION };
+        }),
+    );
+    const field = at.field(MESSAGE);
+    let inputs = 0;
+    field.addEventListener('input', () => inputs++);
+    assert.equal(field.value, '');
+    at.editor().replaceRange('%%=Uppercase(@name)=%%\nis on its way.', { line: 0, ch: 0 });
+    assert.equal(field.value, '%%=Uppercase(@name)=%%\nis on its way.');
+    assert.equal(inputs, 1);
+    // what is put into the field itself shows in the editor, and is not written back
+    at.type(MESSAGE, 'On its way.');
+    assert.equal(at.editor().getValue(), 'On its way.');
+    assert.equal(inputs, 2);
+    at.editor().replaceRange(' Today.', { line: 0, ch: 11 });
+    at.type('name', 'Order shipped');
+    at.type('subscriptions.shortCode', '4912312345678');
+    at.type('subscriptions.keyword', 'ORDER');
+    await at.send();
+    assert.equal(at.sent().length, 1);
+    assert.deepEqual(at.sent()[0].content, { message: 'On its way. Today.' });
+});
+
+test('a message that is missing is still pointed at, in its field', async () => {
+    const at = await withEditor(() => form('sms'));
+    at.type('name', 'Order shipped');
+    at.type('subscriptions.shortCode', '4912312345678');
+    at.type('subscriptions.keyword', 'ORDER');
+    await at.send();
+    assert.deepEqual(at.sent(), []);
+    assert.equal(at.field(MESSAGE).validity.valueMissing, true);
+    // the browser's note needs the cursor to stay in the field; with a message, it goes on
+    at.field(MESSAGE).focus();
+    assert.equal(at.document.activeElement, at.field(MESSAGE));
+    at.editor().setValue('text');
+    at.field('name').focus();
+    at.field(MESSAGE).focus();
+    assert.equal(at.document.activeElement, at.editor().getInputField());
+});
+
+test('an Edit form with a code editor sends nothing untouched, and the message once it is changed', async () => {
+    const saved = { ...DEFINITION, content: { message: 'new text' } };
+    const at = await withEditor(() =>
+        editing(DEFINITION, (path, method, reads) => {
+            if (method !== 'GET') {
+                return { status: 200, body: { requestId: 'r-9' } };
+            }
+            return { body: reads === 1 ? DEFINITION : saved };
+        }),
+    );
+    assert.equal(at.editor().getValue(), 'line 1\nline 2');
+    assert.equal(at.field(MESSAGE).value, 'line 1\nline 2');
+    const before = at.calls.length;
+    await at.send();
+    assert.equal(at.calls.length, before);
+    assert.match(at.text(), /Nothing was changed, so nothing was sent\./);
+    // changed and changed back is no change either
+    at.editor().setValue('other');
+    at.editor().setValue('line 1\nline 2');
+    await at.send();
+    assert.equal(at.calls.length, before);
+    at.editor().setValue('new text');
+    await at.send();
+    assert.deepEqual(at.changes(), [{ content: { message: 'new text' } }]);
+    assert.match(at.text(), /^Saved “name of welcome” \(key welcome\)\./);
+});
+
+test('without the code editor the field of the message stays a plain one that works', async (t) => {
+    const failures = [
+        // the browser refuses the file
+        () => Promise.reject(new TypeError('Failed to fetch dynamically imported module')),
+        // the files run, but bring no editor
+        () => Promise.resolve(),
+    ];
+    // what a page says in its console comes out in the one of the tests
+    const warn = t.mock.method(console, 'warn', () => {});
+    for (const load of failures) {
+        warn.mock.resetCalls();
+        const at = await withEditor(
+            () =>
+                form('sms', (path, method) => {
+                    if (method === 'POST') {
+                        return { status: 201, body: { definitionKey: 'Order_shipped' } };
+                    }
+                    return { body: path.includes('?') ? { definitions: [] } : DEFINITION };
+                }),
+            load,
+        );
+        assert.equal(at.editor(), undefined);
+        assert.equal(at.form().querySelector('.sfmc-ux-tools-transactional-code'), null);
+        const field = at.field(MESSAGE);
+        assert.equal(field.className, '');
+        assert.equal(field.tabIndex, 0);
+        // said in the console only
+        assert.equal(warn.mock.callCount(), 1);
+        assert.match(
+            warn.mock.calls[0].arguments[0],
+            /^SFMC UX Tools: the code editor for the message/,
+        );
+        assert.equal(at.form().querySelector('.sfmc-ux-tools-transactional-error').hidden, true);
+        at.type('name', 'Order shipped');
+        at.type(MESSAGE, 'On its way.');
+        at.type('subscriptions.shortCode', '4912312345678');
+        at.type('subscriptions.keyword', 'ORDER');
+        await at.send();
+        assert.deepEqual(at.sent()[0].content, { message: 'On its way.' });
+    }
+});
+
+test('a message that cannot be changed here gets no code editor', async () => {
+    const at = await withEditor(() =>
+        editing({ ...DEFINITION, content: { message: { not: 'text' } } }),
+    );
+    assert.equal(at.field(MESSAGE).disabled, true);
+    assert.equal(at.editor(), undefined);
+});
+
+test('the code editor of a message has the colours and language features of every code editor, inside the panel', async () => {
+    const at = await withEditor(() => form('sms'));
+    const editor = at.editor();
+    editor.setValue('%%=Lookup(=%%');
+    // the scripts find the editor a moment after it is on the page
+    await pause();
+    assert.equal(editor.getTokenTypeAt({ line: 0, ch: 5 }), 'sfmc-function');
+    // suggestions: the list stands in the panel, which covers everything outside of it
+    editor.setValue('%%=Loo');
+    editor.setCursor({ line: 0, ch: 6 });
+    const keyMap = editor.state.keyMaps.find((map) => 'Ctrl-Space' in map);
+    assert.ok(keyMap, 'Ctrl-Space is bound');
+    keyMap['Ctrl-Space'](editor);
+    const labels = editor.state.completionActive.data.list.map((hint) => hint.displayText);
+    assert.ok(labels.includes('Lookup'), labels.join(' | '));
+    const list = at.document.querySelector('.CodeMirror-hints');
+    assert.equal(list.parentNode, at.panel());
+    // Escape closes the list and nothing else
+    let reached = 0;
+    at.panel().addEventListener('keydown', () => reached++);
+    const closing = press(at, { key: 'Escape', keyCode: 27 });
+    assert.equal(editor.state.completionActive, null);
+    assert.equal(closing.defaultPrevented, true);
+    assert.equal(reached, 0);
+    // without a list the key is the panel's, as in every other field
+    const leaving = press(at, { key: 'Escape', keyCode: 27 });
+    assert.equal(leaving.defaultPrevented, false);
+    assert.equal(reached, 1);
+    // Ctrl+S and Cmd+S do nothing: no dialog of the browser, nothing sent
+    assert.equal(press(at, { key: 's', keyCode: 83, ctrlKey: true }).defaultPrevented, true);
+    assert.equal(typeof editor.getOption('extraKeys')['Cmd-S'], 'function');
+    assert.deepEqual(at.written, []);
+    // parameter help: its box stands in the panel too
+    editor.focus();
+    editor.setValue('%%=Lookup(=%%');
+    editor.setCursor({ line: 0, ch: 10 });
+    await pause();
+    const box = at.document.querySelector('.sfmc-signature');
+    assert.ok(box, 'parameter help is on show');
+    assert.equal(box.parentNode, at.panel());
+});
+
+test('the manifest lets the page of the panel load the code editor, and styles it', () => {
+    const manifest = JSON.parse(read('../dist/extension/manifest.json'));
+    const loadable = manifest.web_accessible_resources
+        .filter((item) => item.matches.includes('https://*.exacttarget.com/*'))
+        .flatMap((item) => item.resources);
+    for (const file of EDITOR_FILES) {
+        assert.ok(loadable.includes(file), `${file} can be loaded`);
+        assert.ok(read(`../dist/extension/${file}`).length > 0);
+    }
+    // no formatter, and nothing of the editor runs before a form asks for it
+    const scripts = manifest.content_scripts
+        .filter((item) => item.matches.some((match) => match.includes('exacttarget.com')))
+        .flatMap((item) => item.js);
+    for (const file of [...EDITOR_FILES, 'editor-format.js']) {
+        assert.equal(scripts.includes(file), false, file);
+    }
+    // CodeMirror's own stylesheet, with the mode Marketing Cloud's editors are known by
+    assert.match(read('../dist/extension/editor-codemirror.css'), /\.CodeMirror-lines \{/);
+    assert.match(read('../dist/extension/editor-codemirror.js'), /ampScriptHtmlMixed/);
 });

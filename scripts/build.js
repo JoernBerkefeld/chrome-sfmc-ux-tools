@@ -5,6 +5,7 @@
  *   and sfmc-language-lsp, editor-format.js by a bundle of that file, Prettier and
  *   prettier-plugin-sfmc, and editor-typescript.js by a minified bundle of that file, TypeScript,
  *   the SSJS service of sfmc-language-lsp and the declarations of the SSJS globals of ssjs-data,
+ *   editor-codemirror.js and editor-codemirror.css by bundles of those files and CodeMirror 5,
  *   and to which key-rule-page.js is added, a copy of key-rule.js;
  * - dist/chrome-sfmc-ux-tools-v<version>.zip is the same folder packed for the Chrome Web Store.
  * manifest.json ends up at the root of the archive; entry paths always use forward slashes.
@@ -28,6 +29,15 @@ const BUNDLES = {
         library: 'sfmc-language-lsp',
     },
     'editor-format.js': { title: 'formatting in the code editor', library: 'prettier-plugin-sfmc' },
+    // the one editor the extension brings itself; everywhere else it works on the page's own
+    'editor-codemirror.js': {
+        title: 'code editor of the panel Transactional Messages',
+        library: 'codemirror',
+    },
+    'editor-codemirror.css': {
+        title: 'layout of the code editor of the panel Transactional Messages',
+        library: 'codemirror',
+    },
     // TypeScript is large, so this bundle alone is minified
     'editor-typescript.js': {
         title: 'TypeScript-based language features for SSJS in the code editor',
@@ -88,9 +98,10 @@ const browserPrettier = {
 };
 
 /**
- * Bundles a script and the packages it uses into one classic script.
+ * Bundles a script and the packages it uses into one classic script, or a stylesheet and the
+ * stylesheets it imports into one stylesheet.
  *
- * @param {string} file name of the script in ./src
+ * @param {string} file name of the script or stylesheet in ./src
  * @returns {Promise.<Uint8Array>} the bundle
  */
 async function bundle(file) {
@@ -111,12 +122,13 @@ async function bundle(file) {
         write: false,
         logLevel: 'warning',
         banner: {
-            js: `/* SFMC UX Tools - ${title}. Built from src/${file}; includes ${library} ${version}. */`,
+            [path.extname(file).slice(1)]:
+                `/* SFMC UX Tools - ${title}. Built from src/${file}; includes ${library} ${version}. */`,
         },
     });
     const [{ contents, text }] = result.outputFiles;
     // Chrome refuses both in the scripts of an extension
-    const dynamicCode = findDynamicCode(text);
+    const dynamicCode = file.endsWith('.js') ? findDynamicCode(text) : [];
     if (dynamicCode.length) {
         throw new Error(`the bundle of ${file} contains ${dynamicCode.join(', ')}`);
     }

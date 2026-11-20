@@ -35,6 +35,15 @@
                 "https://*.marketingcloudapps.com/*",
                 "https://*.lightning.force.com/*"
             ]
+        },
+        {
+            "resources": [
+                "editor-codemirror.js",
+                "language-data.js",
+                "editor-highlight.js",
+                "editor-language.js"
+            ],
+            "matches": ["https://*.exacttarget.com/*"]
         }
     ],
     "content_scripts": [
@@ -135,8 +144,8 @@
         {
             "matches": ["https://*.exacttarget.com/cloud/*"],
             "include_globs": ["https://mc.*"],
-            "js": ["key-rule.js", "transactional-messages.js"],
-            "css": ["transactional-messages.css"],
+            "js": ["key-rule.js", "editor-theme.js", "transactional-messages.js"],
+            "css": ["editor-codemirror.css", "editor-highlight.css", "transactional-messages.css"],
             "run_at": "document_idle"
         },
         {

@@ -25,7 +25,9 @@ Everything below works on its own after installing; there is nothing to set up. 
 
 ### Where it works
 
-#### Marketing Cloud Engagement
+Every section below starts with the platforms it works on: [![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) for Marketing Cloud Engagement, [![Next](images/badge-next.svg)](#marketing-cloud-next) for Marketing Cloud Next.
+
+#### Marketing Cloud ![Engagement](images/badge-engagement.svg)
 
 - **Content Builder**: the code view of emails, templates and content blocks, and new content blocks and emails for [readable keys](#readable-keys).
 - **Email Studio and CloudPages**: both open Content Builder's code view, so everything said about Content Builder applies there too.
@@ -42,26 +44,14 @@ Everything below works on its own after installing; there is nothing to set up. 
 - **Setup → Installed Packages**: the dialog with the list of scopes.
 - **The Mobile Studio menu** at the top of Marketing Cloud: the entry for [transactional messages](#transactional-messages-sms-push-and-ott).
 
-#### Marketing Cloud Next
+#### Marketing Cloud ![Next](images/badge-next.svg)
 
-- **CMS content editor**: the code of an email made with **Create with HTML**, and the **HTML** component in emails, landing pages and the content blocks for both.
-    - **Explanations for every AMPscript function Marketing Cloud Next has:** point at a function to read what it does, with all its parameters, an example and links.
-        - The editor explains 41 functions itself, in one sentence each. While the mouse is on AMPscript, the extension hides that box and shows its own, so you never get two explanations at once. On a Handlebars helper it is the other way round: the editor's box shows and ours does not.
-        - 23 functions that came with API version 68 get no explanation from the editor at all. For those, ours is the only one: `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `LookupOrderedRows`, `LookupRows`, `MD5`, `RegExMatch`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
-    - **Suggestions for every AMPscript function, also the ones the editor leaves out:** while you type a function name inside `%%[ ]%%` or `%%= =%%`, and on **Ctrl+Space** there, the extension suggests all 64 AMPscript functions Marketing Cloud Next has.
-        - The editor's own list only opens at the moment you type `%%=` or `%%[`. While it is open, ours stays away.
-        - Our list has the extension's icon in its corner.
-        - Inside `{{ }}`, **Ctrl+Space** still opens the editor's own list of Handlebars helpers.
-        - The editor's own list offers 37 AMPscript functions. These 27 are missing from it; with the extension you get them suggested, explained and with parameter help:
-        - `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `ContentBlockByID`, `ContentBlockByKey`, `ContentBlockByName`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `MD5`, `RaiseError`, `RegExMatch`, `ReplaceList`, `RetrieveSalesforceObjects`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
-        - Counted in the editor of an email content block in November 2026; Salesforce may add to its lists at any time.
-    - **Which box is ours:** every box of the extension has its small icon in the top right corner. The editor's own boxes have none.
-    - **Parameter help:** while you type a helper or a function, a box lists what it takes.
-    - **Checks:** AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why.
-    - **Tidying up:** **Shift+Alt+F** formats the code. One **Ctrl+Z** takes it back.
-    - **Left to Salesforce:** the colours and everything about Handlebars. The extension explains, suggests and checks no Handlebars helper there, and adds no theme and no formatting on save.
+- **CMS content editor**: the code of an email made with **Create with HTML**, and the **HTML** component in emails, landing pages and the content blocks for both. It gets [suggestions](#suggestions-while-you-type), [explanations](#explanations-when-you-point-at-code), [help with a function's inputs](#help-with-a-functions-inputs), [underlined mistakes](#mistakes-are-underlined) with [fixes](#one-click-fixes) and [tidying up](#tidy-up-your-code-formatting), all for AMPscript.
+- **Left to Salesforce:** the colours and everything about Handlebars. The extension explains, suggests and checks no Handlebars helper there, and adds no theme and no formatting on save.
 
 ### Colours in the code editor
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
 
 ![A code editor with made-up AMPscript, HTML and server-side JavaScript in colour: keywords, functions, variables, texts and comments each have their own colour](images/colours.png)
 
@@ -76,6 +66,8 @@ Marketing Cloud colours HTML but shows AMPscript as plain black text. The extens
 
 ### Light and dark theme
 
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
 ![The same made-up code in the dark theme: light text and colours on a dark background](images/theme-dark.png)
 
 - The editor follows your computer: dark if your computer is in dark mode, light otherwise. It switches along when your computer does.
@@ -85,6 +77,8 @@ Marketing Cloud colours HTML but shows AMPscript as plain black text. The extens
 - The SQL query activity follows the theme too and keeps Marketing Cloud's colours for SQL.
 
 ### Suggestions while you type
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) [![Next](images/badge-next.svg)](#marketing-cloud-next)
 
 ![Animation: while "SET @lastName = Look" is typed, a list offers Lookup, LookupOrderedRows, LookupRows and more, each with a short description; Lookup is picked and a box shows what it needs](images/completion.gif)
 
@@ -101,8 +95,15 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 - **In AMPscript**, the list stays away inside texts and comments and in plain HTML.
 - **Keys in the list**: the arrow keys move, **Enter** or **Tab** picks, **Esc** closes. In the script activity, **Page Up**, **Page Down**, **Home** and **End** work as well.
 - **Not covered yet**: in browser scripts, what belongs to a value, such as the functions of `document`.
+- **In Marketing Cloud Next**: every AMPscript function, also the ones the editor leaves out. While you type a function name inside `%%[ ]%%` or `%%= =%%`, and on **Ctrl+Space** there, the extension suggests all 64 AMPscript functions Marketing Cloud Next has.
+    - The editor's own list only opens at the moment you type `%%=` or `%%[`. While it is open, ours stays away.
+    - Inside `{{ }}`, **Ctrl+Space** still opens the editor's own list of Handlebars helpers.
+    - The editor's own list offers 37 AMPscript functions. These 27 are missing from it; with the extension you get them suggested, explained and with help for their inputs: `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `ContentBlockByID`, `ContentBlockByKey`, `ContentBlockByName`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `MD5`, `RaiseError`, `RegExMatch`, `ReplaceList`, `RetrieveSalesforceObjects`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
+    - Counted in the editor of an email content block in November 2026; Salesforce may add to its lists at any time.
 
 ### Explanations when you point at code
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) [![Next](images/badge-next.svg)](#marketing-cloud-next)
 
 ![Animation: the mouse comes to rest on the function AttributeValue and a box opens that explains it, with its input, links, an example and whether Marketing Cloud Next has it](images/hover.gif)
 
@@ -110,8 +111,21 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 - **Your own SSJS code is explained too**: point at one of your variables or functions and the box says what it is.
 - **You can move the mouse into the box** to scroll it or click a link.
 - Nothing is shown inside browser scripts.
+- **In Marketing Cloud Next**: every AMPscript function Marketing Cloud Next has is explained.
+    - The editor explains 41 functions itself, in one sentence each. While the mouse is on AMPscript, the extension hides that box and shows its own, so you never get two explanations at once. On a Handlebars helper it is the other way round: the editor's box shows and ours does not.
+    - 23 functions that came with API version 68 get no explanation from the editor at all. For those, ours is the only one: `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `LookupOrderedRows`, `LookupRows`, `MD5`, `RegExMatch`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
+
+### Which box is the extension's
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) [![Next](images/badge-next.svg)](#marketing-cloud-next)
+
+- Every box of the extension, such as an explanation or the help for a function's inputs, has its small icon in the top right corner.
+- Marketing Cloud's own boxes have none, so you always know who is speaking.
+- In Marketing Cloud Next, the extension's list of suggestions has the icon in its corner too.
 
 ### Help with a function's inputs
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) [![Next](images/badge-next.svg)](#marketing-cloud-next)
 
 ![Animation: while DateAdd( is typed, a box above the line lists its three inputs and marks the one being typed, with a sentence about it](images/signature.gif)
 
@@ -119,8 +133,11 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 - It also works when you click into a call that is already written.
 - It works for AMPscript functions, Marketing Cloud's SSJS functions and your own SSJS functions.
 - **Esc** closes it.
+- **In Marketing Cloud Next**: for every AMPscript function.
 
 ### Mistakes are underlined
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) [![Next](images/badge-next.svg)](#marketing-cloud-next)
 
 ![A misspelt function, ProperCse, is underlined in red; the box above it says that AMPscript has no such function](images/diagnostics.png)
 
@@ -134,22 +151,30 @@ The extension checks your AMPscript and SSJS while you type.
 - **Script activity**: a mark next to the line number shows where a problem is.
 - **Fixed in the script activity:** Marketing Cloud's own check marked the `<script runat="server">` tag as an error although it is correct. That false error is gone. **Validate Syntax** still asks Marketing Cloud as before.
 - **Not covered**: browser scripts are not checked, and there is no list of all problems yet.
+- **In Marketing Cloud Next**: AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why.
 
 ### One-click fixes
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) [![Next](images/badge-next.svg)](#marketing-cloud-next)
 
 ![A comment written with // in AMPscript is underlined in yellow; the box above it explains why and offers the button "Convert to AMPscript block comment"](images/quick-fix.png)
 
 - Where the extension knows a remedy, the box of a problem offers it as a button.
 - **Ctrl+.** (**Cmd+.** on a Mac) opens the fixes for the problem at your cursor. **Enter** applies the first one, **Esc** closes the box.
 - **Ctrl+Z** undoes a fix in one step.
+- **In Marketing Cloud Next**: the same, for the AMPscript mistakes the extension underlines there.
 
 ### Jump to where something is defined
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
 
 - Hold **Ctrl** (**Cmd** on a Mac) and click a name from your own SSJS code. The cursor jumps to the place where it is defined.
 - Works for your functions, variables and the parts of your own objects, within the same content.
 - Does not work for Marketing Cloud's own names or for AMPscript.
 
 ### Tidy up your code (formatting)
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) [![Next](images/badge-next.svg)](#marketing-cloud-next)
 
 ![Made-up code before and after a click on { }: first crammed onto a few long lines, then neatly indented, one statement and one HTML tag per line](images/format.png)
 
@@ -162,8 +187,11 @@ The extension checks your AMPscript and SSJS while you type.
 - **Script activity and SQL query activity**: the **{ }** button sits next to **Validate Syntax**. A query is tidied as SQL.
 - **CloudPages code resources**: JavaScript, CSS and JSON resources are tidied. A resource that mixes its own code with AMPscript or SSJS is left as it is, so nothing gets rearranged by mistake. XML, RSS and text resources have no **{ }** button.
 - **Format on save** (an option, off by default): your code is tidied automatically each time you save. In the script activity and the SQL query activity this happens when you click **Next**. It does not apply to CloudPages code resources, because their Save and Publish buttons sit outside the editor.
+- **In Marketing Cloud Next**: **Shift+Alt+F** tidies the code; there is no **{ }** button and no format on save. One **Ctrl+Z** takes it back.
 
 ### Save with Ctrl+S
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
 
 - **Ctrl+S** (**Cmd+S** on a Mac) in the code view of Content Builder saves your content, just like Marketing Cloud's **Save** button.
 - Without the extension, that key opens the browser's "save this page" window instead.
@@ -171,11 +199,15 @@ The extension checks your AMPscript and SSJS while you type.
 
 ### The browser's right-click menu in the code editor
 
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
 - A right-click in the code editor opens your browser's normal menu (copy, paste, spell check, …) instead of the menu Marketing Cloud draws over your code.
 - The gear button below the editor, which opens that same Marketing Cloud menu, is hidden.
 - You can get Marketing Cloud's menu and the gear button back in the options.
 
 ### Readable keys
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
 
 When you create something and leave its **External Key** empty, Marketing Cloud invents a random one such as `77E29FD6-6E4B-42EB-AA34-E4D6F91DCCCD`. With the extension, the key is filled in from the name while you type it: `Welcome series - step 2` becomes `Welcome_series_-_step_2`.
 
@@ -235,6 +267,8 @@ Good to know:
 
 ### Journey Builder: a real name before saving
 
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
 Every new journey starts with a name like "New Journey - 18 November 2026 at 11.03". It is easy to save it that way by accident, and the name is also handed on to the journey's API event.
 
 ![After a click on Save, the name "New Journey - 20 November 2026 at 10.30" is an open field with the name selected, and a message below it says: give the journey a name of its own before you save it](images/journey-name.png)
@@ -247,6 +281,8 @@ Every new journey starts with a name like "New Journey - 18 November 2026 at 11.
 
 ### Fixed: pasting a name or key with the mouse
 
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
 In Contact Builder's dialog for a new data extension, Marketing Cloud ignores text that you paste with the mouse (right-click → **Paste**) or drag into the field. The field shows your text, but it is not used.
 
 - **Pasted key:** without the extension, your data extension gets a random key instead of the one you pasted. With the extension, your key is used.
@@ -256,6 +292,8 @@ In Contact Builder's dialog for a new data extension, Marketing Cloud ignores te
 
 ### Fixed: an automation's name is kept when you click Save
 
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
 In Automation Studio you name a new automation in the small field at the top left. That field has its own **Done** and **Cancel** buttons.
 
 - **Without the extension:** if you type a name and click anywhere else, for example on **Save**, Marketing Cloud throws the name away. The "Save Automation" window then tells you that the automation has no name.
@@ -264,6 +302,8 @@ In Automation Studio you name a new automation in the small field at the top lef
 - **Always on.** This fix has no switch.
 
 ### Fixed: no saved logins in a new user
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
 
 When you create or edit a user under **Setup → Users**, the page has a username and password fields. A browser's password manager takes that for a login form.
 
@@ -277,6 +317,8 @@ When you create or edit a user under **Setup → Users**, the page has a usernam
 
 ### Select all scopes of an installed package
 
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
 When you add or edit an API integration under **Setup → Platform Tools → Apps → Installed Packages**, the dialog lists around a hundred checkboxes.
 
 ![Animation: the mouse clicks Select all in the Scope bar of a package dialog; every box is ticked, the button now says Deselect all, and the list scrolls down to show that the scopes further down are ticked too](images/scopes.gif)
@@ -287,6 +329,8 @@ When you add or edit an API integration under **Setup → Platform Tools → App
 - Works in every language of Marketing Cloud, when adding a component and when editing one.
 
 ### Transactional messages: SMS, push and OTT
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
 
 ![The panel Transactional Messages on its SMS tab: six made-up messages with name, key, status, code, keyword and dates, a search box and the list "All (6)" to show one status only](images/panel-list.png)
 

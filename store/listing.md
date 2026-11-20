@@ -89,15 +89,15 @@ English
 
 ### Graphic assets
 
-| Asset              | Size                                          | Needed            | Source                                                                              |
-| ------------------ | --------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------- |
-| Store icon         | 128 × 128 PNG                                 | yes               | `src/icons/icon128.png`                                                             |
-| Screenshots        | 1280 × 800 (or 640 × 400) PNG or JPEG, 1 to 5 | at least 1        | to be taken from the demo pages with `scripts/screenshots.js`, made-up content only |
-| Small promo tile   | 440 × 280 PNG or JPEG                         | see the dashboard | not made yet                                                                        |
-| Marquee promo tile | 1400 × 560 PNG or JPEG                        | no                | not made yet                                                                        |
-| Promo video        | YouTube link                                  | no                | none                                                                                |
+| Asset              | Size                                          | Needed            | Source                                                                                                                       |
+| ------------------ | --------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Store icon         | 128 × 128 PNG                                 | yes               | `src/icons/icon128.png`                                                                                                      |
+| Screenshots        | 1280 × 800 (or 640 × 400) PNG or JPEG, 1 to 5 | at least 1        | `store/images/screenshot-1.jpg` … `screenshot-5.jpg`, made from the README pictures of the demo pages (made-up content only) |
+| Small promo tile   | 440 × 280 PNG or JPEG                         | see the dashboard | not made yet                                                                                                                 |
+| Marquee promo tile | 1400 × 560 PNG or JPEG                        | no                | not made yet                                                                                                                 |
+| Promo video        | YouTube link                                  | no                | none                                                                                                                         |
 
-Suggested screenshots, in this order: completions in the code editor, the hover explanation, the panel Transactional Messages, readable keys, the dark theme.
+Upload them in their order: 1 colours in light and dark, 2 underlined mistakes and a fix, 3 tidying up, 4 the panel Transactional Messages, 5 readable keys and the journey name check.
 
 ### Additional fields
 

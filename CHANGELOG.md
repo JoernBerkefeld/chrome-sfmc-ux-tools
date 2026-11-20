@@ -1,6 +1,8 @@
 # Changelog
 
-## [0.4.0]
+## [1.0.0] - 2026-11-20
+
+First release in the Chrome Web Store.
 
 ### Changed
 

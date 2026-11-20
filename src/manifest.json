@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "SFMC UX Tools",
-    "version": "0.4.0",
-    "description": "Usability helpers for Salesforce Marketing Cloud Engagement: editor themes, AMPscript and SSJS completions, select-all for scopes.",
+    "version": "1.0.0",
+    "description": "Usability helpers for Salesforce Marketing Cloud Engagement and Next: code editor help, readable keys, transactional messages.",
     "minimum_chrome_version": "122",
     "icons": {
         "16": "icons/icon16.png",

@@ -1,8 +1,8 @@
 {
     "name": "chrome-sfmc-ux-tools",
     "displayName": "SFMC UX Tools",
-    "description": "Chrome extension with usability helpers for Salesforce Marketing Cloud Engagement: AMPscript colours and completions in the code editor, select-all for package scopes.",
-    "version": "0.4.0",
+    "description": "Chrome extension with usability helpers for Salesforce Marketing Cloud Engagement and Next: code editor help, readable keys, transactional messages.",
+    "version": "1.0.0",
     "private": true,
     "type": "module",
     "author": "Jörn Berkefeld",

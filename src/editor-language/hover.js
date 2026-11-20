@@ -268,6 +268,9 @@ export function registerHover(cm) {
             return;
         }
 
+        // the key is used up: a dialog around the editor stays open
+        event.preventDefault();
+        event.stopPropagation();
         hide();
         cm.focus();
     });

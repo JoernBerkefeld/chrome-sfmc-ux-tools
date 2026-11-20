@@ -5,6 +5,7 @@
  */
 import { AMPSCRIPT, IS_NEXT, isInMode, languageAt, nearbyElement, report } from './shared.js';
 import { completionsAt, isTypingName } from './core/completions.js';
+import { coveringDialog } from './tooltip.js';
 
 const TRIGGER_DELAY = 100;
 const TRIGGER_CHARACTER = /[\w@.$]$/;
@@ -119,7 +120,7 @@ function didShow(cm) {
             completeSingle: false,
             // a dialog that is open covers everything that is not inside of it; without one
             // the list goes to the end of the page, as the hint addon has it
-            container: cm.getWrapperElement().closest?.('dialog') ?? null,
+            container: coveringDialog(cm.getWrapperElement()),
         });
         return true;
     } catch (ex) {

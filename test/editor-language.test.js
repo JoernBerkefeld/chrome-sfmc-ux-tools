@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
+import { coveringDialog } from '../src/editor-language/tooltip.js';
 import { findDynamicCode } from '../scripts/find-dynamic-code.js';
 
 // these tests run the built extension; "npm test" builds it first (pretest)
@@ -514,6 +515,107 @@ test('boxes go away with their editor', async () => {
     await pause();
     assert.equal(box(), null);
     assert.equal(document.querySelector(HOVER), null);
+});
+
+test('an editor that left the page is let go of once, and watched again when it comes back', async () => {
+    const context = page();
+    const { editor, box } = await withCursor(context, '%%[ set @a = Lookup("de", |"field") ]%%');
+    const { document } = context.window;
+    const shown = box();
+    const wrapper = editor.getWrapperElement();
+    wrapper.remove();
+    await pause();
+    assert.equal(box(), null);
+    // the page changes on; what was taken away is not taken away again
+    let removals = 0;
+    const { remove } = shown;
+    shown.remove = () => removals++;
+    for (let change = 0; change < 3; change++) {
+        document.body.append(document.createElement('p'));
+        await pause();
+    }
+    assert.equal(removals, 0);
+    shown.remove = remove;
+    // back on the page it works as before, and its box goes with it again
+    document.body.append(wrapper);
+    await pause();
+    context.CodeMirror.signal(editor, 'cursorActivity', editor);
+    await pause();
+    assert.equal(box(), shown);
+    wrapper.remove();
+    await pause();
+    assert.equal(box(), null);
+});
+
+/**
+ * Puts a focused editor into a dialog that is open, with the cursor in a call and behind the
+ * start of a name, and opens its suggestions.
+ *
+ * @param {(dialog: HTMLDialogElement, document: Document) => void} place puts the dialog on the page
+ * @returns {Promise.<{document: Document, dialog: HTMLDialogElement, parents: () => (Node | null)[]}>} the page, the dialog, and where the box of the parameter help and the list of suggestions stand
+ */
+async function inDialog(place) {
+    const context = page();
+    const { document } = context.window;
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    place(dialog, document);
+    const content = '%%[ set @a = Lookup("de", Loo';
+    const editor = new context.CodeMirror(dialog, { value: content, mode: BASE_MODE });
+    editor.setCursor(editor.posFromIndex(content.length));
+    editor.hasFocus = () => true;
+    editor.cursorCoords = () => ({ left: 10, right: 10, top: 100, bottom: 115 });
+    runExtension(context.window);
+    context.CodeMirror.signal(editor, 'cursorActivity', editor);
+    await pause();
+    pressCtrlSpace(editor);
+    assert.ok(hints(editor).length > 0);
+    return {
+        document,
+        dialog,
+        parents: () => [
+            document.querySelector(SIGNATURE).parentNode,
+            document.querySelector(POPUP).parentNode,
+        ],
+    };
+}
+
+/**
+ * Makes a dialog say that it is a modal one; jsdom knows none.
+ *
+ * @param {HTMLDialogElement} dialog the dialog
+ */
+function asModal(dialog) {
+    const { matches } = dialog;
+    dialog.matches = (selector) => selector === ':modal' || matches.call(dialog, selector);
+}
+
+test('boxes and suggestions stand in a dialog only if it is a modal one of the page itself', async () => {
+    const modal = await inDialog((dialog, document) => {
+        asModal(dialog);
+        document.body.append(dialog);
+    });
+    assert.deepEqual(modal.parents(), [modal.dialog, modal.dialog]);
+    // a dialog that is merely open covers nothing
+    const open = await inDialog((dialog, document) => document.body.append(dialog));
+    assert.deepEqual(open.parents(), [open.document.body, open.document.body]);
+    // nor is one of a shadow tree used, which the stylesheet of the boxes does not reach into
+    const { document } = open;
+    const inside = (dialog) => {
+        const element = document.createElement('div');
+        dialog.append(element);
+        return element;
+    };
+    const shadowed = document.createElement('dialog');
+    asModal(shadowed);
+    const host = document.createElement('div');
+    document.body.append(host);
+    host.attachShadow({ mode: 'open' }).append(shadowed);
+    assert.equal(coveringDialog(inside(shadowed)), null);
+    assert.equal(coveringDialog(inside(modal.dialog)), modal.dialog);
+    assert.equal(coveringDialog(inside(open.dialog)), null);
+    assert.equal(coveringDialog(document.body), null);
+    assert.equal(coveringDialog(), null);
 });
 
 /**
@@ -1142,10 +1244,18 @@ test('quick fixes: Ctrl-. opens them at the cursor, for the text as it is now', 
     assert.ok(button);
     assert.equal(document.activeElement, button, 'ready for Enter');
     assert.equal(document.querySelector(`${HOVER} pre`), null, 'fixes only, no documentation');
-    button.dispatchEvent(
-        new context.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-    );
+    // Escape closes the box and is used up by that: nothing around the box gets the key
+    let reached = 0;
+    document.body.addEventListener('keydown', () => reached++);
+    const escape = new context.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+    });
+    button.dispatchEvent(escape);
     assert.equal(document.querySelector(HOVER), null);
+    assert.equal(escape.defaultPrevented, true);
+    assert.equal(reached, 0);
 
     editor.setOption('readOnly', true);
     assert.equal(keys['Ctrl-.'](editor), context.CodeMirror.Pass);

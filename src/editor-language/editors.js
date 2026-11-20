@@ -281,20 +281,32 @@ export function editorsOnPage() {
  */
 export function watchEditors(name, features) {
     const marker = Symbol.for(`sfmcUxTools.${name}`);
-    const cleanups = [];
+    // what takes away what the features of an editor show, kept for as long as the editor is
+    const cleanups = new WeakMap();
+    // the editors that were set up and are on the page; one that has left it is let go of
+    const onPage = new Set();
 
     const scan = () => {
-        for (const { wrapper, cleanup } of cleanups) {
-            try {
-                if (!wrapper.isConnected) {
+        for (const cm of onPage) {
+            if (cm.getWrapperElement().isConnected) {
+                continue;
+            }
+            // once: an editor that is off the page shows nothing new
+            onPage.delete(cm);
+            for (const cleanup of cleanups.get(cm)) {
+                try {
                     cleanup();
+                } catch (ex) {
+                    report(ex);
                 }
-            } catch (ex) {
-                report(ex);
             }
         }
         for (const cm of editorsOnPage()) {
             try {
+                if (cm?.[marker] === true && cleanups.has(cm)) {
+                    // also one that was taken off the page and has come back
+                    onPage.add(cm);
+                }
                 if (
                     !cm ||
                     cm[marker] === true ||
@@ -308,12 +320,15 @@ export function watchEditors(name, features) {
                 // one odd editor must not keep the others from being set up
                 continue;
             }
+            const taken = [];
+            cleanups.set(cm, taken);
+            onPage.add(cm);
             for (const feature of features) {
                 // a feature that fails does not keep the others away
                 try {
                     const cleanup = feature(cm);
                     if (cleanup) {
-                        cleanups.push({ wrapper: cm.getWrapperElement(), cleanup });
+                        taken.push(cleanup);
                     }
                 } catch (ex) {
                     report(ex);

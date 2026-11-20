@@ -56,14 +56,22 @@ function page(html, answer = () => ({ body: { definitions: [], count: 0 } }), st
         runScripts: 'outside-only',
         url: 'https://mc.s7.exacttarget.com/cloud/',
     });
-    // jsdom has the element but not the two methods the panel uses
+    // jsdom has the element but not the two methods the panel uses, and so never finds a dialog
+    // to be a modal one
     window.eval(`
+        const modal = new WeakSet();
+        const { matches } = Element.prototype;
         HTMLDialogElement.prototype.showModal = function () {
             this.setAttribute('open', '');
+            modal.add(this);
         };
         HTMLDialogElement.prototype.close = function () {
             this.removeAttribute('open');
+            modal.delete(this);
             this.dispatchEvent(new Event('close'));
+        };
+        HTMLDialogElement.prototype.matches = function (selector) {
+            return selector === ':modal' ? modal.has(this) : matches.call(this, selector);
         };
         // nor does it scroll; what was asked to be scrolled to is noted by its id
         globalThis.scrolled = [];
@@ -2040,6 +2048,34 @@ test('the lists of names are read once for the details and the forms, until "Ref
     await tick();
     await tick();
     assert.deepEqual(count(), [3, 3]);
+});
+
+test('a list of names that was read keeps nothing of those who ask for it later', async () => {
+    const at = await pushDetails();
+    // every function the page puts into a list of its own from here on
+    at.window.eval(`{
+        const { push } = Array.prototype;
+        globalThis.kept = [];
+        Array.prototype.push = function (...items) {
+            push.apply(
+                globalThis.kept,
+                items.filter((item) => typeof item === 'function'),
+            );
+            return push.apply(this, items);
+        };
+    }`);
+    // the form of the message and the details again: both ask for the lists that were read
+    for (const text of ['Edit', 'Cancel']) {
+        [...at.panel().querySelectorAll('button')]
+            .find((item) => item.textContent === text)
+            .click();
+        await tick();
+        await tick();
+    }
+    assert.deepEqual([reads(at, APPS), reads(at, CONTENTS)], [1, 1]);
+    assert.equal(at.named().applicationId, 'Staff app');
+    // whether the one who asked still waits is of no interest any more, so it is not kept
+    assert.deepEqual(Array.from(at.window.kept, String), []);
 });
 
 test('the form names the app and the content under their fields, while typing and for what is stored', async () => {
@@ -4277,6 +4313,70 @@ test('the code editor of a message has the colours and language features of ever
     const box = at.document.querySelector('.sfmc-signature');
     assert.ok(box, 'parameter help is on show');
     assert.equal(box.parentNode, at.panel());
+});
+
+test('Escape closes an open box of the code editor and not the panel, which keeps what was typed', async () => {
+    const at = await withEditor(() => form('sms'));
+    const editor = at.editor();
+    at.type('name', 'Order shipped');
+    let reached = 0;
+    at.panel().addEventListener('keydown', () => reached++);
+    const escape = { key: 'Escape', keyCode: 27 };
+    // parameter help; the scripts find the editor a moment after it is on the page
+    editor.focus();
+    editor.setValue('%%=Lookup(=%%');
+    await pause();
+    editor.setCursor({ line: 0, ch: 10 });
+    await pause();
+    assert.equal(at.document.querySelector('.sfmc-signature').parentNode, at.panel());
+    assert.equal(press(at, escape).defaultPrevented, true);
+    assert.equal(at.document.querySelector('.sfmc-signature'), null);
+    // the explanation of where the mouse rests; jsdom has no layout, so the editor is told where
+    const rest = async () => {
+        editor.coordsChar = () => ({ line: 0, ch: 6, xRel: -1 });
+        editor.charCoords = () => ({ left: 10, right: 20, top: 100, bottom: 115 });
+        editor
+            .getWrapperElement()
+            .dispatchEvent(new at.window.MouseEvent('mousemove', { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 450));
+        return at.document.querySelector('.sfmc-hover');
+    };
+    assert.equal((await rest()).parentNode, at.panel());
+    assert.equal(press(at, escape).defaultPrevented, true);
+    assert.equal(at.document.querySelector('.sfmc-tooltip'), null);
+    // with the keyboard in the box, as it is for quick fixes, the box takes the key itself
+    const inBox = new at.window.KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        ...escape,
+    });
+    (await rest()).dispatchEvent(inBox);
+    assert.equal(inBox.defaultPrevented, true);
+    assert.equal(at.document.querySelector('.sfmc-tooltip'), null);
+    // the panel saw none of these keys, and the form is as it was
+    assert.equal(reached, 0);
+    assert.equal(at.panel().open, true);
+    assert.equal(at.field('name').value, 'Order shipped');
+    assert.equal(editor.getValue(), '%%=Lookup(=%%');
+    assert.equal(at.field(MESSAGE).value, '%%=Lookup(=%%');
+    // with nothing open the key is the panel's again
+    assert.equal(press(at, escape).defaultPrevented, false);
+    assert.equal(reached, 1);
+});
+
+test('a page that has something else under the name of the way the tests load a script loads the code editor as ever', async (t) => {
+    const warn = t.mock.method(console, 'warn', () => {});
+    const at = page(MENU);
+    at.window.sfmcUxToolsImport = { not: 'a function' };
+    await at.open();
+    await tab(at, 'sms');
+    at.panel().querySelector('.sfmc-ux-tools-transactional-new').click();
+    await pause();
+    // the page of the tests cannot import a file, which is what the script tried
+    assert.equal(warn.mock.callCount(), 1);
+    assert.doesNotMatch(String(warn.mock.calls[0].arguments[1]), /is not a function/);
+    assert.deepEqual(at.imported, []);
+    assert.equal(at.panel().querySelector('form').elements[MESSAGE].className, '');
 });
 
 test('the manifest lets the page of the panel load the code editor, and styles it', () => {

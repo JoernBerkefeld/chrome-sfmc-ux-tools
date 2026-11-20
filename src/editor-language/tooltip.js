@@ -5,6 +5,20 @@
 const GAP = 4;
 
 /**
+ * Finds the dialog that covers the page around an element: one that is open as a modal one, in
+ * the page itself. Everything that is to show next to the element has to stand inside of it.
+ *
+ * @param {Element} [element] element of the editor
+ * @returns {HTMLDialogElement | null} the dialog; null without one, in one that covers nothing, and in one of a shadow tree, which the stylesheet of the boxes does not reach
+ */
+export function coveringDialog(element) {
+    const dialog = element?.closest?.('dialog');
+    return dialog && dialog.getRootNode() === dialog.ownerDocument && dialog.matches(':modal')
+        ? dialog
+        : null;
+}
+
+/**
  * Creates a floating box. It is added to the page when first shown.
  *
  * @param {Document} document document of the editor
@@ -27,7 +41,7 @@ export function createTooltip(document, className, near) {
             element.replaceChildren(content);
             if (!element.isConnected) {
                 // a dialog that is open covers everything that is not inside of it
-                (near?.closest?.('dialog') ?? document.body).append(element);
+                (coveringDialog(near) ?? document.body).append(element);
             }
             element.scrollTop = 0;
             const view = document.defaultView;

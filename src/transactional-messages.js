@@ -543,7 +543,10 @@
     function readOffers(name, isWanted) {
         const kept = offers.get(name);
         if (kept) {
-            kept.wanted.push(isWanted);
+            // a list that is read already waits for no one
+            if (!kept.entries) {
+                kept.wanted.push(isWanted);
+            }
             return kept.promise;
         }
         const from = SUGGESTIONS[name];
@@ -1298,7 +1301,9 @@
     function load(file) {
         const url = chrome.runtime.getURL(file);
         // the tests, which cannot load a script this way, put their own way here
-        return globalThis.sfmcUxToolsImport ? globalThis.sfmcUxToolsImport(url) : import(url);
+        return typeof globalThis.sfmcUxToolsImport === 'function'
+            ? globalThis.sfmcUxToolsImport(url)
+            : import(url);
     }
 
     /**
@@ -1379,17 +1384,21 @@
                 editor.focus();
             }
         });
-        // Escape closes an open list of suggestions, not the panel
-        let isSuggesting = false;
+        // Escape closes an open list of suggestions or an open box of the editor (an
+        // explanation, quick fixes, parameter help), not the panel; the editor closes them
+        // itself, so what was open is noted before the key reaches it
+        let hasOpen = false;
         mount.addEventListener(
             'keydown',
             () => {
-                isSuggesting = Boolean(editor.state.completionActive);
+                const boxes = mount.closest('dialog')?.querySelectorAll('.sfmc-tooltip') ?? [];
+                hasOpen =
+                    Boolean(editor.state.completionActive) || [...boxes].some((box) => !box.hidden);
             },
             { capture: true },
         );
         mount.addEventListener('keydown', (event) => {
-            if (!(isSuggesting && event.key === 'Escape')) {
+            if (!(hasOpen && event.key === 'Escape')) {
                 return;
             }
 

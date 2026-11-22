@@ -1,0 +1,104 @@
+/*
+ * SFMC UX Tools — the delete buttons, checkboxes and dialog in MobileConnect and MobilePush.
+ * Every rule starts with a class of the script, so that nothing of the apps themselves is restyled.
+ */
+.sfmc-ux-tools-mobile-delete-button {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #ba0517;
+    border-radius: 4px;
+    color: #ba0517;
+    cursor: pointer;
+    display: inline-flex;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 400;
+    gap: 6px;
+    line-height: 1.5;
+    margin: 0 8px;
+    padding: 3px 10px;
+    vertical-align: middle;
+}
+.sfmc-ux-tools-mobile-delete-button:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+.sfmc-ux-tools-mobile-delete-check {
+    cursor: pointer;
+    margin: 0 8px 0 0;
+    vertical-align: middle;
+}
+.sfmc-ux-tools-mobile-delete-dialog {
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    box-shadow: 0 2px 12px rgb(0 0 0 / 30%);
+    color: #181818;
+    font:
+        13px/1.5 system-ui,
+        sans-serif;
+    max-height: 80vh;
+    max-width: 640px;
+    overflow: auto;
+    padding: 16px;
+    width: 80vw;
+}
+.sfmc-ux-tools-mobile-delete-dialog::backdrop {
+    background: rgb(0 0 0 / 40%);
+}
+.sfmc-ux-tools-mobile-delete-head {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+}
+.sfmc-ux-tools-mobile-delete-head h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 auto 0 0;
+}
+.sfmc-ux-tools-mobile-delete-by {
+    color: #5c5c5c;
+}
+.sfmc-ux-tools-mobile-delete-body h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 12px 0 4px;
+}
+.sfmc-ux-tools-mobile-delete-list {
+    margin: 0 0 8px;
+    padding-left: 20px;
+}
+.sfmc-ux-tools-mobile-delete-list li {
+    overflow-wrap: anywhere;
+}
+.sfmc-ux-tools-mobile-delete-said {
+    color: #5c5c5c;
+}
+.sfmc-ux-tools-mobile-delete-warning {
+    border-left: 3px solid #ba0517;
+    margin: 8px 0;
+    padding: 4px 12px;
+}
+.sfmc-ux-tools-mobile-delete-result {
+    font-weight: 600;
+}
+.sfmc-ux-tools-mobile-delete-buttons {
+    margin-top: 12px;
+    text-align: right;
+}
+.sfmc-ux-tools-mobile-delete-delete,
+.sfmc-ux-tools-mobile-delete-cancel {
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    color: #181818;
+    cursor: pointer;
+    font: inherit;
+    margin-left: 8px;
+    padding: 4px 12px;
+}
+.sfmc-ux-tools-mobile-delete-delete {
+    background: #ba0517;
+    border-color: #ba0517;
+    color: #fff;
+}

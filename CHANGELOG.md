@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Delete in Mobile Studio**: MobileConnect lets no message be deleted, and neither app lets one be deleted from its list. The extension adds this, and with it deletes data on your click for the first time in these apps.
+    - **MobileConnect, page of a message:** a **Delete** button in the header.
+    - **MobileConnect and MobilePush, list of messages:** a checkbox in front of each row and a button **Delete selected (n)**. Ticking a row does not open the message, and what is ticked is kept when the list is searched, sorted or paged, as long as the message is still shown.
+    - **A question first:** a dialog of the extension names every message that will be deleted and, separately, every message that will not, with the reason. Nothing is sent before the click on **Delete n messages**.
+    - **Read again, never trusted from the list:** every chosen message is read from Marketing Cloud before the question, and once more right before its delete. A message that changed meanwhile, or has another name than the one shown, is left alone.
+    - **Refused, SMS:** a message that belongs to a transactional SMS message. Deleting it would leave that transactional message broken for good (seen on a real account). For this, every transactional SMS message of the business unit is read once per dialog; if they cannot all be read, the message is refused too. Transactional messages that Marketing Cloud says no longer exist are passed over.
+    - **Refused, push:** a message triggered by the API that has the name of a transactional push message, and every active push message, however it is sent (make it inactive first). Drafts and inactive ones are deleted.
+    - **Refused, both:** a message a journey made, and any message whose answer from Marketing Cloud lacks what the check needs.
+    - **One after the other:** a delete that fails is shown with what Marketing Cloud said and does not stop the rest; at the end the dialog says how many were deleted and how many failed, and the list is loaded again.
+    - **Not tried, and deleted without a special check:** scheduled or keyword-bound SMS messages, and push messages with automations, which the message itself does not show.
+    - The extension therefore also runs on `https://mc.<stack>.marketingcloudapps.com/MobileConnectFuel3/` and `…/mobilepush/`, which needs no new permission. The feature is always on and has no switch.
+
+### Fixed
+
+- **Options:** when the options are higher than the popup, only the vertical scroll bar appears. The page now leaves room for it; before, that scroll bar made the page too wide and brought a horizontal one as well.
+
 ## [1.0.0] - 2026-11-20
 
 First release in the Chrome Web Store.

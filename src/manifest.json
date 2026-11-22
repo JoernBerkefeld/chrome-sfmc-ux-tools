@@ -149,6 +149,16 @@
             "run_at": "document_idle"
         },
         {
+            "matches": [
+                "https://*.marketingcloudapps.com/MobileConnectFuel3/*",
+                "https://*.marketingcloudapps.com/mobilepush/*"
+            ],
+            "js": ["mobile-delete.js"],
+            "css": ["mobile-delete.css"],
+            "all_frames": true,
+            "run_at": "document_idle"
+        },
+        {
             "matches": ["https://*.marketingcloudapps.com/*"],
             "include_globs": ["https://jbinteractions.*"],
             "js": ["journey-settings.js"],

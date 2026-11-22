@@ -16,6 +16,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Readable keys instead of random ones:** new automations, activities, data extensions, journeys, API events, sender profiles, send classifications, file locations, roles and users get a key made from their name, such as `Welcome_series`.
 - **No more "New Journey - 18 November…":** Journey Builder asks you for a real name before a new journey is saved.
 - **Transactional SMS, push and OTT messages in a list:** a new entry in the Mobile Studio menu shows them, and lets you create, change and delete them. Marketing Cloud itself has no place for this.
+- **Delete in Mobile Studio:** MobileConnect and MobilePush get what they lack, a way to delete one message or many, after a question that names each of them.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
 
@@ -43,6 +44,7 @@ Every section below starts with the platforms it works on: [![Engagement](images
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
 - **Setup → Installed Packages**: the dialog with the list of scopes.
 - **The Mobile Studio menu** at the top of Marketing Cloud: the entry for [transactional messages](#transactional-messages-sms-push-and-ott).
+- **MobileConnect and MobilePush**: the list of messages in both, and the page of a message in MobileConnect, for [deleting messages](#delete-in-mobile-studio).
 
 #### Marketing Cloud ![Next](images/badge-next.svg)
 
@@ -494,6 +496,44 @@ The folder names of contents, the texts of a push content, the list for personal
 - **What Marketing Cloud does with a deleted message:** it keeps it, marked as deleted, and replaces its key and name with a random ID, so the key is free again. The panel leaves deleted messages out.
 - **Always marked as ours:** the panel shows the icon and **SFMC UX Tools** at its top, so nobody takes it for a part of Marketing Cloud.
 - **OTT is untested:** it was built from Salesforce's documentation, because we have no account with WhatsApp or a similar channel. If you have one, please tell us whether it works, in the [issues on GitHub](https://github.com/JoernBerkefeld/chrome-sfmc-ux-tools/issues). The tab says so too.
+
+### Delete in Mobile Studio
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
+MobileConnect has no way to delete a message once it exists, and MobilePush only has one on the page of a single message. Marketing Cloud's API can delete them. The extension adds the buttons.
+
+**This deletes data in your account.** Everywhere else in these two apps the extension changes nothing by itself; here it deletes messages when you click and confirm. A deleted message cannot be brought back.
+
+- **Where the buttons are:**
+    - **MobileConnect, page of a message:** a **Delete** button in the header, next to the name.
+    - **MobileConnect and MobilePush, list of messages:** a checkbox in front of every row, and a button **Delete selected (n)** above the list. The button is grey while nothing is ticked.
+    - All of them carry the extension's small icon, to show who added them.
+- **Ticking rows:**
+    - A click on the checkbox ticks the row and does not open the message.
+    - What is ticked is kept when you search, sort or page the list, as long as the message is still shown. A message that is no longer in the list is no longer ticked.
+- **Nothing happens before you confirm:**
+    - A dialog reads every chosen message again from Marketing Cloud. It does not rely on what the list shows.
+    - It then names the messages that **will be deleted** and, separately, those that **will not be deleted**, each with the reason.
+    - Only the click on **Delete n messages** deletes. **Cancel** sends nothing.
+- **What is deleted:** every chosen message that is not refused below: SMS messages whatever their status, and push messages that are drafts or inactive. This was tried on a real account with a draft SMS message and with an active, API-triggered SMS message made in MobileConnect, and with a push message.
+- **What is refused, and why:**
+    - **An SMS message that belongs to a transactional SMS message.** Deleting it leaves the transactional message broken for good: it stays listed and keeps its key, but can neither be opened nor deleted (seen on a real account). Delete the transactional message in the panel [Transactional Messages](#transactional-messages-sms-push-and-ott) instead.
+    - To find out, the extension reads every transactional SMS message of the business unit, once per dialog. This can take a moment on an account with many of them. If any of them cannot be read, the SMS message is refused, because the danger cannot be ruled out. The one exception: a transactional message that Marketing Cloud says no longer exists is passed over, because it has no SMS message left.
+    - Deleted transactional messages stay readable, so they do not get in the way of this check (measured on a real account).
+    - **A push message that is triggered by the API and has the same name as a transactional push message.** Nothing else links the two, so the name decides. Delete the transactional message in the panel instead. If the transactional push messages cannot be read, the message is refused.
+    - **A push message that is active.** Active push messages are not deleted, however they are sent; drafts and inactive ones are. MobilePush's own delete button refuses active messages too. Make it inactive first.
+    - **A message that a journey made.** The journey would lose its message, and deleting such a message was never tried.
+    - **A message that cannot be read again, or whose answer lacks what the check needs.** When in doubt, nothing is deleted.
+- **Never tried, and deleted without a special check:**
+    - SMS messages that are scheduled or bound to a keyword.
+    - Push messages with automations. MobilePush's own button refuses those, but the message itself does not show them, so the extension cannot tell.
+- **Deleting, one message after the other:**
+    - Right before its delete, each message is read once more. If it changed meanwhile, or no longer has the name the dialog showed, it is left alone and the result says so.
+    - A delete that fails is shown with what Marketing Cloud answered, and the others still go on.
+    - At the end the dialog says how many were deleted and how many failed, such as "3 deleted, 1 failed". When you close it, the list is loaded again; from the page of a message, MobileConnect goes back to its overview.
+- **Always on:** there is no option for it.
+- **Not yet tried by clicking:** the requests were tried on a real account, the buttons themselves so far only in automated tests.
 
 ### Options
 

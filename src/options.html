@@ -8,9 +8,17 @@
                 font:
                     13px/1.5 system-ui,
                     sans-serif;
-                margin: 12px;
                 /* a popup of Chrome is at most 800px wide and 600px high */
-                min-width: 776px;
+                --popup-width: 800px;
+                --page-margin: 12px;
+                /* kept free for the scroll bar that comes once the page is higher than the popup,
+                   so that it does not push the page wider than the popup, which would bring a
+                   second, horizontal one */
+                --scroll-bar: 24px;
+                margin: var(--page-margin);
+                min-width: calc(
+                    var(--popup-width) - 2 * var(--page-margin) - var(--scroll-bar)
+                );
             }
             main {
                 column-gap: 32px;

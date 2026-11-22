@@ -178,6 +178,25 @@ test('the options page shows the saved choice and saves a new one', async () => 
     assert.equal(again.document.querySelector('input[value="page"]').checked, true);
 });
 
+test('the options page leaves room for a scroll bar, so that a higher page does not get a horizontal one too', () => {
+    const style = new JSDOM(optionsPage).window.document.querySelector('style').textContent;
+    const px = (name) => Number(new RegExp(String.raw`--${name}:\s*(\d+)px`).exec(style)[1]);
+    const [popup, margin, kept] = ['popup-width', 'page-margin', 'scroll-bar'].map((name) =>
+        px(name),
+    );
+    // Chrome does not make a popup wider than this
+    assert.equal(popup, 800);
+    // the page is as wide as the popup, less its margins and what is kept for the scroll bar
+    assert.match(
+        style.replaceAll(/\s+/g, ' '),
+        /min-width: calc\( var\(--popup-width\) - 2 \* var\(--page-margin\) - var\(--scroll-bar\) \);/,
+    );
+    // the widest scroll bar Chrome draws, on Windows with classic scroll bars
+    const widestScrollBar = 17;
+    assert.ok(kept >= widestScrollBar);
+    assert.ok(popup - 2 * margin - kept + 2 * margin + widestScrollBar <= popup);
+});
+
 test('the options page names who holds the copyright and where to get support', () => {
     const { document } = new JSDOM(optionsPage).window;
     const footer = document.querySelector('footer');

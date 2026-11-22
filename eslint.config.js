@@ -140,6 +140,7 @@ export default [
             'src/readable-keys.js',
             'src/journey-settings.js',
             'src/transactional-messages.js',
+            'src/mobile-delete.js',
             'src/user-autofill.js',
             'src/background.js',
             'src/options.js',

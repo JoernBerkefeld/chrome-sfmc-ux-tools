@@ -17,6 +17,8 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **No more "New Journey - 18 November…":** Journey Builder asks you for a real name before a new journey is saved.
 - **Transactional SMS, push and OTT messages in a list:** a new entry in the Mobile Studio menu shows them, and lets you create, change and delete them. Marketing Cloud itself has no place for this.
 - **Delete in Mobile Studio:** MobileConnect and MobilePush get what they lack, a way to delete one message or many, after a question that names each of them.
+- **Links to a Content Builder asset:** the address shows which asset is open, and in which business unit, so you can send it to a coworker who also has the extension. In another business unit, the link offers to switch first.
+- **Links into Email Studio:** the same for an open data extension and for a folder of data extensions.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
 
@@ -31,6 +33,8 @@ Every section below starts with the platforms it works on: [![Engagement](images
 #### Marketing Cloud ![Engagement](images/badge-engagement.svg)
 
 - **Content Builder**: the code view of emails, templates and content blocks, and new content blocks and emails for [readable keys](#readable-keys).
+- **Content Builder, opened from the Marketing Cloud menu**: the address of the page, for [links to an asset](#links-to-a-content-builder-asset).
+- **Email Studio, opened from the Marketing Cloud menu**: the address of the page, for [links into Email Studio](#links-into-email-studio).
 - **Email Studio and CloudPages**: both open Content Builder's code view, so everything said about Content Builder applies there too.
 - **CloudPages code resources**: files of one kind, such as JavaScript, CSS, JSON, XML, RSS or text.
 - **Automation Studio, script activity**: its code editor gets everything Content Builder's editor gets, unless a section says otherwise.
@@ -535,6 +539,102 @@ MobileConnect has no way to delete a message once it exists, and MobilePush only
 - **Always on:** there is no option for it.
 - **Not yet tried by clicking:** the requests were tried on a real account, the buttons themselves so far only in automated tests.
 
+### Links to a Content Builder asset
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
+The address of Content Builder is always the same, whatever you open in it. So you cannot send a coworker a link to an email or a content block. The extension puts the open asset into the address.
+
+- **What you see:**
+    - Open an asset in Content Builder. The address in the browser now ends with the number of your business unit and the number of the asset, such as `#app/Content%20Builder/ux-tools/500001234/asset/12345`.
+    - Go back to the list, and the numbers are gone again.
+    - The page is not loaded again for this. Only the address changes.
+- **Sending a link:**
+    - Copy the address from the browser and send it.
+    - Your coworker needs this extension too.
+    - With the extension, the link opens Content Builder, searches for the asset and opens it.
+    - This usually takes a few seconds. Right after the page was loaded, Content Builder's first search can take about half a minute.
+    - The extension waits up to one minute for the asset to show up in the search. After that it gives up and shows a note.
+    - The search is only a helper. Once the asset is open, the search box is emptied again, so the list behind the asset shows everything as before.
+- **When your coworker is in another business unit:**
+    - The asset is not searched for. A dialog of the extension says which business unit the link belongs to, by name, and which one your coworker is in.
+    - The dialog comes early, while Marketing Cloud is still loading behind it.
+    - The page behind the dialog is greyed out and cannot be used until one of the buttons is clicked. The Escape key and a click next to the dialog do not close it.
+    - **Switch and open** changes to that business unit and opens the asset there.
+    - For the switch, the browser goes to Content Builder's plain address in that business unit. The link itself waits in this browser tab meanwhile, and the page that opens after the switch picks it up, once.
+    - **Stay here** closes the dialog and leaves everything as it is. The link is then not asked about again.
+    - Nothing switches without that click.
+- **When the link is from another Marketing Cloud account:**
+    - The dialog says that the business unit of the link does not exist in the account your coworker is logged in to, or that they have no access to it.
+    - If this browser was in that business unit's account before, the dialog also says its name and the name of its account, such as "Example Shop Germany in Example Shop". This helps people who work in several accounts.
+    - There is only **Close**. Log in to the right account and open the link again.
+    - This dialog also blocks the page until **Close** is clicked.
+- **The list of business units the browser has seen:**
+    - To give that hint, the extension keeps the numbers and names of the business units of every account you open, grouped by account.
+    - The list stays in this browser, on this computer. It is sent nowhere.
+    - To delete it, open the options and click **Forget the business units this browser has seen**.
+- **Without the extension:** the link opens Content Builder as usual, on its list. Nothing breaks and no error is shown.
+- **When the asset cannot be opened:** a small note of the extension in the corner of Content Builder says so, with the asset's number. Close it with the **×**. Nothing else is clicked or tried again.
+- **Limits:**
+    - It works for assets in the business unit's own content. An asset that the search does not list, such as shared content of another business unit, gives the note.
+    - The search shows 30 assets at most. If very many assets have a name like the one of the link, the asset may not be among them, and you get the note.
+    - If the link cannot be followed, the search box keeps the name that was searched for, so you can see what was looked for.
+    - The link shows the asset as a click in the list does. It does not jump into the editor.
+    - Content Builder inside Email Studio's **Content** tab gets no link.
+- **Nothing is changed in Marketing Cloud:**
+    - To follow a link, the extension reads the asset's name once, searches for it and clicks its row.
+    - To know the business unit, it reads which one you are in, and the list of business units of your account. When a link is opened, it also looks at the business unit shown at the top of the Marketing Cloud page, and takes whichever is known first.
+    - If the business unit is not known after about 10 seconds, the link is not followed and the dialog says so.
+    - It saves and deletes nothing in Marketing Cloud. Switching the business unit is what Marketing Cloud's own menu does too.
+- **Always on:** there is no option for it, only the button that deletes the list of business units.
+- **Tried on a real account:**
+    - The address gets the open asset.
+    - A link opens the asset, and the search box is emptied afterwards.
+    - In another business unit the dialog comes up.
+    - **Switch and open** switches and opens the asset.
+
+### Links into Email Studio
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
+Email Studio's address does name what you look at, but opening that address again only gets you to the section, with an empty page. The extension makes such a link open the view.
+
+- **What gets a link:**
+    - An open data extension.
+    - A folder of data extensions.
+    - Nothing else yet. See **What gets no link** below.
+- **What you see:**
+    - Open one of these. The address in the browser gets one more part, `ux-tools=`, followed by the number of your business unit and the view, such as `ux-tools=500001234.r.Subscribers.CustomObjects.4711`.
+    - Go to something else, and that part changes or goes away.
+    - The page is not loaded again for this. Only the address changes.
+- **Sending a link:**
+    - Copy the address from the browser and send it.
+    - Your coworker needs this extension too, to land on the exact view.
+    - With the extension, the link opens Email Studio and then opens the view.
+    - The extension does not go by a clock here. It waits for Email Studio itself to say that it is ready, however long that takes, and then asks for the view once.
+    - Email Studio sometimes shows something else instead, such as the first list of the section. Only then does the extension ask for the view again, at most 6 times in all.
+    - As soon as you click or type in Email Studio, the extension stops this. The link never pulls you back from where you went yourself.
+    - While the link is being opened, the address keeps the link. After your first click or key press, or after the last try, the address follows what you open again.
+- **Without the extension:** the link opens Email Studio at the section, such as **Subscribers**. Nothing breaks and no error is shown.
+- **When your coworker is in another business unit, or in another account:**
+    - The same dialog as for [links to a Content Builder asset](#links-to-a-content-builder-asset) comes up, with **Switch and open** and **Stay here**, or only **Close**.
+    - For the switch, the browser goes to Email Studio's plain address in that business unit. The link itself waits in this browser tab meanwhile, and the page that opens after the switch picks it up, once.
+    - Nothing is opened in the wrong business unit.
+- **What gets no link** (the address then leads to the section only):
+    - A folder of lists. In a try on a real account, such a link opened the wrong list, so it is switched off.
+    - The older pages of Email Studio, such as everything under **Admin**. Opening such a page from a link could do more than show it, so this is left out until it is known to be safe.
+    - Everything else in Email Studio: lists, groups, emails, templates, sends and reports in **Subscribers**, **Content**, **Interactions**, **Tracking** and **A/B Testing**. They have not been tried yet.
+    - What you did inside a view: the page of a list you paged to, a sort order, a step of a wizard, an open pop-up.
+- **Nothing is changed in Marketing Cloud:**
+    - The extension only watches what Email Studio shows and sets Email Studio's own route. It asks Marketing Cloud for nothing here, apart from which business unit you are in.
+    - A link can only name one of a short, fixed list of views, with a number or an id. It can never name a web address, and the extension never loads an address from a link.
+- **Always on:** there is no option for it.
+- **Tried on a real account:**
+    - Only an open data extension and a folder of data extensions. For both, the address gets the view and a link opens it.
+    - In another business unit the dialog comes up, and **Switch and open** switches and opens the data extension.
+    - A link to a folder of lists opened the wrong list. It is switched off.
+    - The other views, and the older pages such as **Admin**, get no link yet.
+
 ### Options
 
 ![The options page with its six groups: theme, menu of the code editor, format on save, readable keys, journey names and saved logins, each with its default ticked](images/options.png)
@@ -547,6 +647,7 @@ Click the extension's icon in Chrome's toolbar. Every change applies at once; no
 - **Readable keys**: on (default) or off.
 - **Journey names**: ask for a real name before a new journey is saved, on (default) or off.
 - **Saved logins on Setup's user pages**: keep the browser's saved logins out of a new or existing user (default), or leave it to the browser.
+- **Links to a Content Builder asset**: a button that deletes the list of business units this browser has seen. It is not on the picture above yet.
 
 The same options are on the extension's page in `chrome://extensions` (SFMC UX Tools → Details → Extension options).
 

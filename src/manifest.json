@@ -149,6 +149,33 @@
             "run_at": "document_idle"
         },
         {
+            "matches": ["https://*.exacttarget.com/cloud/*"],
+            "include_globs": ["https://mc.*"],
+            "js": ["deep-link-shell.js"],
+            "css": ["deep-link.css"],
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["https://*.marketingcloudapps.com/*"],
+            "include_globs": ["https://content-builder.*"],
+            "js": ["deep-link-content-builder.js"],
+            "all_frames": true,
+            "run_at": "document_idle"
+        },
+        {
+            "matches": ["https://*.exacttarget.com/C12/Default.aspx*"],
+            "js": ["deep-link-email-studio.js"],
+            "all_frames": true,
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["https://*.exacttarget.com/C12/Default.aspx*"],
+            "js": ["deep-link-email-studio-page.js"],
+            "world": "MAIN",
+            "all_frames": true,
+            "run_at": "document_start"
+        },
+        {
             "matches": [
                 "https://*.marketingcloudapps.com/MobileConnectFuel3/*",
                 "https://*.marketingcloudapps.com/mobilepush/*"

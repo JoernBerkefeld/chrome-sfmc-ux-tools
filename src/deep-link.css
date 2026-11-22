@@ -1,0 +1,57 @@
+/*
+ * SFMC UX Tools — the dialog about a link to an asset of another business unit, on the Marketing
+ * Cloud page around the apps. It looks like the extension's other dialogs. Every rule starts with
+ * a class of the script, so that nothing of the page itself is restyled.
+ */
+.sfmc-ux-tools-deep-link-dialog {
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    box-shadow: 0 2px 12px rgb(0 0 0 / 30%);
+    color: #181818;
+    font:
+        13px/1.5 system-ui,
+        sans-serif;
+    max-width: 640px;
+    padding: 16px;
+    width: 80vw;
+}
+.sfmc-ux-tools-deep-link-dialog::backdrop {
+    background: rgb(0 0 0 / 40%);
+}
+.sfmc-ux-tools-deep-link-head {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+}
+.sfmc-ux-tools-deep-link-head h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 auto 0 0;
+}
+.sfmc-ux-tools-deep-link-by {
+    color: #5c5c5c;
+}
+.sfmc-ux-tools-deep-link-dialog p {
+    margin: 12px 0 0;
+    overflow-wrap: anywhere;
+}
+.sfmc-ux-tools-deep-link-buttons {
+    margin-top: 12px;
+    text-align: right;
+}
+.sfmc-ux-tools-deep-link-buttons button {
+    background: #fff;
+    border: 1px solid #c9c9c9;
+    border-radius: 4px;
+    color: #181818;
+    cursor: pointer;
+    font: inherit;
+    margin-left: 8px;
+    padding: 4px 12px;
+}
+.sfmc-ux-tools-deep-link-buttons button:first-child:not(:only-child) {
+    background: #0176d3;
+    border-color: #0176d3;
+    color: #fff;
+}

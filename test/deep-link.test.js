@@ -1,0 +1,2422 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import vm from 'node:vm';
+import { JSDOM } from 'jsdom';
+
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const shellScript = read('../src/deep-link-shell.js');
+const frameScript = read('../src/deep-link-content-builder.js');
+const backgroundScript = read('../src/background.js');
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+// lets what was started settle, also what a timer of the page started
+const settle = async () => {
+    await tick();
+    await tick();
+};
+const WANTED = 'sfmc-ux-tools:deep-link:wanted';
+const SHOWN = 'sfmc-ux-tools:deep-link:shown';
+const EXTENSION = 'this-extension';
+const ORIGIN = 'https://mc.s7.exacttarget.com';
+const SHELL = `${ORIGIN}/cloud/`;
+const APP = '#app/Content%20Builder/';
+// the business unit the user is in, another one of the same account, and one of no account
+const MID = '500';
+const OTHER = '600';
+const NOWHERE = '999';
+// the route of an asset of the business unit the user is in
+const MARKER = `${APP}ux-tools/${MID}/asset/`;
+/**
+ * Writes the route of an asset.
+ *
+ * @param {string} mid id of its business unit
+ * @param {string} asset its id
+ * @returns {string} the route
+ */
+const link = (mid, asset) => `${APP}ux-tools/${mid}/asset/${asset}`;
+const NOTICE = '[data-sfmc-ux-tools-deep-link="notice"]';
+// what the frame script waits before it looks at a changed page, and for the row of a link
+const LOOK_DELAY = 250;
+const ROW_WAIT = 60_000;
+const SEARCH_BOX = '<input placeholder="Search">';
+// where the shell script reads the business units, how many at once and in how many pages at most
+const ACCOUNTS = '/cloud/fuelapi/platform-internal/v1/accounts';
+const PAGE_SIZE = 50;
+const MOST_PAGES = 20;
+// how long the shell script waits to learn the business unit the user is in
+const CURRENT_WAIT = 10_000;
+// the business unit as the header of the Marketing Cloud page shows it
+const HEADER =
+    '<div class="mc-account-switcher-current-account-details">MID: 500 <span class="mc-account-switcher-current-account-name">Northwind Germany</span></div>';
+// where the business units this browser has seen are kept
+const MEMORY_KEY = 'deepLinkBusinessUnits';
+// where a link is kept in the tab's session storage while the business unit is switched
+const CARRIED = 'sfmcUxToolsDeepLink';
+// the page that switches the business unit, and the plain addresses of the two apps, which are
+// all it is ever sent on to
+const SWITCH = `${ORIGIN}/cloud/context-switch.html`;
+const PLAIN_CONTENT_BUILDER = `${SHELL}#app/Content%20Builder/`;
+const PLAIN_EMAIL = `${SHELL}#app/Email`;
+/**
+ * Writes the address that switches to the other business unit and then opens an app.
+ *
+ * @param {string} app the plain address of the app
+ * @returns {string} the address
+ */
+const switchTo = (app) => `${SWITCH}?m=${OTHER}&h=${encodeURIComponent(app)}`;
+/**
+ * Writes an address in base64, as it stands in the query of the Marketing Cloud page.
+ *
+ * @param {string} text the address
+ * @returns {string} its base64 form, percent-encoded
+ */
+const encode = (text) => encodeURIComponent(Buffer.from(text, 'latin1').toString('base64'));
+/**
+ * Writes the query with which Marketing Cloud loads its page to open an address by itself.
+ *
+ * @param {string} hash the address to open, from the #
+ * @returns {string} the query, from the ?
+ */
+const handed = (hash) => `?hash=logged-in${encode(hash)}`;
+// the two messages of Email Studio's frame, its route on the Marketing Cloud page with and
+// without a view of the business unit the user is in, and that view as a link names it
+const EMAIL_WANTED = 'sfmc-ux-tools:deep-link:email-wanted';
+const EMAIL_SHOWN = 'sfmc-ux-tools:deep-link:email-shown';
+const EMAIL = '#app/Email/C12/Default.aspx?entityType=none&entityID=0&ks=ks';
+const VIEW = 'r.Subscribers.customobject.0a1b2c3d-0000-4000-8000-00000000abcd';
+const FOLDER = 'r.Subscribers.CustomObjects.4711';
+/**
+ * Writes the route of a view of Email Studio.
+ *
+ * @param {string} mid id of its business unit
+ * @param {string} target the view
+ * @param {string} [inner] the route inside Email Studio
+ * @returns {string} the route
+ */
+const emailLink = (mid, target, inner = 'Subscribers') =>
+    `${EMAIL}&ux-tools=${mid}.${target}%23${inner}`;
+/**
+ * Writes Email Studio's route with whatever stands in the field of a view.
+ *
+ * @param {string} value what the field holds
+ * @returns {string} the route
+ */
+const field = (value) => `${EMAIL}&ux-tools=${value}%23Subscribers`;
+/**
+ * Builds a business unit as the API lists it.
+ *
+ * @param {number} accountId its id
+ * @param {string} name its name
+ * @param {number|null} parentId id of the business unit above it; null for the enterprise
+ * @param {boolean} [hasAccess] whether the user may open it
+ * @returns {object} the business unit
+ */
+const unit = (accountId, name, parentId, hasAccess = true) => ({
+    accountId,
+    name,
+    accountType: parentId === null ? 'ENTERPRISE_2' : 'BUSINESS_UNIT',
+    hasAccess,
+    parentId,
+});
+// a made-up account
+const UNITS = [
+    unit(100, 'Northwind', null),
+    unit(500, 'Northwind Germany', 100),
+    unit(600, 'Northwind France', 100),
+    unit(700, 'Northwind Spain', 100, false),
+];
+// what is kept of that account
+const REMEMBERED = {
+    100: {
+        name: 'Northwind',
+        units: {
+            100: 'Northwind',
+            500: 'Northwind Germany',
+            600: 'Northwind France',
+            700: 'Northwind Spain',
+        },
+    },
+};
+
+/**
+ * Builds a row of Content Builder's list.
+ *
+ * @param {string} id id of the asset
+ * @returns {string} the row
+ */
+const row = (id) =>
+    `<tr data-flow-id="cb:repeater:list:${id}"><td class="contentitem-table-name">asset ${id}</td></tr>`;
+/**
+ * Builds Content Builder's list.
+ *
+ * @param {...string} ids ids of its assets
+ * @returns {string} the list
+ */
+const list = (...ids) => `<table><tbody>${ids.map((id) => row(id)).join('')}</tbody></table>`;
+// the page of the open asset 123
+const DETAILS =
+    '<div class="contentproperties-detailsview"><div data-content-field="id"><input class="contentinput-copyvalue" value="123"></div></div>';
+// how Chrome describes the background script when it passes a message on
+const BACKGROUND = { id: EXTENSION };
+
+/**
+ * Runs the shell script on the Marketing Cloud page.
+ *
+ * @param {string} [hash] the route the page is loaded with
+ * @param {object} [has] what the account and the browser hold; the test may change it later
+ * @param {object[]} [has.units] the business units of the account, as the API lists them
+ * @param {string|null} [has.current] id of the business unit the user is in; null when it cannot be read
+ * @param {boolean} [has.isListDown] true when the list of business units cannot be read
+ * @param {boolean} [has.isDown] true when nothing can be read
+ * @param {object} [has.memory] the business units this browser has seen
+ * @param {boolean} [has.isStorageDown] true when the extension's storage cannot be used
+ * @param {boolean} [has.isCurrentHanging] true when the question for the user's business unit is never answered
+ * @param {string} [has.header] what the page holds when the script starts
+ * @param {boolean} [has.isBodyLate] true when the page has no body yet when the script starts
+ * @param {string} [has.path] path of the page, when it is not the Marketing Cloud page itself
+ * @param {string} [has.carried] the link that the tab's session storage holds when the script starts
+ * @param {string} [has.search] the query the page is loaded with, from the ?
+ * @returns {object} the page, a way to send the script a message as the background script does, what it asked, kept and showed, and the script's functions
+ */
+function shell(hash = '', has = {}) {
+    const account = { units: UNITS, current: MID, ...has };
+    const { window } = new JSDOM('<!doctype html><body></body>', {
+        runScripts: 'outside-only',
+        url: `${ORIGIN}${account.path ?? '/cloud/'}${account.search ?? '?x=1'}${hash}`,
+    });
+    if (account.carried !== undefined) {
+        window.sessionStorage.setItem(CARRIED, account.carried);
+    }
+    if (account.header) {
+        window.document.body.innerHTML = account.header;
+    }
+    if (account.isBodyLate) {
+        window.document.body.remove();
+    }
+    // the script's waits are run by the test; what it only puts off is left to the page
+    let now = 0;
+    let lastTimer = 0;
+    const timers = new Map();
+    const later = window.setTimeout.bind(window);
+    const never = window.clearTimeout.bind(window);
+    window.setTimeout = (act, delay = 0) => {
+        if (delay === 0) {
+            return later(act, 0);
+        }
+        timers.set(--lastTimer, { at: now + delay, act });
+        return lastTimer;
+    };
+    window.clearTimeout = (id) => {
+        if (!timers.delete(id)) {
+            never(id);
+        }
+    };
+    // jsdom has the element but not the two methods the dialog uses
+    window.eval(`
+        HTMLDialogElement.prototype.showModal = function () {
+            this.setAttribute('open', '');
+        };
+        HTMLDialogElement.prototype.close = function () {
+            this.removeAttribute('open');
+            this.dispatchEvent(new Event('close'));
+        };
+    `);
+    const listeners = [];
+    const store = account.memory === undefined ? {} : { [MEMORY_KEY]: account.memory };
+    const sets = [];
+    window.chrome = {
+        runtime: {
+            id: EXTENSION,
+            getURL: (path) => `chrome-extension://id/${path}`,
+            onMessage: {
+                addListener: (item) => {
+                    listeners.push(item);
+                },
+            },
+        },
+        storage: {
+            local: {
+                get: async (key) => {
+                    if (account.isStorageDown) {
+                        throw new Error('Extension context invalidated.');
+                    }
+                    return structuredClone({ [key]: store[key] });
+                },
+                set: async (values) => {
+                    if (account.isStorageDown) {
+                        throw new Error('Extension context invalidated.');
+                    }
+                    sets.push(structuredClone(values));
+                    Object.assign(store, structuredClone(values));
+                },
+            },
+        },
+    };
+    const calls = [];
+    window.fetch = async (address, options) => {
+        calls.push(`${options.method} ${address}`);
+        assert.equal(address.startsWith(ACCOUNTS), true, address);
+        if (account.isCurrentHanging && address.endsWith('/@current')) {
+            return new Promise(() => {});
+        }
+        const path = address.slice(ACCOUNTS.length);
+        let status = 200;
+        let body;
+        if (account.isDown) {
+            status = 500;
+        } else if (path.startsWith('?')) {
+            const page = Number(
+                /^\?\$page=(\d+)&\$pageSize=50&includeParentDetails=true$/.exec(path)[1],
+            );
+            const items = account.units.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+            body = { count: account.units.length, page, pageSize: PAGE_SIZE, items };
+            status = account.isListDown ? 500 : 200;
+        } else {
+            const mid = path === '/@current' ? account.current : path.slice(1);
+            body = account.units.find((item) => String(item.accountId) === mid);
+            if (!body) {
+                status = 400;
+                body = { message: 'Bad Request', errorcode: 0, documentation: '' };
+            }
+        }
+        return { ok: status === 200, status, json: async () => body };
+    };
+    window.eval(shellScript);
+    assert.equal(listeners.length, 1);
+    const went = [];
+    window.sfmcUxToolsDeepLink.go = (to) => {
+        went.push(to);
+    };
+    const dialog = () => window.document.querySelector('dialog');
+    return {
+        window,
+        account,
+        calls,
+        store,
+        sets,
+        went,
+        dialog,
+        hash: () => window.location.hash,
+        // the link that the tab's session storage holds
+        kept: () => window.sessionStorage.getItem(CARRIED),
+        // what the dialog says, and its buttons
+        said: () => [...dialog().querySelectorAll('p')].map((item) => item.textContent),
+        buttons: () => [...dialog().querySelectorAll('button')].map((item) => item.textContent),
+        /**
+         * Clicks a button of the dialog.
+         *
+         * @param {string} text what the button says
+         */
+        click: (text) => {
+            [...dialog().querySelectorAll('button')]
+                .find((item) => item.textContent === text)
+                .click();
+        },
+        // how often the business unit the user is in was read
+        currentReads: () => calls.filter((call) => call.endsWith('/@current')).length,
+        /**
+         * Lets time pass for the script's waits.
+         *
+         * @param {number} delay milliseconds
+         */
+        elapse: async (delay) => {
+            await settle();
+            now += delay;
+            for (const [id, timer] of timers) {
+                if (!(timer.at <= now)) {
+                    continue;
+                }
+
+                timers.delete(id);
+                timer.act();
+            }
+            await settle();
+        },
+        // how many of the script's waits are still under way
+        waits: () => timers.size,
+        /**
+         * Sends the script a message and lets what it starts settle.
+         *
+         * @param {object} message the message
+         * @param {object} [sender] who sent it; the background script unless said otherwise
+         * @returns {Promise.<object|undefined>} a copy of the answer; nothing when there was none
+         */
+        send: async (message, sender = BACKGROUND) => {
+            let answer;
+            const { promise, resolve } = Promise.withResolvers();
+            const willAnswer = listeners[0](message, sender, (given) => {
+                answer = structuredClone(given);
+                resolve();
+            });
+            if (willAnswer) {
+                await promise;
+            }
+            await settle();
+            return answer;
+        },
+        /**
+         * Changes the route as the page itself does.
+         *
+         * @param {string} to the new route
+         */
+        route: async (to) => {
+            window.location.hash = to;
+            await settle();
+        },
+        helpers: window.sfmcUxToolsDeepLink,
+    };
+}
+
+/**
+ * Runs the frame script in a document of Content Builder.
+ *
+ * @param {object} [has] what the document and the account hold
+ * @param {string} [has.html] content of the document
+ * @param {string|null} [has.wanted] the asset the page around the frame was asked for
+ * @param {Object.<string, object>} [has.assets] what the API answers by the id of an asset: {status, body}
+ * @param {string} [has.depth] top for no page around it, nested for a frame inside Content Builder's
+ * @returns {object} the document, what was sent, asked, searched and clicked, and a way to let time pass
+ */
+function frame({ html = '', wanted = null, assets = {}, depth = 'frame' } = {}) {
+    const { window: top } = new JSDOM('<!doctype html><body><iframe></iframe></body>', {
+        runScripts: 'outside-only',
+        url: SHELL,
+    });
+    let view = depth === 'top' ? top : top.document.querySelector('iframe').contentWindow;
+    if (depth === 'nested') {
+        view.document.body.append(view.document.createElement('iframe'));
+        view = view.document.querySelector('iframe').contentWindow;
+    }
+    const { document } = view;
+    document.body.innerHTML = html;
+    // the script's timers, run by the test
+    let now = 0;
+    let lastTimer = 0;
+    const timers = new Map();
+    view.setTimeout = (act, delay) => {
+        timers.set(++lastTimer, { at: now + delay, act });
+        return lastTimer;
+    };
+    view.clearTimeout = (id) => {
+        timers.delete(id);
+    };
+    const sent = [];
+    view.chrome = {
+        runtime: {
+            sendMessage: async (message) => {
+                sent.push({ ...message });
+                return message.type === WANTED ? { asset: wanted } : {};
+            },
+        },
+    };
+    const calls = [];
+    view.fetch = async (address, options) => {
+        calls.push(`${options.method} ${address}`);
+        const id = /assets\/([^?]+)/.exec(address)[1];
+        const { status = 200, body, isDown } = assets[id] ?? { status: 404 };
+        if (isDown) {
+            throw new TypeError('Failed to fetch');
+        }
+        return {
+            ok: status >= 200 && status < 300,
+            status,
+            json: async () => {
+                if (body === undefined) {
+                    throw new SyntaxError('no JSON');
+                }
+                return body;
+            },
+        };
+    };
+    const clicked = [];
+    const searched = [];
+    document.addEventListener('click', (event) => {
+        const name = event.target.closest('.contentitem-table-name');
+        clicked.push(name ? name.closest('tr').dataset.flowId : event.target.tagName);
+    });
+    for (const type of ['input', 'change', 'keydown', 'keypress', 'keyup']) {
+        document.addEventListener(type, (event) => {
+            // eslint-disable-next-line unicorn/prefer-keyboard-event-key -- the search box was seen to take Enter by its key code, so the test must see that one too
+            const code = event.key ? ` ${event.key} ${event.keyCode}` : '';
+            searched.push(`${type} ${event.target.value}${code}`);
+        });
+    }
+    view.eval(frameScript);
+    return {
+        document,
+        sent,
+        calls,
+        clicked,
+        searched,
+        /**
+         * Lets the page settle and the given time pass.
+         *
+         * @param {number} [delay] milliseconds
+         */
+        pass: async (delay = LOOK_DELAY) => {
+            await tick();
+            now += delay;
+            for (const [id, timer] of timers) {
+                if (!(timer.at <= now)) {
+                    continue;
+                }
+
+                timers.delete(id);
+                timer.act();
+            }
+            await tick();
+        },
+        shown: () => sent.filter((message) => message.type === SHOWN).map((item) => item.asset),
+        asked: () => sent.filter((message) => message.type === WANTED).length,
+        notice: () => document.querySelector(NOTICE),
+    };
+}
+
+/**
+ * Runs the background script with a stand-in for the extension API.
+ *
+ * @param {(message: object) => object} [page] what the page of the tab answers; it throws when there is none
+ * @returns {{send: (message: object, sender: object) => Promise.<object> | false, passed: object[]}} a way to send it a message, which gives the answer or false if none will come, and what it passed on
+ */
+function background(page = () => ({})) {
+    const listeners = [];
+    const passed = [];
+    const chrome = {
+        runtime: {
+            id: EXTENSION,
+            onMessage: {
+                addListener: (item) => {
+                    listeners.push(item);
+                },
+            },
+        },
+        tabs: {
+            sendMessage: async (tabId, message, options) => {
+                passed.push(structuredClone({ tabId, message, options }));
+                return page(message);
+            },
+        },
+    };
+    vm.runInNewContext(backgroundScript, { chrome, URL });
+    const send = (message, sender) => {
+        const { promise, resolve } = Promise.withResolvers();
+        const willAnswer = listeners[0](message, sender, (answer) =>
+            resolve(answer === undefined ? undefined : structuredClone(answer)),
+        );
+        return willAnswer === true && promise;
+    };
+    return { send, passed };
+}
+
+/**
+ * Copies what the page's script returned, so that it can be compared with what a test writes.
+ *
+ * @param {object|null|undefined} value what the script returned
+ * @returns {object|null|undefined} the copy
+ */
+const plain = (value) => (value ? structuredClone(value) : value);
+
+test('an address names an asset only as two ids of digits after Content Builder’s own route', () => {
+    const { parse, isContentBuilderHash } = shell().helpers;
+    assert.deepEqual(plain(parse(`${MARKER}123`)), { mid: MID, asset: '123' });
+    assert.deepEqual(plain(parse(`${MARKER}123/`)), { mid: MID, asset: '123' });
+    assert.deepEqual(plain(parse('#app/Content Builder/ux-tools/7/asset/123')), {
+        mid: '7',
+        asset: '123',
+    });
+    const longest = link('123456789012345', '123456789012345');
+    assert.deepEqual(plain(parse(longest)), {
+        mid: '123456789012345',
+        asset: '123456789012345',
+    });
+    for (const hash of [
+        '',
+        APP,
+        MARKER,
+        // the format without a business unit, which was never released, and the first name of
+        // the marker
+        `${APP}ux-tools/asset/123`,
+        `${APP}sfmcux/asset/123`,
+        `${APP}sfmcux/${MID}/asset/123`,
+        // too long, and not digits only
+        `${MARKER}1234567890123456`,
+        link('1234567890123456', '123'),
+        `${MARKER}12a`,
+        link('5a', '123'),
+        link('', '123'),
+        link('-5', '123'),
+        link('5.0', '123'),
+        link('%35', '123'),
+        link('5/6', '123'),
+        link('..', '123'),
+        `${MARKER}-1`,
+        `${MARKER}1.5`,
+        `${MARKER}1e3`,
+        `${MARKER}12?x=1`,
+        `${MARKER}12/edit`,
+        `${MARKER}12#${MARKER}13`,
+        `${MARKER}<img src=x onerror=alert(1)>`,
+        link('<img src=x onerror=alert(1)>', '123'),
+        `${MARKER}%31`,
+        ` ${MARKER}12`,
+        `${MARKER}12\n`,
+        // another app, and another route of Content Builder
+        `#app/Email/ux-tools/${MID}/asset/123`,
+        `#app/Content%20Builder%20Two/ux-tools/${MID}/asset/123`,
+        `#app/Content%20Builder/other/${MID}/asset/123`,
+        `app/Content%20Builder/ux-tools/${MID}/asset/123`,
+        undefined,
+        null,
+        123,
+    ]) {
+        assert.equal(parse(hash), null, String(hash));
+    }
+
+    for (const hash of [
+        '#app/Content%20Builder',
+        APP,
+        '#app/Content Builder/',
+        `${MARKER}123`,
+        `${APP}anything/else`,
+    ]) {
+        assert.equal(isContentBuilderHash(hash), true, hash);
+    }
+    for (const hash of [
+        '',
+        '#',
+        '#app/Email/',
+        '#app/Content%20BuilderX/',
+        '#app/Content%20Builder%20Two/',
+        '#app/Journey%20Builder/#app/Content%20Builder/',
+        '#home',
+        undefined,
+        null,
+    ]) {
+        assert.equal(isContentBuilderHash(hash), false, String(hash));
+    }
+});
+
+test('the address of an asset keeps the path and the query, and takes nothing but digits', () => {
+    const { address, switchAddress } = shell().helpers;
+    assert.equal(address('/cloud/', '', MID, '123'), `/cloud/${MARKER}123`);
+    assert.equal(address('/cloud/', '?x=1', MID, '123'), `/cloud/?x=1${MARKER}123`);
+    assert.equal(address('/cloud/', '?x=1', MID, null), `/cloud/?x=1${APP}`);
+    for (const id of [undefined, '', 'abc', '12/../x', '1234567890123456', 123, {}, ['1']]) {
+        assert.equal(address('/cloud/', '', MID, id), `/cloud/${APP}`, String(id));
+        // an asset without its business unit is no link
+        assert.equal(address('/cloud/', '', id, '123'), `/cloud/${APP}`, String(id));
+        assert.equal(switchAddress(ORIGIN, id, '123'), undefined);
+        assert.equal(switchAddress(ORIGIN, MID, id), undefined);
+    }
+    // to Content Builder itself, without the asset
+    assert.equal(
+        switchAddress(ORIGIN, OTHER, '123'),
+        'https://mc.s7.exacttarget.com/cloud/context-switch.html?m=600&h=https%3A%2F%2Fmc.s7.exacttarget.com%2Fcloud%2F%23app%2FContent%2520Builder%2F',
+    );
+});
+
+test('the page hands the asset of a link of this business unit to Content Builder once', async () => {
+    const at = shell(`${MARKER}123`);
+    // only the extension's background script is answered
+    assert.equal(await at.send({ type: WANTED }, { id: 'another-extension' }), undefined);
+    assert.equal(await at.send({ type: WANTED }, { id: EXTENSION, tab: { id: 7 } }), undefined);
+    assert.equal(await at.send({ type: 'something else' }), undefined);
+    // read once for the early decision, and anew when Content Builder asks
+    assert.equal(at.currentReads(), 1);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: '123' });
+    assert.equal(at.currentReads(), 2);
+    assert.equal(at.waits(), 0);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    // asking changes nothing in the address, and no dialog is shown
+    assert.equal(at.hash(), `${MARKER}123`);
+    assert.equal(at.dialog(), null);
+    assert.deepEqual(at.went, []);
+
+    assert.deepEqual(await shell(APP).send({ type: WANTED }), { asset: null });
+    for (const hash of [
+        `#app/Email/ux-tools/${MID}/asset/123`,
+        `${MARKER}12a`,
+        `${APP}ux-tools/asset/123`,
+    ]) {
+        const other = shell(hash);
+        assert.deepEqual(await other.send({ type: WANTED }), { asset: null });
+        assert.equal(other.dialog(), null);
+    }
+});
+
+test('a link of another business unit is not followed: a dialog names both and offers to switch', async () => {
+    const at = shell(link(OTHER, '123'));
+    // the API alone tells the business unit: the header is not there
+    await settle();
+    // before Content Builder asked anything
+    assert.equal(at.dialog().hasAttribute('open'), true);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.equal(at.window.document.querySelectorAll('dialog').length, 1);
+    assert.equal(at.dialog().querySelector('img').title, 'SFMC UX Tools');
+    assert.deepEqual(at.said(), [
+        'This link belongs to the business unit Northwind France (600). You are in Northwind Germany (500).',
+    ]);
+    assert.deepEqual(at.buttons(), ['Switch and open', 'Stay here']);
+    assert.equal(at.calls.includes(`GET ${ACCOUNTS}/${OTHER}`), true);
+    // nothing switches without the click
+    assert.deepEqual(at.went, []);
+    at.click('Stay here');
+    assert.equal(at.dialog(), null);
+    assert.deepEqual(at.went, []);
+    // the link was used up
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.equal(at.dialog(), null);
+
+    const again = shell(link(OTHER, '123'));
+    await again.send({ type: WANTED });
+    again.click('Switch and open');
+    assert.deepEqual(again.went, [switchTo(PLAIN_CONTENT_BUILDER)]);
+    assert.equal(again.dialog(), null);
+    // only GET requests, all to the business units of the account
+    for (const call of [...at.calls, ...again.calls]) {
+        assert.equal(call.startsWith(`GET ${ACCOUNTS}`), true, call);
+    }
+
+    // a name is text, whatever it holds
+    const odd = shell(link(OTHER, '123'), {
+        units: [
+            unit(100, 'Northwind', null),
+            unit(500, '<b>here</b>', 100),
+            unit(600, '<img src=x>', 100),
+        ],
+    });
+    await odd.send({ type: WANTED });
+    assert.deepEqual(odd.said(), [
+        'This link belongs to the business unit <img src=x> (600). You are in <b>here</b> (500).',
+    ]);
+    assert.equal(odd.dialog().querySelectorAll('img, b').length, 1);
+
+    // the list could not be read: the business unit itself answered, which is enough
+    const listless = shell(link(OTHER, '123'), { isListDown: true });
+    await listless.send({ type: WANTED });
+    assert.deepEqual(listless.buttons(), ['Switch and open', 'Stay here']);
+});
+
+test('a link of a business unit that the account does not have, or that the user may not open, says so', async () => {
+    const TEXT =
+        'The business unit 999 of this link does not exist in the Marketing Cloud account you are logged in to (Northwind), or you have no access to it.';
+    // never seen
+    const at = shell(link(NOWHERE, '123'));
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(at.said(), [TEXT]);
+    assert.deepEqual(at.buttons(), ['Close']);
+    at.click('Close');
+    assert.equal(at.dialog(), null);
+    assert.deepEqual(at.went, []);
+
+    // seen before, in another account
+    const memory = { 900: { name: 'Contoso', units: { 900: 'Contoso', 999: 'Contoso Italy' } } };
+    const known = shell(link(NOWHERE, '123'), { memory });
+    await known.send({ type: WANTED });
+    assert.deepEqual(known.said(), [
+        TEXT,
+        'This browser has seen it before: Contoso Italy in Contoso.',
+    ]);
+    assert.deepEqual(known.buttons(), ['Close']);
+    // an account whose name was never read
+    const nameless = shell(link(NOWHERE, '123'), {
+        memory: { 900: { name: '', units: { 999: 'Contoso Italy' } } },
+    });
+    await nameless.send({ type: WANTED });
+    assert.equal(
+        nameless.said()[1],
+        'This browser has seen it before: Contoso Italy in the account 900.',
+    );
+    // a memory that cannot be read, or holds something else, does not fail the dialog
+    for (const has of [
+        { isStorageDown: true },
+        { memory: 'broken' },
+        { memory: { 900: null, 901: { units: 7 }, 902: { units: { 999: 7 } } } },
+    ]) {
+        const broken = shell(link(NOWHERE, '123'), has);
+        assert.deepEqual(await broken.send({ type: WANTED }), { asset: null });
+        assert.deepEqual(broken.said(), [TEXT], JSON.stringify(has));
+    }
+
+    // a business unit of this account that the user may not open: no offer to switch
+    const closed = shell(link('700', '123'));
+    await closed.send({ type: WANTED });
+    assert.deepEqual(closed.said(), [
+        'The business unit 700 of this link does not exist in the Marketing Cloud account you are logged in to (Northwind), or you have no access to it.',
+    ]);
+    assert.deepEqual(closed.buttons(), ['Close']);
+
+    // the list could not be read now: the account is named as it was kept before
+    const listless = shell(link(NOWHERE, '123'), { isListDown: true, memory: REMEMBERED });
+    await listless.send({ type: WANTED });
+    assert.deepEqual(listless.said(), [TEXT]);
+});
+
+test('when the business unit of the user cannot be read, no link is followed and none is written', async () => {
+    // nothing can be read at all
+    const down = shell(`${MARKER}123`, { isDown: true });
+    await down.elapse(CURRENT_WAIT);
+    assert.deepEqual(await down.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(down.said(), [
+        'The business unit 500 of this link does not exist in the Marketing Cloud account you are logged in to, or you have no access to it.',
+    ]);
+    assert.deepEqual(down.buttons(), ['Close']);
+    down.click('Close');
+    await down.route(APP);
+    assert.deepEqual(await down.send({ type: SHOWN, asset: '123' }), {});
+    assert.equal(down.hash(), APP);
+    assert.deepEqual(down.sets, []);
+
+    // only the user's own business unit cannot be read
+    const blind = shell(link(OTHER, '123'), { current: null });
+    await blind.elapse(CURRENT_WAIT);
+    assert.deepEqual(await blind.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(blind.said(), [
+        'This link belongs to the business unit Northwind France (600). The business unit you are in could not be read.',
+    ]);
+    assert.deepEqual(blind.buttons(), ['Switch and open', 'Stay here']);
+
+    // a marker that was written goes away once the business unit cannot be read any more
+    const at = shell(APP);
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.equal(at.hash(), `${MARKER}123`);
+    at.account.current = null;
+    await at.send({ type: SHOWN, asset: '456' });
+    assert.equal(at.hash(), APP);
+    // a dialog that cannot be shown breaks nothing
+    const mute = shell(link(OTHER, '123'));
+    mute.window.chrome.runtime.getURL = () => {
+        throw new Error('Extension context invalidated.');
+    };
+    assert.deepEqual(await mute.send({ type: WANTED }), { asset: null });
+});
+
+test('the dialog comes as soon as the business unit is known, by the API or by the header of the page', async () => {
+    const SAID =
+        'This link belongs to the business unit Northwind France (600). You are in Northwind Germany (500).';
+    // the API never answers: the header alone is enough, once the page has drawn it
+    const at = shell(link(OTHER, '123'), { isCurrentHanging: true });
+    await settle();
+    assert.equal(at.dialog(), null);
+    at.window.document.body.insertAdjacentHTML('beforeend', '<div id="header"></div>');
+    await settle();
+    assert.equal(at.dialog(), null);
+    at.window.document.querySelector('#header').innerHTML = HEADER;
+    await settle();
+    assert.deepEqual(at.said(), [SAID]);
+    assert.equal(at.waits(), 0);
+    // Content Builder asks later: nothing to open, no second dialog, and no wait for the API
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.equal(at.window.document.querySelectorAll('dialog').length, 1);
+    assert.equal(at.currentReads(), 1);
+
+    // a header that is there from the start, and one without the name
+    const ready = shell(link(OTHER, '123'), { isCurrentHanging: true, header: HEADER });
+    await settle();
+    assert.deepEqual(ready.said(), [SAID]);
+    const nameless = shell(link(OTHER, '123'), {
+        isCurrentHanging: true,
+        header: '<div class="mc-account-switcher-current-account-details">MID: 500</div>',
+    });
+    await settle();
+    assert.deepEqual(nameless.said(), [
+        'This link belongs to the business unit Northwind France (600). You are in the business unit 500.',
+    ]);
+    // only digits after "MID:" are an id
+    for (const text of ['', 'MID:', 'MID: abc', 'MID: 1234567890123456', '500 Northwind']) {
+        const odd = shell(link(OTHER, '123'), {
+            isCurrentHanging: true,
+            header: `<div class="mc-account-switcher-current-account-details">${text}</div>`,
+        });
+        await settle();
+        assert.equal(odd.dialog(), null, text);
+    }
+
+    // the header of the link's own business unit: no dialog; Content Builder's question is
+    // answered by the API alone, which here never answers in time
+    const same = shell(`${MARKER}123`, { isCurrentHanging: true, header: HEADER });
+    await settle();
+    assert.equal(same.dialog(), null);
+    const answer = same.send({ type: WANTED });
+    await same.elapse(CURRENT_WAIT);
+    assert.deepEqual(await answer, { asset: null });
+    assert.deepEqual(same.said(), [
+        'This link belongs to the business unit Northwind Germany (500). The business unit you are in could not be read.',
+    ]);
+
+    // neither tells: unknown after the wait, and not before
+    const none = shell(link(OTHER, '123'), { isCurrentHanging: true });
+    await none.elapse(CURRENT_WAIT - 1);
+    assert.equal(none.dialog(), null);
+    await none.elapse(1);
+    assert.deepEqual(none.said(), [
+        'This link belongs to the business unit Northwind France (600). The business unit you are in could not be read.',
+    ]);
+    assert.deepEqual(await none.send({ type: WANTED }), { asset: null });
+    assert.equal(none.window.document.querySelectorAll('dialog').length, 1);
+
+    // a page without a body yet: the dialog waits for it
+    const early = shell(link(OTHER, '123'), { isBodyLate: true });
+    await settle();
+    assert.equal(early.dialog(), null);
+    early.window.document.documentElement.append(early.window.document.createElement('body'));
+    await settle();
+    assert.equal(early.dialog().parentElement, early.window.document.body);
+
+    // a link pasted into the open page is decided by the API, not by the header, which may
+    // be that of before a switch in another tab
+    const pasted = shell(APP, { header: HEADER });
+    pasted.account.current = OTHER;
+    await pasted.route(link(OTHER, '456'));
+    assert.equal(pasted.dialog(), null);
+    assert.deepEqual(await pasted.send({ type: WANTED }), { asset: '456' });
+    // a link of this business unit shows no dialog at all
+    const fine = shell(`${MARKER}123`, { header: HEADER });
+    await settle();
+    assert.equal(fine.dialog(), null);
+    assert.equal(fine.waits(), 0);
+});
+
+test('the dialog greys the page out and closes by its buttons only', async () => {
+    const at = shell(link(OTHER, '123'));
+    await settle();
+    const box = at.dialog();
+    assert.equal(box.closedBy, 'none');
+    let shows = 0;
+    const showModal = box.showModal.bind(box);
+    box.showModal = () => {
+        shows++;
+        showModal();
+    };
+    // Escape
+    const cancel = new at.window.Event('cancel', { cancelable: true });
+    box.dispatchEvent(cancel);
+    assert.equal(cancel.defaultPrevented, true);
+    assert.equal(box.hasAttribute('open'), true);
+    // closed all the same, as Chrome does on a second Escape: it is shown again
+    box.close();
+    box.close();
+    assert.equal(at.dialog(), box);
+    assert.equal(box.hasAttribute('open'), true);
+    assert.equal(shows, 2);
+    assert.deepEqual(at.went, []);
+    // Content Builder gets nothing meanwhile
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    at.click('Stay here');
+    assert.equal(at.dialog(), null);
+    assert.equal(shows, 2);
+    // a link is decided once: no dialog when Content Builder asks after the choice
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    await at.route(APP);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.equal(at.dialog(), null);
+    assert.deepEqual(at.went, []);
+
+    // the dialog about a business unit of another account stays as well
+    const other = shell(link(NOWHERE, '123'));
+    await settle();
+    other.dialog().close();
+    assert.equal(other.dialog().hasAttribute('open'), true);
+    other.click('Close');
+    assert.equal(other.dialog(), null);
+
+    // shown by showModal, which greys the page out by the backdrop of the stylesheet
+    assert.match(shellScript, /\.showModal\(\)/);
+    assert.doesNotMatch(shellScript, /\.show\(\)/);
+    assert.match(
+        read('../src/deep-link.css'),
+        /\.sfmc-ux-tools-deep-link-dialog::backdrop \{\s*background: rgb\(0 0 0 \/ 40%\);/,
+    );
+});
+
+test('the open asset is written into the address with its business unit, without routing again, and only in Content Builder', async () => {
+    const at = shell(APP);
+    let routed = 0;
+    at.window.addEventListener('hashchange', () => routed++);
+    const state = { kept: true };
+    at.window.history.replaceState(state, '');
+
+    assert.deepEqual(await at.send({ type: SHOWN, asset: '123' }), {});
+    assert.equal(at.window.location.href, `${SHELL}?x=1${MARKER}123`);
+    await at.send({ type: SHOWN, asset: '456' });
+    assert.equal(at.hash(), `${MARKER}456`);
+    // the business unit is read each time: it may have been switched in another tab
+    assert.equal(at.currentReads(), 2);
+    at.account.current = OTHER;
+    await at.send({ type: SHOWN, asset: '789' });
+    assert.equal(at.hash(), link(OTHER, '789'));
+    at.account.current = MID;
+    // no asset any more, for which nothing is read
+    const reads = at.currentReads();
+    await at.send({ type: SHOWN, asset: null });
+    assert.equal(at.window.location.href, `${SHELL}?x=1${APP}`);
+    assert.equal(at.currentReads(), reads);
+    // whatever is no id of digits is no asset
+    for (const asset of ['12a', '1234567890123456', 123, '../x', '', undefined, { id: 1 }]) {
+        await at.send({ type: SHOWN, asset: '123' });
+        await at.send({ type: SHOWN, asset });
+        assert.equal(at.hash(), APP, String(asset));
+    }
+    // an asset that was closed before its business unit was read is not written
+    const first = at.send({ type: SHOWN, asset: '123' });
+    const second = at.send({ type: SHOWN, asset: null });
+    await Promise.all([first, second]);
+    assert.equal(at.hash(), APP);
+    // from anyone but the background script nothing is written
+    await at.send({ type: SHOWN, asset: '123' }, { id: 'another-extension' });
+    await at.send({ type: SHOWN, asset: '123' }, { id: EXTENSION, tab: { id: 7 } });
+    assert.equal(at.hash(), APP);
+    assert.equal(routed, 0);
+    assert.deepEqual(at.window.history.state, state);
+
+    // another app's address is never touched
+    for (const hash of ['#app/Email/', '#app/Journey%20Builder/', '', '#home']) {
+        const other = shell(hash);
+        await other.send({ type: SHOWN, asset: '123' });
+        await other.send({ type: SHOWN, asset: null });
+        assert.equal(other.hash(), hash);
+        assert.equal(other.currentReads(), 0);
+    }
+});
+
+test('the page keeps the asset in the address when it resets its own route', async () => {
+    const at = shell(`${MARKER}123`);
+    await at.send({ type: WANTED });
+    // the reset before any asset is shown stays as it is
+    await at.route(APP);
+    assert.equal(at.hash(), APP);
+
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.equal(at.hash(), `${MARKER}123`);
+    await at.route(APP);
+    assert.equal(at.hash(), `${MARKER}123`);
+    await at.route('#app/Content%20Builder');
+    assert.equal(at.hash(), `${MARKER}123`);
+    // written again with the business unit as it is then
+    at.account.current = OTHER;
+    await at.route(APP);
+    assert.equal(at.hash(), link(OTHER, '123'));
+    at.account.current = MID;
+    await at.route(APP);
+    assert.equal(at.hash(), `${MARKER}123`);
+    // another route of Content Builder is the page's own business
+    await at.route(`${APP}something`);
+    assert.equal(at.hash(), `${APP}something`);
+
+    // forgotten once nothing is shown
+    await at.send({ type: SHOWN, asset: null });
+    await at.route(APP);
+    assert.equal(at.hash(), APP);
+
+    // forgotten once the page left Content Builder
+    await at.send({ type: SHOWN, asset: '123' });
+    await at.route('#app/Email/');
+    assert.equal(at.hash(), '#app/Email/');
+    await at.route(APP);
+    assert.equal(at.hash(), APP);
+    // told while another app is open: nothing is written, and nothing kept for later
+    await at.route('#app/Email/');
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.equal(at.hash(), '#app/Email/');
+    await at.route(APP);
+    assert.equal(at.hash(), APP);
+});
+
+test('a link pasted into the open page is checked the same way when Content Builder asks again', async () => {
+    const at = shell(APP);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    await at.route(`${MARKER}456`);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: '456' });
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+
+    // the marker of the asset that is shown already is no new link
+    await at.send({ type: SHOWN, asset: '456' });
+    await at.route(`${MARKER}456`);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.equal(at.dialog(), null);
+
+    // the same asset id in another business unit is a new link, and leads to the dialog
+    await at.route(link(OTHER, '456'));
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(at.said(), [
+        'This link belongs to the business unit Northwind France (600). You are in Northwind Germany (500).',
+    ]);
+    at.click('Stay here');
+    // and so does any other link of another business unit, or of none of this account
+    await at.route(link(NOWHERE, '9'));
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.match(at.said()[0], /^The business unit 999 of this link does not exist/);
+    assert.deepEqual(at.went, []);
+
+    // the business unit was switched in another tab: the link of the other one is followed now
+    const moved = shell(APP);
+    await moved.send({ type: WANTED });
+    moved.account.current = OTHER;
+    await moved.route(link(OTHER, '456'));
+    assert.deepEqual(await moved.send({ type: WANTED }), { asset: '456' });
+    assert.equal(moved.dialog(), null);
+});
+
+test('the business units of an account are added to those the browser has seen', () => {
+    const { merge } = shell().helpers;
+    const germany = { mid: '500', name: 'Northwind Germany', parent: '100' };
+    const france = { mid: '600', name: 'Northwind France', parent: '100' };
+    const top = { mid: '100', name: 'Northwind', parent: null };
+    const other = { 900: { name: 'Contoso', units: { 900: 'Contoso' } } };
+    // a new enterprise, next to what was kept
+    assert.deepEqual(plain(merge(other, [top, germany])), {
+        ...other,
+        100: { name: 'Northwind', units: { 100: 'Northwind', 500: 'Northwind Germany' } },
+    });
+    for (const nothing of [undefined, null, 'broken', []]) {
+        assert.deepEqual(plain(merge(nothing, [top, germany])), {
+            100: { name: 'Northwind', units: { 100: 'Northwind', 500: 'Northwind Germany' } },
+        });
+    }
+    // a business unit more, one that was renamed, and one that is not listed any more is kept
+    const before = {
+        100: {
+            name: 'Northwind Old',
+            units: { 100: 'Northwind Old', 500: 'Germany', 800: 'Gone' },
+        },
+    };
+    assert.deepEqual(plain(merge(before, [top, germany, france])), {
+        100: {
+            name: 'Northwind',
+            units: {
+                100: 'Northwind',
+                500: 'Northwind Germany',
+                600: 'Northwind France',
+                800: 'Gone',
+            },
+        },
+    });
+    // what was handed in is not changed
+    assert.equal(before[100].units[500], 'Germany');
+    // a list without the enterprise is kept under the one above the user's business unit, or
+    // under that business unit itself, and keeps the name that enterprise had
+    assert.deepEqual(plain(merge(before, [germany], { mid: '500', parent: '100' })), {
+        100: {
+            name: 'Northwind Old',
+            units: { 100: 'Northwind Old', 500: 'Northwind Germany', 800: 'Gone' },
+        },
+    });
+    assert.deepEqual(plain(merge({}, [germany], { mid: '500', parent: null })), {
+        500: { name: '', units: { 500: 'Northwind Germany' } },
+    });
+    // nothing to add
+    assert.equal(merge(before, [germany]), undefined);
+    assert.equal(merge(before, []), undefined);
+    assert.equal(merge(before), undefined);
+});
+
+test('the page reads the business units once when it is loaded and keeps their names in the browser only', async () => {
+    const at = shell();
+    await settle();
+    assert.deepEqual(at.calls, [`GET ${ACCOUNTS}?$page=1&$pageSize=50&includeParentDetails=true`]);
+    assert.deepEqual(at.sets, [{ [MEMORY_KEY]: REMEMBERED }]);
+
+    // next to another account that was seen before
+    const memory = { 900: { name: 'Contoso', units: { 900: 'Contoso', 999: 'Contoso Italy' } } };
+    const second = shell('', { memory });
+    await settle();
+    assert.deepEqual(second.store[MEMORY_KEY], { ...memory, ...REMEMBERED });
+
+    // a list of several pages is read to its end
+    const many = [unit(100, 'Northwind', null)];
+    for (let index = 1; index <= PAGE_SIZE; index++) {
+        many.push(unit(1000 + index, `Unit ${index}`, 100));
+    }
+    const long = shell('', { units: many });
+    await settle();
+    assert.equal(long.calls.length, 2);
+    assert.equal(Object.keys(long.store[MEMORY_KEY][100].units).length, PAGE_SIZE + 1);
+    // a list that does not end is given up after its most pages
+    const full = many.slice(0, PAGE_SIZE);
+    const looping = [...full];
+    looping.slice = () => full;
+    const endless = shell('', { units: looping });
+    await settle();
+    assert.equal(endless.calls.length, MOST_PAGES);
+
+    // a list without the enterprise: the user's business unit says where it belongs
+    const partial = shell('', { units: UNITS.slice(1) });
+    await settle();
+    assert.equal(partial.currentReads(), 1);
+    assert.deepEqual(Object.keys(partial.store[MEMORY_KEY]), ['100']);
+
+    // a list that cannot be read leaves what was kept as it is
+    for (const has of [{ isListDown: true }, { isDown: true }, { units: [] }]) {
+        const failed = shell('', { memory, ...has });
+        await settle();
+        assert.deepEqual(failed.sets, [], JSON.stringify(has));
+        assert.deepEqual(failed.store[MEMORY_KEY], memory);
+    }
+    // a storage that cannot be used breaks nothing
+    const lost = shell(`${MARKER}123`, { isStorageDown: true });
+    await settle();
+    assert.deepEqual(await lost.send({ type: WANTED }), { asset: '123' });
+});
+
+test('the options page forgets the business units on a click, and only them', async () => {
+    const { window } = new JSDOM(read('../src/options.html'), { runScripts: 'outside-only' });
+    const removed = [];
+    let isDown = false;
+    window.chrome = {
+        storage: {
+            sync: { get: async (defaults) => ({ ...defaults }), set: () => {} },
+            local: {
+                remove: async (key) => {
+                    if (isDown) {
+                        throw new Error('Extension context invalidated.');
+                    }
+                    removed.push(key);
+                },
+            },
+        },
+    };
+    window.eval(read('../src/options.js'));
+    await tick();
+    assert.deepEqual(removed, []);
+    const button = window.document.querySelector('#forgetBusinessUnits');
+    const done = window.document.querySelector('#forgetBusinessUnitsDone');
+    assert.equal(
+        button.textContent.trim().replaceAll(/\s+/g, ' '),
+        'Forget the business units this browser has seen',
+    );
+    assert.equal(done.textContent, '');
+    button.click();
+    await tick();
+    assert.deepEqual(removed, [MEMORY_KEY]);
+    assert.equal(done.textContent, 'Forgotten.');
+    isDown = true;
+    button.click();
+    await tick();
+    assert.deepEqual(removed, [MEMORY_KEY]);
+    assert.match(done.textContent, /Could not be forgotten/);
+    // the shell script keeps them under the same name
+    assert.match(shellScript, new RegExp(`MEMORY_KEY = '${MEMORY_KEY}'`));
+});
+
+test('Content Builder tells which asset is open, and only when that changed', async () => {
+    const at = frame({ html: SEARCH_BOX + list('1', '2') });
+    // the first look says that nothing is open
+    assert.deepEqual(at.shown(), [null]);
+    at.document.body.insertAdjacentHTML('beforeend', DETAILS);
+    // not at once: the page may still be changing
+    await tick();
+    assert.deepEqual(at.shown(), [null]);
+    await at.pass();
+    assert.deepEqual(at.shown(), [null, '123']);
+    // other changes of the page tell nothing new
+    at.document.body.append(at.document.createElement('div'));
+    await at.pass();
+    at.document.body.lastChild.setAttribute('class', 'x');
+    await at.pass();
+    assert.deepEqual(at.shown(), [null, '123']);
+
+    // another asset in the same view: the field holds another id, which is read at each look
+    at.document.querySelector('.contentinput-copyvalue').value = '456';
+    at.document.body.append(at.document.createElement('div'));
+    await at.pass();
+    assert.deepEqual(at.shown(), [null, '123', '456']);
+    // a view that is not drawn shows no asset
+    at.document.querySelector('.contentproperties-detailsview').parentElement.style.display =
+        'none';
+    await at.pass();
+    assert.deepEqual(at.shown(), [null, '123', '456', null]);
+    at.document.querySelector('.contentproperties-detailsview').parentElement.style.display = '';
+    await at.pass();
+    assert.deepEqual(at.shown().at(-1), '456');
+    // an id that is none, and a view that is gone
+    at.document.querySelector('.contentinput-copyvalue').value = 'abc';
+    at.document.body.append(at.document.createElement('div'));
+    await at.pass();
+    assert.deepEqual(at.shown().at(-1), null);
+    at.document.querySelector('.contentinput-copyvalue').value = '7';
+    at.document.body.append(at.document.createElement('div'));
+    await at.pass();
+    assert.deepEqual(at.shown().at(-1), '7');
+    at.document.querySelector('.contentproperties-detailsview').remove();
+    await at.pass();
+    assert.deepEqual(at.shown().slice(-2), ['7', null]);
+    // without a link nothing was read, searched or clicked
+    assert.equal(at.asked(), 1);
+    assert.deepEqual(at.calls, []);
+    assert.deepEqual(at.searched, []);
+    assert.deepEqual(at.clicked, []);
+});
+
+test('many changes in a row are looked at once', async () => {
+    const at = frame({ html: SEARCH_BOX });
+    let looks = 0;
+    const find = at.document.querySelector.bind(at.document);
+    at.document.querySelector = (selector) => {
+        if (selector === '.contentproperties-detailsview') {
+            looks++;
+        }
+        return find(selector);
+    };
+    for (let index = 0; index < 20; index++) {
+        at.document.body.append(at.document.createElement('div'));
+        await tick();
+    }
+    assert.equal(looks, 0);
+    await at.pass();
+    assert.equal(looks, 1);
+});
+
+test('a link is followed by a search for the asset’s name and a click on the row with its id', async () => {
+    const at = frame({
+        html: SEARCH_BOX + list('1', '2'),
+        wanted: '123',
+        assets: { 123: { body: { id: 123, name: 'Welcome <b>mail</b>' } } },
+    });
+    await at.pass();
+    assert.equal(at.asked(), 1);
+    assert.deepEqual(at.calls, ['GET /fuelapi/asset/v1/content/assets/123?$fields=id,name']);
+    assert.deepEqual(at.searched, [
+        'input Welcome <b>mail</b>',
+        'change Welcome <b>mail</b>',
+        'keydown Welcome <b>mail</b> Enter 13',
+        'keypress Welcome <b>mail</b> Enter 13',
+        'keyup Welcome <b>mail</b> Enter 13',
+    ]);
+    // the rows that are there are other assets
+    assert.deepEqual(at.clicked, []);
+    // the search lists several, the wanted one not first
+    at.document.querySelector('tbody').innerHTML = row('1234') + row('12') + row('123');
+    await at.pass();
+    assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+    // once: the list drawn again is left alone, and so is the time after
+    at.document.querySelector('tbody').innerHTML = row('123');
+    await at.pass();
+    await at.pass(ROW_WAIT);
+    assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+    assert.equal(at.notice(), null);
+    assert.equal(at.asked(), 1);
+    assert.equal(at.calls.length, 1);
+    assert.equal(at.searched.length, 5);
+    // the asset is not open yet: the search stays
+    const box = at.document.querySelector('input');
+    assert.equal(box.value, 'Welcome <b>mail</b>');
+    at.document.body.insertAdjacentHTML('beforeend', DETAILS);
+    await at.pass();
+    // open now: the search is emptied the way it was made, once
+    assert.equal(box.value, '');
+    assert.deepEqual(at.searched.slice(5), [
+        'input ',
+        'change ',
+        'keydown  Enter 13',
+        'keypress  Enter 13',
+        'keyup  Enter 13',
+    ]);
+    box.value = 'Welcome <b>mail</b>';
+    at.document.body.append(at.document.createElement('div'));
+    await at.pass();
+    assert.equal(box.value, 'Welcome <b>mail</b>');
+    assert.equal(at.searched.length, 10);
+    assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+});
+
+test('the search is left alone when the user changed it or opened another asset', async () => {
+    const start = async () => {
+        const at = frame({
+            html: SEARCH_BOX + list('123'),
+            wanted: '123',
+            assets: { 123: { body: { id: 123, name: 'Welcome' } } },
+        });
+        await at.pass();
+        assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+        return at;
+    };
+    // the user searched for something else before the asset was open
+    const changed = await start();
+    changed.document.querySelector('input').value = 'my own search';
+    changed.document.body.insertAdjacentHTML('beforeend', DETAILS);
+    await changed.pass();
+    assert.equal(changed.document.querySelector('input').value, 'my own search');
+    assert.equal(changed.searched.length, 5);
+
+    // another asset was opened instead: the link is done with, also when its asset opens later
+    const other = await start();
+    other.document.body.insertAdjacentHTML('beforeend', DETAILS);
+    other.document.querySelector('.contentinput-copyvalue').value = '456';
+    await other.pass();
+    other.document.querySelector('.contentinput-copyvalue').value = '123';
+    other.document.body.append(other.document.createElement('div'));
+    await other.pass();
+    assert.equal(other.document.querySelector('input').value, 'Welcome');
+    assert.equal(other.searched.length, 5);
+});
+
+test('a link to an asset that is listed already is followed at once', async () => {
+    const at = frame({
+        html: SEARCH_BOX + list('1', '123'),
+        wanted: '123',
+        assets: { 123: { body: { id: '123', name: 'Welcome' } } },
+    });
+    await at.pass(0);
+    assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+});
+
+test('a link whose row never comes ends in a notice that can be closed, and clicks nothing', async () => {
+    const at = frame({
+        html: SEARCH_BOX + list('1', '2'),
+        wanted: '123',
+        assets: { 123: { body: { id: 123, name: 'Welcome' } } },
+    });
+    await at.pass();
+    at.document.querySelector('tbody').innerHTML = row('1234') + row('12');
+    await at.pass(ROW_WAIT - LOOK_DELAY - 1);
+    assert.equal(at.notice(), null);
+    await at.pass(1);
+    assert.equal(
+        at.notice().querySelector('span').textContent,
+        'SFMC UX Tools: could not open asset 123 from the link (not found in this business unit).',
+    );
+    assert.deepEqual(at.clicked, []);
+    // a row that comes too late is not clicked
+    at.document.querySelector('tbody').innerHTML = row('123');
+    await at.pass();
+    assert.deepEqual(at.clicked, []);
+    at.notice().querySelector('button').click();
+    assert.equal(at.notice(), null);
+    assert.deepEqual(at.clicked, ['BUTTON']);
+    assert.equal(at.calls.length, 1);
+    // the search stays, so that the user sees what was looked for, also once an asset is open
+    at.document.body.insertAdjacentHTML('beforeend', DETAILS);
+    await at.pass();
+    assert.equal(at.document.querySelector('input').value, 'Welcome');
+    assert.equal(at.searched.length, 5);
+});
+
+test('a link to an asset that cannot be read ends in the notice, without a search', async () => {
+    for (const answer of [
+        undefined,
+        { status: 403, body: { message: 'no' } },
+        { isDown: true },
+        { status: 200 },
+        { body: { id: 124, name: 'another asset' } },
+        { body: { id: 123 } },
+        { body: { id: 123, name: '' } },
+        { body: { id: 123, name: 7 } },
+        { body: null },
+    ]) {
+        const at = frame({
+            html: SEARCH_BOX + list('123'),
+            wanted: '123',
+            assets: { 123: answer },
+        });
+        await at.pass();
+        assert.match(at.notice().textContent, /could not open asset 123/, JSON.stringify(answer));
+        assert.deepEqual(at.searched, []);
+        assert.deepEqual(at.clicked, []);
+        assert.equal(at.calls.length, 1);
+    }
+});
+
+test('what the page answers is followed only when it is an id of digits', async () => {
+    for (const wanted of [null, undefined, '', '12a', '1234567890123456', 123, '../x', {}]) {
+        const at = frame({ html: SEARCH_BOX + list('123'), wanted });
+        await at.pass();
+        assert.equal(at.asked(), 1);
+        assert.deepEqual(at.calls, [], String(wanted));
+        assert.deepEqual(at.clicked, []);
+        assert.equal(at.notice(), null);
+    }
+});
+
+test('only the document with the list, directly below the page, talks to the page', async () => {
+    // Content Builder opened by itself
+    const alone = frame({
+        html: SEARCH_BOX + list('123') + DETAILS,
+        wanted: '123',
+        depth: 'top',
+    });
+    await alone.pass();
+    assert.deepEqual(alone.sent, []);
+    // a frame inside Content Builder's frame
+    const nested = frame({
+        html: SEARCH_BOX + list('123') + DETAILS,
+        wanted: '123',
+        depth: 'nested',
+    });
+    await nested.pass();
+    assert.deepEqual(nested.sent, []);
+    for (const at of [alone, nested]) {
+        assert.deepEqual(at.calls, []);
+        assert.deepEqual(at.clicked, []);
+    }
+
+    // a document without the search box says nothing, until it has one
+    const other = frame({ html: DETAILS, wanted: '123' });
+    await other.pass();
+    other.document.body.append(other.document.createElement('div'));
+    await other.pass();
+    assert.deepEqual(other.sent, []);
+    assert.deepEqual(other.calls, []);
+    other.document.body.insertAdjacentHTML('afterbegin', SEARCH_BOX);
+    await other.pass();
+    assert.equal(other.asked(), 1);
+    assert.deepEqual(other.shown(), ['123']);
+    // the box may go away again: the document stays the one with the list
+    other.document.querySelector('input[placeholder="Search"]').remove();
+    other.document.querySelector('.contentproperties-detailsview').remove();
+    await other.pass();
+    assert.deepEqual(other.shown(), ['123', null]);
+    assert.equal(other.asked(), 1);
+});
+
+test('the scripts change nothing in Marketing Cloud and write no markup', () => {
+    assert.deepEqual(frameScript.match(/\bfetch\(/g), ['fetch(']);
+    assert.deepEqual(frameScript.match(/method: '[A-Z]+'/g), ["method: 'GET'"]);
+    assert.equal(frameScript.match(/\.click\(\)/g).length, 1);
+    // the page's script only reads, and leaves the page in one place: the switch the user clicked
+    assert.deepEqual(shellScript.match(/\bfetch\(/g), ['fetch(']);
+    assert.deepEqual(shellScript.match(/method: '[A-Z]+'/g), ["method: 'GET'"]);
+    assert.deepEqual(shellScript.match(/location\.(?:assign|replace|href)\b/g), [
+        'location.assign',
+    ]);
+    for (const script of [shellScript, frameScript]) {
+        assert.doesNotMatch(script, /XMLHttpRequest|sendBeacon/);
+        assert.doesNotMatch(script, /innerHTML|outerHTML|insertAdjacentHTML/);
+    }
+});
+
+test('the background script passes the two messages from Content Builder’s frame to the page of its tab', async () => {
+    const FRAME = {
+        id: EXTENSION,
+        tab: { id: 7 },
+        frameId: 3,
+        documentId: 'A1',
+        url: 'https://content-builder.s7.marketingcloudapps.com/',
+    };
+    const { send, passed } = background((message) =>
+        message.type === WANTED ? { asset: '123' } : {},
+    );
+    assert.deepEqual(await send({ type: WANTED, asset: 'x', more: 1 }, FRAME), { asset: '123' });
+    assert.deepEqual(await send({ type: SHOWN, asset: '456', more: 1 }, FRAME), {});
+    // to the page only, and with nothing but the type and the asset
+    assert.deepEqual(passed, [
+        { tabId: 7, message: { type: WANTED }, options: { frameId: 0 } },
+        { tabId: 7, message: { type: SHOWN, asset: '456' }, options: { frameId: 0 } },
+    ]);
+
+    for (const other of [
+        { id: 'another-extension' },
+        { tab: undefined },
+        { tab: {} },
+        // the page itself, and a sender without a frame
+        { frameId: 0 },
+        { frameId: undefined },
+        { url: undefined },
+        { url: 'not an address' },
+        { url: 'https://mc.s7.marketingcloudapps.com/AutomationStudioFuel3/' },
+        { url: 'https://jbinteractions.s7.marketingcloudapps.com/' },
+        // the same address without encryption
+        { url: FRAME.url.replace('https:', 'http:') },
+        { url: 'https://content-builder.s7.marketingcloudapps.com.example.org/' },
+        { url: 'https://example.org/https://content-builder.s7.marketingcloudapps.com/' },
+        { url: 'https://content-builder.example.org/?x=.marketingcloudapps.com' },
+        { url: 'https://mc.s7.exacttarget.com/cloud/' },
+    ]) {
+        for (const type of [WANTED, SHOWN]) {
+            const sender = { ...FRAME, ...other };
+            assert.equal(send({ type, asset: '1' }, sender), false, JSON.stringify(other));
+        }
+    }
+    assert.equal(passed.length, 2);
+
+    // a page that does not listen: the frame gets no answer, and nothing breaks
+    const deaf = background(() => {
+        throw new Error('Could not establish connection');
+    });
+    assert.equal(await deaf.send({ type: WANTED }, FRAME), undefined);
+});
+
+test('the manifest runs both scripts in the extension’s own world, without a new permission', () => {
+    const manifest = JSON.parse(read('../src/manifest.json'));
+    const entry = (file) => manifest.content_scripts.filter((item) => item.js.includes(file));
+    // the page only, and before it reads its own address
+    assert.deepEqual(entry('deep-link-shell.js'), [
+        {
+            matches: ['https://*.exacttarget.com/cloud/*'],
+            include_globs: ['https://mc.*'],
+            js: ['deep-link-shell.js'],
+            css: ['deep-link.css'],
+            run_at: 'document_start',
+        },
+    ]);
+    assert.deepEqual(entry('deep-link-content-builder.js'), [
+        {
+            matches: ['https://*.marketingcloudapps.com/*'],
+            include_globs: ['https://content-builder.*'],
+            js: ['deep-link-content-builder.js'],
+            all_frames: true,
+            run_at: 'document_idle',
+        },
+    ]);
+    assert.deepEqual(manifest.permissions, ['storage', 'scripting']);
+    assert.deepEqual(manifest.host_permissions, ['https://*.marketingcloudapps.com/*']);
+});
+
+test('a link is carried across a switch of the business unit, taken by the Marketing Cloud page only, and once', async () => {
+    const KEPT = 'content-builder/600/123';
+    const at = shell(link(OTHER, '123'));
+    await settle();
+    assert.equal(at.kept(), null);
+    at.click('Switch and open');
+    assert.equal(at.kept(), KEPT);
+    assert.equal(at.went.length, 1);
+
+    // the page that switches lies under the same path as the Marketing Cloud page: it leaves
+    // the link where it is, for the page after it
+    const switching = shell('', {
+        path: '/cloud/context-switch.html',
+        current: OTHER,
+        carried: KEPT,
+    });
+    await settle();
+    assert.equal(switching.kept(), KEPT);
+    assert.deepEqual(await switching.send({ type: WANTED }), { asset: null });
+    assert.equal(switching.kept(), KEPT);
+    for (const path of ['/cloud/other.html', '/cloud/tools/SSO.aspx', '/cloud']) {
+        const other = shell(APP, { path, current: OTHER, carried: KEPT });
+        await settle();
+        assert.equal(other.kept(), KEPT, path);
+        assert.deepEqual(await other.send({ type: WANTED }), { asset: null });
+    }
+
+    // the Marketing Cloud page after the switch, whose address lost the asset: it takes the
+    // link out when it starts, and hands it over once
+    const after = shell(APP, { current: OTHER, carried: KEPT });
+    assert.equal(after.kept(), null);
+    assert.deepEqual(await after.send({ type: WANTED }), { asset: '123' });
+    assert.deepEqual(await after.send({ type: WANTED }), { asset: null });
+    assert.equal(after.dialog(), null);
+    // loaded again, there is nothing left to take
+    const again = shell(APP, { current: OTHER });
+    assert.deepEqual(await again.send({ type: WANTED }), { asset: null });
+
+    // the switch did not happen: the link is decided as any other
+    const failed = shell(APP, { carried: KEPT });
+    await settle();
+    assert.deepEqual(failed.buttons(), ['Switch and open', 'Stay here']);
+    assert.deepEqual(await failed.send({ type: WANTED }), { asset: null });
+    assert.equal(failed.kept(), null);
+
+    // what is kept is a link only in the form it was written in; anything else is thrown away
+    for (const kept of [
+        '',
+        '600/123',
+        'content-builder/600/12a',
+        'content-builder/x/123',
+        'content-builder/600/',
+        `content-builder/600/${VIEW}`,
+        'email-studio/600/123',
+        'email-studio/600/r.a.b',
+        'another-app/600/123',
+        ' content-builder/600/123',
+    ]) {
+        const odd = shell(APP, { current: OTHER, carried: kept });
+        assert.equal(odd.kept(), null, kept);
+        assert.deepEqual(await odd.send({ type: WANTED }), { asset: null }, kept);
+        assert.deepEqual(await odd.send({ type: EMAIL_WANTED }), { target: null }, kept);
+        assert.equal(odd.dialog(), null);
+    }
+
+    // a link into Email Studio is carried the same way
+    const view = shell(emailLink(OTHER, VIEW));
+    await settle();
+    view.click('Switch and open');
+    assert.equal(view.kept(), `email-studio/600/${VIEW}`);
+    assert.deepEqual(view.went, [switchTo(PLAIN_EMAIL)]);
+    const landed = shell('#app/Email', { current: OTHER, carried: view.kept() });
+    assert.equal(landed.kept(), null);
+    assert.deepEqual(await landed.send({ type: EMAIL_WANTED }), { target: VIEW });
+    assert.deepEqual(await landed.send({ type: EMAIL_WANTED }), { target: null });
+    assert.equal(landed.dialog(), null);
+});
+
+test('the address that the page was handed to open is read only from its marked base64 form', () => {
+    const { arrival } = shell().helpers;
+    const ASSET_LINK = link(MID, '123');
+    const VIEW_LINK = emailLink(MID, VIEW);
+    assert.equal(arrival(handed(ASSET_LINK)), ASSET_LINK);
+    assert.equal(arrival(handed(VIEW_LINK)), VIEW_LINK);
+    assert.equal(arrival(`?x=1&${handed('#app/Email').slice(1)}&y=2`), '#app/Email');
+    // seen live: the page after a switch of the business unit
+    assert.equal(arrival('?hash=logged-inI2FwcC9FbWFpbA%3D%3D'), '#app/Email');
+    for (const search of [
+        '',
+        '?',
+        '?x=1',
+        '?hash=',
+        // no mark, or another one
+        `?hash=${encode(link(MID, '123'))}`,
+        `?hash=logged-out${encode(link(MID, '123'))}`,
+        `?hash=Logged-In${encode(link(MID, '123'))}`,
+        `?other=logged-in${encode(link(MID, '123'))}`,
+        // no base64
+        '?hash=logged-in',
+        '?hash=logged-in!!!',
+        '?hash=logged-in%23app%2FEmail',
+        `?hash=logged-in${link(MID, '123')}`,
+        // base64 of something that is no address from the #
+        `?hash=logged-in${encode('app/Email')}`,
+        `?hash=logged-in${encode(` ${ASSET_LINK}`)}`,
+        `?hash=logged-in${encode(SHELL + ASSET_LINK)}`,
+        `?hash=logged-in${encode('javascript:alert(1)')}`,
+    ]) {
+        assert.equal(arrival(search), null, search);
+    }
+});
+
+test('a link that only the address handed to the page holds is decided as any other', async () => {
+    // the business unit the user is in: handed to its app once, and nothing is rewritten
+    const asset = shell('', { search: handed(link(MID, '123')) });
+    assert.deepEqual(await asset.send({ type: EMAIL_WANTED }), { target: null });
+    assert.deepEqual(await asset.send({ type: WANTED }), { asset: '123' });
+    assert.deepEqual(await asset.send({ type: WANTED }), { asset: null });
+    assert.equal(asset.dialog(), null);
+    assert.equal(asset.window.location.search, handed(link(MID, '123')));
+    assert.equal(asset.hash(), '');
+    const view = shell('', { search: handed(emailLink(MID, VIEW)) });
+    assert.deepEqual(await view.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(await view.send({ type: EMAIL_WANTED }), { target: VIEW });
+    assert.deepEqual(await view.send({ type: EMAIL_WANTED }), { target: null });
+    assert.equal(view.dialog(), null);
+    assert.equal(view.window.location.search, handed(emailLink(MID, VIEW)));
+
+    // another business unit: the dialog, and the app gets nothing
+    for (const [hash, type, nothing] of [
+        [link(OTHER, '123'), WANTED, { asset: null }],
+        [emailLink(OTHER, VIEW), EMAIL_WANTED, { target: null }],
+    ]) {
+        const other = shell('', { search: handed(hash) });
+        await settle();
+        assert.deepEqual(other.buttons(), ['Switch and open', 'Stay here'], hash);
+        assert.deepEqual(await other.send({ type }), nothing, hash);
+        assert.equal(other.window.location.search, handed(hash));
+        assert.deepEqual(other.went, []);
+    }
+    const nowhere = shell('', { search: handed(link(NOWHERE, '123')) });
+    await settle();
+    assert.deepEqual(nowhere.buttons(), ['Close']);
+
+    // a field that is not what the page writes there holds no link
+    for (const search of [
+        `?hash=${encode(link(MID, '123'))}`,
+        '?hash=logged-in!!!',
+        `?hash=logged-in${encode(link(MID, '123').slice(1))}`,
+        `?hash=logged-in${encode('#app/Content%20Builder/ux-tools/500/asset/12a')}`,
+    ]) {
+        const odd = shell('', { search });
+        await settle();
+        assert.deepEqual(await odd.send({ type: WANTED }), { asset: null }, search);
+        assert.equal(odd.dialog(), null, search);
+        assert.equal(odd.window.location.search, search);
+    }
+});
+
+test('the link kept for a switch is written into the address that the page was handed, or into its route, before the page reads it', async () => {
+    const { arrival, withArrival } = shell().helpers;
+    const KEPT = 'content-builder/600/123';
+    const KEPT_VIEW = `email-studio/600/${VIEW}`;
+    const KEPT_FOLDER = `email-studio/600/${FOLDER}`;
+    assert.equal(
+        withArrival('?hash=logged-inI2FwcC9FbWFpbA%3D%3D', '#app/Email/x?a=b'),
+        '?hash=logged-inI2FwcC9FbWFpbC94P2E9Yg%3D%3D',
+    );
+    assert.equal(withArrival('?x=1&hash=old&y=2', '#a'), '?x=1&hash=logged-inI2E%3D&y=2');
+    assert.equal(withArrival('', '#a'), '?hash=logged-inI2E%3D');
+
+    // seen live: the page after the switch is handed the plain address of the app
+    const ARRIVALS = [
+        [KEPT, APP, link(OTHER, '123'), WANTED, { asset: '123' }, { asset: null }],
+        [
+            KEPT_VIEW,
+            '#app/Email',
+            emailLink(OTHER, VIEW),
+            EMAIL_WANTED,
+            { target: VIEW },
+            { target: null },
+        ],
+        [
+            KEPT_FOLDER,
+            '#app/Email',
+            emailLink(OTHER, FOLDER),
+            EMAIL_WANTED,
+            { target: FOLDER },
+            { target: null },
+        ],
+    ];
+    for (const [carried, plain, full, type, once, nothing] of ARRIVALS) {
+        const at = shell('', { current: OTHER, carried, search: handed(plain) });
+        // at once, before the page applies what it was handed
+        assert.equal(at.window.location.search, handed(full), carried);
+        assert.equal(arrival(at.window.location.search), full, carried);
+        assert.equal(at.window.location.pathname, '/cloud/');
+        assert.equal(at.hash(), '');
+        assert.equal(at.kept(), null);
+        assert.deepEqual(await at.send({ type }), once, carried);
+        assert.deepEqual(await at.send({ type }), nothing, carried);
+        assert.equal(at.dialog(), null);
+        assert.equal(at.window.location.search, handed(full));
+
+        // not handed an address: the link goes into the route, and the query stays
+        const routed = shell(plain, { current: OTHER, carried });
+        assert.equal(routed.hash(), full, carried);
+        assert.equal(routed.window.location.search, '?x=1');
+        assert.equal(routed.kept(), null);
+        assert.deepEqual(await routed.send({ type }), once, carried);
+        assert.deepEqual(await routed.send({ type }), nothing, carried);
+        assert.equal(routed.dialog(), null);
+    }
+    assert.equal(
+        shell('', { current: OTHER, carried: KEPT, search: handed(APP) }).window.location.search,
+        '?hash=logged-inI2FwcC9Db250ZW50JTIwQnVpbGRlci91eC10b29scy82MDAvYXNzZXQvMTIz',
+    );
+    // the other fields of the query stay, and a field that is not what the page writes there
+    // is no address that was handed over
+    const among = shell('', {
+        current: OTHER,
+        carried: KEPT,
+        search: `?x=1&${handed(APP).slice(1)}&y=2`,
+    });
+    assert.equal(among.window.location.search, `?x=1&${handed(link(OTHER, '123')).slice(1)}&y=2`);
+    const unmarked = shell(APP, { current: OTHER, carried: KEPT, search: '?hash=abc' });
+    assert.equal(unmarked.window.location.search, '?hash=abc');
+    assert.equal(unmarked.hash(), link(OTHER, '123'));
+
+    // the switch did not happen: the link that was written is decided as any other
+    const failed = shell('', { carried: KEPT_VIEW, search: handed('#app/Email') });
+    await settle();
+    assert.deepEqual(failed.buttons(), ['Switch and open', 'Stay here']);
+    assert.deepEqual(await failed.send({ type: EMAIL_WANTED }), { target: null });
+});
+
+test('the kept link changes nothing in an address that holds a link already, on another page, or a second time', async () => {
+    const KEPT = 'content-builder/600/123';
+    // a link in the route, or in the address that the page was handed: that one is followed,
+    // and the kept one is thrown away
+    const routed = shell(link(OTHER, '7'), { current: OTHER, carried: KEPT });
+    assert.equal(routed.hash(), link(OTHER, '7'));
+    assert.equal(routed.window.location.search, '?x=1');
+    assert.equal(routed.kept(), null);
+    assert.deepEqual(await routed.send({ type: WANTED }), { asset: '7' });
+    assert.deepEqual(await routed.send({ type: WANTED }), { asset: null });
+    const arrived = shell('', {
+        current: OTHER,
+        carried: KEPT,
+        search: handed(emailLink(OTHER, VIEW)),
+    });
+    assert.equal(arrived.window.location.search, handed(emailLink(OTHER, VIEW)));
+    assert.equal(arrived.hash(), '');
+    assert.equal(arrived.kept(), null);
+    assert.deepEqual(await arrived.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(await arrived.send({ type: EMAIL_WANTED }), { target: VIEW });
+    // the link of the route comes before the one that the page was handed
+    const both = shell(link(OTHER, '7'), {
+        current: OTHER,
+        carried: KEPT,
+        search: handed(link(OTHER, '8')),
+    });
+    assert.equal(both.window.location.search, handed(link(OTHER, '8')));
+    assert.deepEqual(await both.send({ type: WANTED }), { asset: '7' });
+    assert.deepEqual(await both.send({ type: WANTED }), { asset: null });
+
+    // any other page under the same path leaves the kept link and its own address alone
+    for (const path of ['/cloud/context-switch.html', '/cloud/other.html', '/cloud']) {
+        const other = shell('', { path, current: OTHER, carried: KEPT, search: handed(APP) });
+        await settle();
+        assert.equal(other.kept(), KEPT, path);
+        assert.equal(other.window.location.search, handed(APP), path);
+        assert.equal(other.hash(), '', path);
+        assert.deepEqual(await other.send({ type: WANTED }), { asset: null }, path);
+        assert.equal(other.dialog(), null, path);
+    }
+
+    // taken once: the same page loaded again has nothing to write
+    const first = shell('', { current: OTHER, carried: KEPT, search: handed(APP) });
+    assert.equal(first.kept(), null);
+    const again = shell('', { current: OTHER, search: handed(APP) });
+    assert.equal(again.window.location.search, handed(APP));
+    assert.deepEqual(await again.send({ type: WANTED }), { asset: null });
+    const plain = shell(APP, { current: OTHER });
+    assert.equal(plain.hash(), APP);
+    assert.deepEqual(await plain.send({ type: WANTED }), { asset: null });
+});
+
+test('a kept link is written into the address of its own app only, and is dropped for any other', async () => {
+    const KEPT = 'content-builder/600/123';
+    const KEPT_VIEW = `email-studio/600/${VIEW}`;
+    const JOURNEYS = '#app/Journey%20Builder';
+    // the page is about to open another app than the kept link's
+    for (const [carried, plain] of [
+        [KEPT, JOURNEYS],
+        [KEPT, '#app/Email'],
+        [KEPT_VIEW, JOURNEYS],
+        [KEPT_VIEW, APP],
+    ]) {
+        const name = `${carried} ${plain}`;
+        const handedOver = shell('', { current: OTHER, carried, search: handed(plain) });
+        assert.equal(handedOver.window.location.search, handed(plain), name);
+        assert.equal(handedOver.hash(), '', name);
+        const routed = shell(plain, { current: OTHER, carried });
+        assert.equal(routed.window.location.href, `${SHELL}?x=1${plain}`, name);
+        // the address that was handed over decides, not the route
+        const own = carried === KEPT ? APP : '#app/Email';
+        const crossed = shell(own, { current: OTHER, carried, search: handed(JOURNEYS) });
+        assert.equal(crossed.window.location.search, handed(JOURNEYS), name);
+        assert.equal(crossed.hash(), own, name);
+        for (const at of [handedOver, routed, crossed]) {
+            // dropped: taken out of the session storage, and no app is handed it
+            assert.equal(at.kept(), null, name);
+            assert.deepEqual(await at.send({ type: WANTED }), { asset: null }, name);
+            assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: null }, name);
+            assert.equal(at.dialog(), null, name);
+        }
+    }
+    // the switch did not happen, and the page opens another app: no dialog about the kept link
+    const failed = shell('', { carried: KEPT, search: handed(JOURNEYS) });
+    await settle();
+    assert.equal(failed.dialog(), null);
+    assert.equal(failed.window.location.search, handed(JOURNEYS));
+
+    // its own app, for both apps: written and handed over once
+    const asset = shell('', { current: OTHER, carried: KEPT, search: handed(APP) });
+    assert.equal(asset.window.location.search, handed(link(OTHER, '123')));
+    assert.deepEqual(await asset.send({ type: WANTED }), { asset: '123' });
+    const view = shell('#app/Email', { current: OTHER, carried: KEPT_VIEW });
+    assert.equal(view.hash(), emailLink(OTHER, VIEW));
+    assert.deepEqual(await view.send({ type: EMAIL_WANTED }), { target: VIEW });
+});
+
+test('the link of the address that the page was handed is no new link when the page writes that address', async () => {
+    const SAID =
+        'This link belongs to the business unit Northwind France (600). You are in Northwind Germany (500).';
+    const at = shell('', { search: handed(link(OTHER, '123')) });
+    await settle();
+    assert.deepEqual(at.said(), [SAID]);
+    at.click('Stay here');
+    assert.equal(at.dialog(), null);
+    // the page applies what it was handed
+    await at.route(link(OTHER, '123'));
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.equal(at.dialog(), null);
+    assert.deepEqual(at.went, []);
+    // once: the same link pasted later is a new one
+    await at.route(APP);
+    await at.route(link(OTHER, '123'));
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(at.said(), [SAID]);
+
+    // a kept link that was written into that address, when the switch did not happen
+    const failed = shell('', { carried: 'content-builder/600/123', search: handed(APP) });
+    await settle();
+    failed.click('Stay here');
+    await failed.route(link(OTHER, '123'));
+    assert.deepEqual(await failed.send({ type: WANTED }), { asset: null });
+    assert.equal(failed.dialog(), null);
+
+    // this business unit: the asset is handed over once, also after the page wrote the address
+    const here = shell('', { search: handed(link(MID, '123')) });
+    assert.deepEqual(await here.send({ type: WANTED }), { asset: '123' });
+    await here.route(link(MID, '123'));
+    assert.deepEqual(await here.send({ type: WANTED }), { asset: null });
+    // another link that the page did not write is decided as before
+    const pasted = shell('', { search: handed(link(OTHER, '123')) });
+    await settle();
+    pasted.click('Stay here');
+    await pasted.route(link(OTHER, '456'));
+    assert.deepEqual(await pasted.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(pasted.said(), [SAID]);
+});
+
+test('a kept link that is not whole names no address, and nothing is written', async () => {
+    const { landing } = shell().helpers;
+    assert.equal(landing({ app: 'content-builder', mid: OTHER, what: '123' }), link(OTHER, '123'));
+    assert.equal(landing({ app: 'email-studio', mid: OTHER, what: VIEW }), emailLink(OTHER, VIEW));
+    assert.equal(
+        landing({ app: 'email-studio', mid: OTHER, what: 'r.Content.email.12' }),
+        emailLink(OTHER, 'r.Content.email.12', 'Content'),
+    );
+    for (const broken of [
+        { app: 'content-builder', mid: OTHER, what: '12a' },
+        { app: 'content-builder', mid: OTHER, what: '' },
+        { app: 'content-builder', mid: OTHER, what: VIEW },
+        { app: 'content-builder', mid: 'x', what: '123' },
+        { app: 'content-builder', mid: '', what: '123' },
+        { app: 'content-builder', mid: '1234567890123456', what: '123' },
+        { app: 'content-builder', mid: OTHER, what: '123/../x' },
+        { app: 'content-builder', mid: OTHER },
+        { app: 'another-app', mid: OTHER, what: VIEW },
+        { mid: OTHER, what: VIEW },
+        { app: 'email-studio', mid: OTHER, what: '123' },
+        { app: 'email-studio', mid: OTHER, what: 'r.a.b' },
+        { app: 'email-studio', mid: OTHER, what: `${VIEW}&x=1` },
+        { app: 'email-studio', mid: OTHER, what: `${VIEW}%23Other` },
+        { app: 'email-studio', mid: OTHER, what: 'r.Sub/scribers.lists.12' },
+        { app: 'email-studio', mid: OTHER },
+    ]) {
+        assert.equal(landing(broken), undefined, JSON.stringify(broken));
+    }
+    // a view of a business unit that is no id: the address names none
+    for (const mid of ['x', '', '1234567890123456', undefined]) {
+        assert.equal(
+            landing({ app: 'email-studio', mid, what: VIEW }),
+            `${EMAIL}%23Subscribers`,
+            String(mid),
+        );
+    }
+
+    // what the session storage holds in another form is thrown away and written nowhere
+    for (const carried of [
+        '',
+        '600/123',
+        'content-builder/600/12a',
+        'content-builder/x/123',
+        `content-builder/600/${VIEW}`,
+        'email-studio/600/123',
+        'email-studio/600/r.a.b',
+        `email-studio/600/${VIEW}&h=https://example.com`,
+        `email-studio/600/${VIEW}%23x`,
+        'another-app/600/123',
+        'https://example.com/',
+        'javascript:alert(1)',
+    ]) {
+        const handedOver = shell('', { current: OTHER, carried, search: handed(APP) });
+        assert.equal(handedOver.kept(), null, carried);
+        assert.equal(handedOver.window.location.search, handed(APP), carried);
+        assert.equal(handedOver.hash(), '', carried);
+        const routed = shell(APP, { current: OTHER, carried });
+        assert.equal(routed.kept(), null, carried);
+        assert.equal(routed.window.location.href, `${SHELL}?x=1${APP}`, carried);
+        for (const at of [handedOver, routed]) {
+            assert.deepEqual(await at.send({ type: WANTED }), { asset: null }, carried);
+            assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: null }, carried);
+            assert.equal(at.dialog(), null, carried);
+            assert.deepEqual(at.went, []);
+        }
+    }
+});
+
+test('“Switch and open” goes to the plain address of the app, for both apps: the link itself travels in the tab’s session storage', async () => {
+    const { switchAddress, emailSwitchAddress } = shell().helpers;
+    // whatever the link names, the address is the same for one business unit and app
+    for (const asset of ['1', '123', '123456789012345']) {
+        assert.equal(switchAddress(ORIGIN, OTHER, asset), switchTo(PLAIN_CONTENT_BUILDER));
+    }
+    for (const target of [VIEW, FOLDER, 'r.Subscribers.lists.12']) {
+        assert.equal(emailSwitchAddress(ORIGIN, OTHER, target), switchTo(PLAIN_EMAIL));
+    }
+    // seen live: the page that switches the business unit wrote the ? of the address it was
+    // given as %3F, and Email Studio then answered "not found". That cannot happen any more:
+    // the address it is given has no query at all, and nothing of the link
+    const LINKS = [
+        [link(OTHER, '123'), 'content-builder/600/123', PLAIN_CONTENT_BUILDER],
+        [emailLink(OTHER, VIEW), `email-studio/600/${VIEW}`, PLAIN_EMAIL],
+        [
+            emailLink(OTHER, FOLDER, 'Subscribers/CustomObjects/4711'),
+            `email-studio/600/${FOLDER}`,
+            PLAIN_EMAIL,
+        ],
+    ];
+    for (const [hash, kept, app] of LINKS) {
+        const at = shell(hash);
+        await settle();
+        at.click('Switch and open');
+        assert.equal(at.went.length, 1, hash);
+        const to = new URL(at.went[0]);
+        assert.equal(to.origin + to.pathname, SWITCH);
+        assert.deepEqual(to.searchParams.keys().toArray(), ['m', 'h']);
+        assert.equal(to.searchParams.get('m'), OTHER);
+        const opened = to.searchParams.get('h');
+        assert.equal(opened, app, hash);
+        assert.equal(new URL(opened).search, '');
+        assert.doesNotMatch(opened, /\?|%3F|ux-tools|Default\.aspx|asset/i);
+        assert.doesNotMatch(at.went[0], /%3F|%253F|ux-tools|Default\.aspx|asset/i);
+        // the link is kept for the page that opens after the switch
+        assert.equal(at.kept(), kept);
+    }
+});
+
+test('an address names a view of Email Studio only as one field of a fixed form in the address of its frame', () => {
+    const { parseEmail, isEmailHash } = shell().helpers;
+    const toView = parseEmail(emailLink(MID, VIEW));
+    assert.deepEqual(plain(toView), { mid: MID, target: VIEW });
+    const inFolder = parseEmail(emailLink(MID, FOLDER, 'Subscribers/CustomObjects/4711'));
+    assert.deepEqual(plain(inFolder), { mid: MID, target: FOLDER });
+    // wherever the field stands in the query, with or without a route inside Email Studio
+    const PAGE = '#app/Email/C12/Default.aspx';
+    for (const hash of [
+        `${PAGE}?ux-tools=${MID}.${VIEW}`,
+        `${PAGE}?ux-tools=${MID}.${VIEW}&ks=ks#Overview`,
+        `${PAGE}?a=1&ux-tools=${MID}.${VIEW}&ks=ks%23Subscribers/customobject/1`,
+    ]) {
+        assert.deepEqual(plain(parseEmail(hash)), { mid: MID, target: VIEW }, hash);
+    }
+    for (const hash of [
+        '',
+        EMAIL,
+        `${EMAIL}%23Subscribers`,
+        // after the route inside Email Studio it is no field of the query
+        `${EMAIL}%23Subscribers&ux-tools=${MID}.${VIEW}`,
+        `${EMAIL}#Subscribers?ux-tools=${MID}.${VIEW}`,
+        // another app, and other routes of Email Studio
+        `#app/Content%20Builder/C12/Default.aspx?ux-tools=${MID}.${VIEW}`,
+        `#app/Email/?ux-tools=${MID}.${VIEW}`,
+        `#app/Email/C12/Other.aspx?ux-tools=${MID}.${VIEW}`,
+        `${PAGE}x?ux-tools=${MID}.${VIEW}`,
+        `${PAGE}/?ux-tools=${MID}.${VIEW}`,
+        `app/Email/C12/Default.aspx?ux-tools=${MID}.${VIEW}`,
+        // a page of Email Studio instead of a route, which no link may name
+        field(`${MID}.p.Subscribers.customobject.1`),
+        field(`${MID}.p./Content/Admin.aspx`),
+        // not the fixed form
+        field(''),
+        field(MID),
+        field(VIEW),
+        field(`${MID}.r.Subscribers.customobject`),
+        field(`${MID}.r.Subscribers.customobject.1.2`),
+        field(`${MID}.r.Subscribers/customobject/1`),
+        field(`${MID}.r..customobject.1`),
+        field(`${MID}.r.Subscribers.customobject.-1`),
+        field(`${MID}.r.Subscribers.customobject.xyz`),
+        field(`${MID}.r.Subscribers.custom-object.1`),
+        field(`${MID}.r.Subscribers.customobject.${'1'.repeat(37)}`),
+        field(`${MID}.r.${'a'.repeat(31)}.customobject.1`),
+        field(`${MID}.r.Sub<b>.customobject.1`),
+        field(`${MID}.r.Subscribers.customobject.1/`),
+        field(`${MID}.%72.Subscribers.customobject.1`),
+        field(`5a.${VIEW}`),
+        field(`.${VIEW}`),
+        field(`1234567890123456.${VIEW}`),
+        field(`${MID}.${VIEW} `),
+        `${EMAIL}&ux-toolsx=${MID}.${VIEW}`,
+        `${EMAIL}&xux-tools=${MID}.${VIEW}`,
+        undefined,
+        null,
+        7,
+    ]) {
+        assert.equal(parseEmail(hash), null, String(hash));
+    }
+    for (const hash of ['#app/Email', '#app/Email/', EMAIL, emailLink(MID, VIEW)]) {
+        assert.equal(isEmailHash(hash), true, hash);
+    }
+    for (const hash of ['', '#app/EmailX/', '#app/Emails', APP, '#home', undefined, null]) {
+        assert.equal(isEmailHash(hash), false, String(hash));
+    }
+});
+
+test('the address of a view of Email Studio keeps everything else of the address, and takes nothing but the fixed form', () => {
+    const { emailAddress, emailSwitchAddress } = shell().helpers;
+    const PAGE = '#app/Email/C12/Default.aspx';
+    const INNER = 'Subscribers/customobject/1';
+    assert.equal(
+        emailAddress('/cloud/', '?x=1', `${EMAIL}%23Subscribers`, MID, VIEW),
+        `/cloud/?x=1${emailLink(MID, VIEW)}`,
+    );
+    // instead of the one that was there, and with the route inside Email Studio as it is
+    assert.equal(
+        emailAddress('/cloud/', '', emailLink(OTHER, FOLDER, INNER), MID, VIEW),
+        `/cloud/${emailLink(MID, VIEW, INNER)}`,
+    );
+    assert.equal(
+        emailAddress('/cloud/', '', PAGE, MID, VIEW),
+        `/cloud/${PAGE}?ux-tools=${MID}.${VIEW}`,
+    );
+    // no view: the field goes, and nothing else
+    assert.equal(
+        emailAddress('/cloud/', '', emailLink(MID, VIEW), MID, null),
+        `/cloud/${EMAIL}%23Subscribers`,
+    );
+    assert.equal(
+        emailAddress('/cloud/', '', `${PAGE}?ux-tools=1.r.a.b.1`, MID, null),
+        `/cloud/${PAGE}`,
+    );
+    assert.equal(
+        emailAddress('/cloud/', '', `${PAGE}?ux-tools=1&a=1&ux-tools=2#Overview`, MID, null),
+        `/cloud/${PAGE}?a=1#Overview`,
+    );
+    for (const odd of [undefined, '', 'abc', '5a', 7, {}, `${MID}.${VIEW}`, 'r.a.b', 'p.a.b.1']) {
+        // a view without its business unit is no link, and neither is anything of another form
+        assert.equal(
+            emailAddress('/cloud/', '', emailLink(MID, VIEW), odd, VIEW),
+            `/cloud/${EMAIL}%23Subscribers`,
+            String(odd),
+        );
+        assert.equal(
+            emailAddress('/cloud/', '', emailLink(MID, VIEW), MID, odd),
+            `/cloud/${EMAIL}%23Subscribers`,
+            String(odd),
+        );
+        assert.equal(emailSwitchAddress(ORIGIN, odd, VIEW), undefined);
+        assert.equal(emailSwitchAddress(ORIGIN, MID, odd), undefined);
+    }
+    // any other route is not written at all
+    for (const hash of ['', APP, '#app/Email/', '#app/Email/other', `${PAGE}x`, undefined]) {
+        assert.equal(emailAddress('/cloud/', '', hash, MID, VIEW), undefined, String(hash));
+    }
+    // to Email Studio itself, without the view
+    assert.equal(
+        emailSwitchAddress(ORIGIN, OTHER, VIEW),
+        'https://mc.s7.exacttarget.com/cloud/context-switch.html?m=600&h=https%3A%2F%2Fmc.s7.exacttarget.com%2Fcloud%2F%23app%2FEmail',
+    );
+});
+
+test('the page hands the view of a link of this business unit to Email Studio once, and to Email Studio only', async () => {
+    const at = shell(emailLink(MID, VIEW));
+    // Content Builder's frame does not get it and does not use it up
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.equal(await at.send({ type: EMAIL_WANTED }, { id: 'another-extension' }), undefined);
+    assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: VIEW });
+    assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: null });
+    // asking changes nothing in the address, and no dialog is shown
+    assert.equal(at.hash(), emailLink(MID, VIEW));
+    assert.equal(at.dialog(), null);
+
+    // a link to an asset is not handed to Email Studio
+    const asset = shell(`${MARKER}123`);
+    assert.deepEqual(await asset.send({ type: EMAIL_WANTED }), { target: null });
+    assert.deepEqual(await asset.send({ type: WANTED }), { asset: '123' });
+    // no link at all
+    const none = shell(`${EMAIL}%23Overview`);
+    assert.deepEqual(await none.send({ type: EMAIL_WANTED }), { target: null });
+    assert.equal(none.dialog(), null);
+    // the business unit cannot be read: not followed
+    const blind = shell(emailLink(MID, VIEW), { isDown: true });
+    await blind.elapse(CURRENT_WAIT);
+    assert.deepEqual(await blind.send({ type: EMAIL_WANTED }), { target: null });
+    assert.deepEqual(blind.buttons(), ['Close']);
+});
+
+test('a link into Email Studio of another business unit leads to the same dialog, which is shown once', async () => {
+    const SAID =
+        'This link belongs to the business unit Northwind France (600). You are in Northwind Germany (500).';
+    const at = shell(emailLink(OTHER, VIEW));
+    await settle();
+    // before Email Studio asked anything
+    assert.deepEqual(at.said(), [SAID]);
+    // the dialog speaks of the link, not of an asset
+    assert.equal(at.dialog().querySelector('h2').textContent, 'Link to another business unit');
+    assert.doesNotMatch(at.dialog().textContent, /asset/i);
+    assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: null });
+    assert.equal(at.window.document.querySelectorAll('dialog').length, 1);
+    at.click('Stay here');
+    assert.deepEqual(at.went, []);
+    // the page writes the address of Email Studio's frame into its own, with the link that
+    // frame was loaded with: that is no new link
+    await at.route(emailLink(OTHER, VIEW, 'Overview'));
+    assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: null });
+    assert.equal(at.dialog(), null);
+
+    // another link pasted into the open page is decided anew
+    await at.route(emailLink(OTHER, FOLDER));
+    assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: null });
+    assert.deepEqual(at.said(), [SAID]);
+    at.click('Switch and open');
+    assert.deepEqual(at.went, [switchTo(PLAIN_EMAIL)]);
+    assert.equal(at.kept(), `email-studio/600/${FOLDER}`);
+    // and so is the first one, once the page was in another app in between
+    const back = shell(emailLink(OTHER, VIEW));
+    await settle();
+    back.click('Stay here');
+    await back.route(APP);
+    await back.route(emailLink(OTHER, VIEW));
+    assert.deepEqual(await back.send({ type: EMAIL_WANTED }), { target: null });
+    assert.deepEqual(back.said(), [SAID]);
+
+    const lost = shell(emailLink(NOWHERE, VIEW));
+    await settle();
+    assert.match(lost.said()[0], /^The business unit 999 of this link does not exist/);
+    assert.deepEqual(lost.buttons(), ['Close']);
+});
+
+test('the view that Email Studio shows is written into its address with the business unit, and only there', async () => {
+    const PLAIN = `${EMAIL}%23Subscribers`;
+    const at = shell(PLAIN);
+    let routed = 0;
+    at.window.addEventListener('hashchange', () => routed++);
+    const state = { kept: true };
+    at.window.history.replaceState(state, '');
+
+    // the frame is told what was written, to write the same into its own address
+    assert.deepEqual(await at.send({ type: EMAIL_SHOWN, target: VIEW }), {
+        parameter: `${MID}.${VIEW}`,
+    });
+    assert.equal(at.window.location.href, `${SHELL}?x=1${emailLink(MID, VIEW)}`);
+    assert.deepEqual(await at.send({ type: EMAIL_SHOWN, target: FOLDER }), {
+        parameter: `${MID}.${FOLDER}`,
+    });
+    assert.equal(at.hash(), emailLink(MID, FOLDER));
+    // the business unit is read each time: it may have been switched in another tab
+    assert.equal(at.currentReads(), 2);
+    at.account.current = OTHER;
+    await at.send({ type: EMAIL_SHOWN, target: VIEW });
+    assert.equal(at.hash(), emailLink(OTHER, VIEW));
+    // a business unit that cannot be read: no link, because one without it would be wrong
+    at.account.current = null;
+    assert.deepEqual(await at.send({ type: EMAIL_SHOWN, target: FOLDER }), { parameter: null });
+    assert.equal(at.hash(), PLAIN);
+    at.account.current = MID;
+    // nothing more specific than the section is open, for which nothing is read
+    await at.send({ type: EMAIL_SHOWN, target: VIEW });
+    const reads = at.currentReads();
+    assert.deepEqual(await at.send({ type: EMAIL_SHOWN, target: null }), { parameter: null });
+    assert.equal(at.hash(), PLAIN);
+    assert.equal(at.currentReads(), reads);
+    // whatever is not of the fixed form is no view
+    for (const target of [
+        'r.a.b',
+        'p.Subscribers.customobject.1',
+        'Subscribers/customobject/1',
+        `${MID}.${VIEW}`,
+        'r.Subscribers.customobject.<b>',
+        7,
+        {},
+        undefined,
+    ]) {
+        await at.send({ type: EMAIL_SHOWN, target: VIEW });
+        assert.deepEqual(await at.send({ type: EMAIL_SHOWN, target }), { parameter: null });
+        assert.equal(at.hash(), PLAIN, String(target));
+    }
+    // from anyone but the background script nothing is written
+    await at.send({ type: EMAIL_SHOWN, target: VIEW }, { id: 'another-extension' });
+    await at.send({ type: EMAIL_SHOWN, target: VIEW }, { id: EXTENSION, tab: { id: 7 } });
+    assert.equal(at.hash(), PLAIN);
+    assert.equal(routed, 0);
+    assert.deepEqual(at.window.history.state, state);
+
+    // another app's address is never touched, and neither is a route of Email Studio that
+    // does not hold the address of its frame
+    for (const hash of [APP, '#app/Journey%20Builder/', '', '#app/Email/', '#app/Email/other']) {
+        const other = shell(hash);
+        assert.deepEqual(await other.send({ type: EMAIL_SHOWN, target: VIEW }), {
+            parameter: null,
+        });
+        assert.equal(other.hash(), hash);
+    }
+});
+
+test('the page keeps the view in the address when it writes the address of Email Studio’s frame over it', async () => {
+    const INNER = 'Subscribers/customobject/1';
+    const at = shell(`${EMAIL}%23Subscribers`);
+    await at.send({ type: EMAIL_SHOWN, target: VIEW });
+    // without the field, and with the route inside Email Studio that the frame has now
+    await at.route(`${EMAIL}%23${INNER}`);
+    assert.equal(at.hash(), emailLink(MID, VIEW, INNER));
+    // with what this script wrote itself: left as it is, and no new link
+    await at.route(emailLink(MID, VIEW, 'Overview'));
+    assert.equal(at.hash(), emailLink(MID, VIEW, 'Overview'));
+    assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: null });
+    // written again with the business unit as it is then
+    at.account.current = OTHER;
+    await at.route(`${EMAIL}%23Subscribers`);
+    assert.equal(at.hash(), emailLink(OTHER, VIEW));
+    at.account.current = MID;
+    await at.route(`${EMAIL}%23Subscribers`);
+    // a message of Content Builder's frame, which may still be going away, changes nothing
+    await at.send({ type: SHOWN, asset: '123' });
+    await at.send({ type: SHOWN, asset: null });
+    await at.route(`${EMAIL}%23Overview`);
+    assert.equal(at.hash(), emailLink(MID, VIEW, 'Overview'));
+
+    // forgotten once nothing more specific than the section is shown
+    await at.send({ type: EMAIL_SHOWN, target: null });
+    await at.route(`${EMAIL}%23Admin`);
+    assert.equal(at.hash(), `${EMAIL}%23Admin`);
+    // forgotten once the page left Email Studio
+    await at.send({ type: EMAIL_SHOWN, target: VIEW });
+    await at.route(APP);
+    assert.equal(at.hash(), APP);
+    await at.route(`${EMAIL}%23Overview`);
+    assert.equal(at.hash(), `${EMAIL}%23Overview`);
+    // and Content Builder's asset is not kept in Email Studio's address either
+    await at.route(APP);
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.equal(at.hash(), `${MARKER}123`);
+    await at.route(`${EMAIL}%23Overview`);
+    assert.equal(at.hash(), `${EMAIL}%23Overview`);
+    await at.route(APP);
+    assert.equal(at.hash(), APP);
+});
+
+test('the background script passes Email Studio’s two messages from its frame only, with a view of the fixed form', async () => {
+    const FRAME = {
+        id: EXTENSION,
+        tab: { id: 7 },
+        frameId: 3,
+        documentId: 'A1',
+        url: 'https://members.s7.exacttarget.com/C12/Default.aspx?entityType=none&entityID=0&ks=ks#Subscribers',
+    };
+    const CONTENT_BUILDER = { ...FRAME, url: 'https://content-builder.s7.marketingcloudapps.com/' };
+    const { send, passed } = background((message) =>
+        message.type === EMAIL_WANTED ? { target: VIEW } : { parameter: `${MID}.${VIEW}` },
+    );
+    assert.deepEqual(await send({ type: EMAIL_WANTED, target: 'x', more: 1 }, FRAME), {
+        target: VIEW,
+    });
+    assert.deepEqual(await send({ type: EMAIL_SHOWN, target: VIEW, more: 1 }, FRAME), {
+        parameter: `${MID}.${VIEW}`,
+    });
+    // to the page only, and with nothing but the type and the view
+    assert.deepEqual(passed, [
+        { tabId: 7, message: { type: EMAIL_WANTED }, options: { frameId: 0 } },
+        { tabId: 7, message: { type: EMAIL_SHOWN, target: VIEW }, options: { frameId: 0 } },
+    ]);
+    // what is not of the fixed form is passed on as no view
+    for (const target of [
+        null,
+        undefined,
+        '',
+        'r.a.b',
+        `${MID}.${VIEW}`,
+        'p.Subscribers.customobject.1',
+        'r.Subscribers.customobject.1/../x',
+        'r.Subscribers.customobject.<img src=x>',
+        `${VIEW}\n`,
+        7,
+        { r: 1 },
+        [VIEW],
+    ]) {
+        await send({ type: EMAIL_SHOWN, target }, FRAME);
+        assert.deepEqual(passed.at(-1).message, { type: EMAIL_SHOWN, target: null });
+    }
+    // and so is the asset of Content Builder's frame
+    await send({ type: SHOWN, asset: '12a' }, CONTENT_BUILDER);
+    assert.deepEqual(passed.at(-1).message, { type: SHOWN, asset: null });
+    const count = passed.length;
+
+    for (const other of [
+        { id: 'another-extension' },
+        { tab: undefined },
+        { frameId: 0 },
+        { frameId: undefined },
+        { url: undefined },
+        { url: 'not an address' },
+        // Content Builder's frame, the Marketing Cloud page, and other pages of the same host
+        { url: CONTENT_BUILDER.url },
+        { url: 'https://mc.s7.exacttarget.com/C12/Default.aspx' },
+        { url: 'https://members.s7.exacttarget.com/C12/Other.aspx' },
+        { url: 'https://members.s7.exacttarget.com/cloud/C12/Default.aspx' },
+        { url: 'https://members.s7.exacttarget.com/C12/Default.aspx/x' },
+        { url: FRAME.url.replace('https:', 'http:') },
+        { url: 'https://members.s7.exacttarget.com.example.org/C12/Default.aspx' },
+        { url: 'https://example.org/C12/Default.aspx?x=members.s7.exacttarget.com' },
+        { url: 'https://members.example.org/C12/Default.aspx#.exacttarget.com' },
+    ]) {
+        for (const type of [EMAIL_WANTED, EMAIL_SHOWN]) {
+            const sender = { ...FRAME, ...other };
+            assert.equal(send({ type, target: VIEW }, sender), false, JSON.stringify(other));
+        }
+    }
+    // each app's messages are taken from that app's frame only
+    assert.equal(send({ type: WANTED }, FRAME), false);
+    assert.equal(send({ type: SHOWN, asset: '1' }, FRAME), false);
+    assert.equal(send({ type: EMAIL_WANTED }, CONTENT_BUILDER), false);
+    assert.equal(send({ type: EMAIL_SHOWN, target: VIEW }, CONTENT_BUILDER), false);
+    assert.equal(passed.length, count);
+});

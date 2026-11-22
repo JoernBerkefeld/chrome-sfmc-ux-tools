@@ -1,7 +1,7 @@
 /*
  * SFMC UX Tools — background script: loads the TypeScript script into a document that asks for it,
- * and passes messages about links from the frames of Content Builder and Email Studio to the
- * page around them.
+ * and passes messages about links from the frames of Content Builder, Email Studio and Contact
+ * Builder to the page around them.
  *
  * The TypeScript script is too large to run in every frame of Content Builder and Automation
  * Studio. A document with a code editor asks for it through editor-typescript-loader.js; it then
@@ -28,6 +28,15 @@
     const EMAIL_LINK_WANTED = 'sfmc-ux-tools:deep-link:email-wanted';
     const EMAIL_LINK_SHOWN = 'sfmc-ux-tools:deep-link:email-shown';
     const EMAIL_LINK_MESSAGES = [EMAIL_LINK_WANTED, EMAIL_LINK_SHOWN];
+    // what Contact Builder's frame tells that page, for the links to what is open in it: see
+    // deep-link-contact-builder.js
+    const CONTACT_LINK_SHOWN = 'sfmc-ux-tools:deep-link:contact-shown';
+    // where Contact Builder's frame is, on any stack of Marketing Cloud's apps: its path
+    const CONTACT_BUILDER_PATH = '/contactsmeta/';
+    // the longest route inside Contact Builder that is taken for one, and such a route: letters,
+    // digits, and the four signs seen in Contact Builder's routes
+    const MOST_ROUTE = 200;
+    const CONTACT_ROUTE = new RegExp(String.raw`^[A-Za-z\d/_.-]{1,${MOST_ROUTE}}$`);
     // the start of the host of Content Builder's frames
     const CONTENT_BUILDER_HOST = 'content-builder.';
     // where Email Studio's frame is: the start and the end of its host, and its path
@@ -172,10 +181,44 @@
     }
 
     /**
+     * Tells whether a message comes from Contact Builder's frame below the page of a tab.
+     *
+     * @param {object} sender who sent the message, as Chrome describes it
+     * @returns {boolean} true for such a frame only
+     */
+    function isContactBuilderFrame(sender) {
+        const address = frameAddress(sender);
+        return (
+            address !== undefined &&
+            address.hostname.endsWith(APP_HOST) &&
+            address.pathname.startsWith(CONTACT_BUILDER_PATH)
+        );
+    }
+
+    /**
+     * Tells whether a message about a link comes from the frame of the app it is about.
+     *
+     * @param {unknown} type the type of the message
+     * @param {object} sender who sent the message, as Chrome describes it
+     * @returns {boolean|undefined} true for that app's frame, false for any other sender; nothing when the message is not about a link
+     */
+    function isFromItsFrame(type, sender) {
+        if (DEEP_LINK_MESSAGES.includes(type)) {
+            return isContentBuilderFrame(sender);
+        }
+        if (EMAIL_LINK_MESSAGES.includes(type)) {
+            return isEmailStudioFrame(sender);
+        }
+        if (type === CONTACT_LINK_SHOWN) {
+            return isContactBuilderFrame(sender);
+        }
+    }
+
+    /**
      * Reads what of a message about a link is passed on: its type and, of what a frame says it
      * shows, one text of the form that is expected there, or null.
      *
-     * @param {{type: string, asset?: unknown, target?: unknown}} message what a frame sent
+     * @param {{type: string, asset?: unknown, target?: unknown, route?: unknown}} message what a frame sent
      * @returns {object} what the page gets
      */
     function passable(message) {
@@ -189,13 +232,17 @@
                 typeof message.target === 'string' && EMAIL_TARGET.test(message.target);
             passed.target = isTarget ? message.target : null;
         }
+        if (message.type === CONTACT_LINK_SHOWN) {
+            const isRoute = typeof message.route === 'string' && CONTACT_ROUTE.test(message.route);
+            passed.route = isRoute ? message.route : null;
+        }
         return passed;
     }
 
     /**
      * Passes a message about a link on to the page of the same tab, and its answer back.
      *
-     * @param {{type: string, asset?: unknown, target?: unknown}} message what the frame of an app sent
+     * @param {{type: string, asset?: unknown, target?: unknown, route?: unknown}} message what the frame of an app sent
      * @param {number} tabId the tab of that frame
      * @param {(answer?: object) => void} sendResponse answers the frame
      */
@@ -210,13 +257,10 @@
     }
 
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        const isAssetLink = DEEP_LINK_MESSAGES.includes(message?.type);
-        if (isAssetLink || EMAIL_LINK_MESSAGES.includes(message?.type)) {
-            // each app's messages are taken from that app's frame only
-            const isFromItsFrame = isAssetLink
-                ? isContentBuilderFrame(sender)
-                : isEmailStudioFrame(sender);
-            if (!isFromItsFrame || sender.id !== chrome.runtime.id) {
+        // each app's messages are taken from that app's frame only
+        const isItsFrame = isFromItsFrame(message?.type, sender);
+        if (isItsFrame !== undefined) {
+            if (!isItsFrame || sender.id !== chrome.runtime.id) {
                 return false;
             }
             relay(message, sender.tab.id, sendResponse);

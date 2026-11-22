@@ -24,7 +24,11 @@
     const UP = 'up';
     const READY = 'ready';
     const OPEN_CHANGES = 'change:carbonContent';
+    // (the same text as NOTHING in deep-link-email-studio.js, which tells it from a view by it)
     const NOTHING = 'none';
+    // told when Email Studio takes the view that has a route away again: it wrote that no such
+    // view is open, or one of a kind that has none
+    const CLEARED = 'cleared';
     // the name under which Email Studio's script loader holds the library that keeps its state
     const LIBRARY = 'backbone';
     // the routes of Email Studio that open one thing by its id, read from its own script: the
@@ -108,17 +112,21 @@
             const view = written.carbonContent;
             if (!isRecord(view)) {
                 // a page of the older kind, which has no route
-                return NOTHING;
+                return CLEARED;
             }
             // one thing by its id, or a list by the id of its folder
-            const id = idOf(view.id) ?? idOf(view.categoryId);
+            // (seen live: one list holds its id as listInfo.listId)
+            const id =
+                idOf(view.id) ??
+                idOf(isRecord(view.listInfo) ? view.listInfo.listId : undefined) ??
+                idOf(view.categoryId);
             const isKnown =
                 typeof view.content === 'string' &&
                 KIND.test(view.content) &&
                 typeof view.object === 'string' &&
                 KIND.test(view.object) &&
                 id !== undefined;
-            return isKnown ? `${view.content}/${view.object}/${id}` : NOTHING;
+            return isKnown ? `${view.content}/${view.object}/${id}` : CLEARED;
         }
         // a choice in the menu alone opens a section
         if (Object.hasOwn(written, 'curNavItem') || Object.hasOwn(written, 'curSubNavItem')) {
@@ -234,6 +242,8 @@
 
     // whether the library was taken from the loader already, and whether the start was told
     let isTaken = false;
+    // the part of the library that reads Email Studio's routes
+    let reader;
     let isUpTold = false;
 
     /**
@@ -261,6 +271,7 @@
             }
             watch(library);
             const history = library.history;
+            reader = history;
             if (library.History?.started === true) {
                 tellUp();
             } else if (typeof history?.start === 'function') {
@@ -323,12 +334,22 @@
             }
             if (load.defined(LIBRARY)) {
                 isTaken = true;
+                unlisten();
                 // handed out at once: the loader has it already
                 take(load(LIBRARY));
             }
         } catch {
             // a page whose loader is another one
         }
+    }
+
+    /**
+     * Stops looking for the library whenever a script or the page was loaded: it was taken.
+     */
+    function unlisten() {
+        document.removeEventListener('load', look, { capture: true });
+        document.removeEventListener('DOMContentLoaded', look);
+        removeEventListener('load', look);
     }
 
     // the loader comes with one of the page's scripts: looked for whenever one was loaded
@@ -346,9 +367,18 @@
             // nothing of this script may break Email Studio
         }
         // a hash that is the route already would make setting it change nothing: Email Studio
-        // only acts on a change. Its section is set this time, the route with the next try
-        location.hash =
-            location.hash === `#${event.detail}` ? event.detail.split('/', 1)[0] : event.detail;
+        // only acts on a change. Seen live: it keeps the route in its hash, and its tree then
+        // puts the last view of the session over the view of the link. So the route is handed
+        // to the part of the library that reads routes, which opens it whatever the hash is
+        if (location.hash === `#${event.detail}` && typeof reader?.loadUrl === 'function') {
+            try {
+                reader.loadUrl(event.detail);
+            } catch {
+                // nothing of this script may break Email Studio
+            }
+            return;
+        }
+        location.hash = event.detail;
     });
     look();
 })();

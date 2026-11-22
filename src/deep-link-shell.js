@@ -1,6 +1,6 @@
 /*
  * SFMC UX Tools — content script for the Marketing Cloud page around the apps: links to an asset
- * of Content Builder and to a view of Email Studio.
+ * of Content Builder, to a view of Email Studio and to a route of Contact Builder.
  *
  * Content Builder's address never changes while one moves through it, so nobody can send a link
  * to an asset. This script keeps the business unit and the id of the asset that Content Builder
@@ -12,6 +12,21 @@
  * one more field in the address, ux-tools=<mid>.r.<route with dots>, and hands its route to
  * Email Studio's frame, where deep-link-email-studio.js opens the view. This script owns the
  * link: the frame asks for it and never follows its own address.
+ *
+ * Contact Builder's address on this page does not follow what is opened in it, though the page
+ * opens a route of Contact Builder that its address names. So the script writes the route that
+ * deep-link-contact-builder.js tells from Contact Builder's frame into the address, in the page's
+ * own form: #app/Contact%20Builder/contactsmeta/admin.html?ux-tools=<mid>%23<route>. Without the
+ * extension such an address opens the same route. Nothing is handed to that frame.
+ *
+ * Seen live: Contact Builder goes back in the browser's history when it is given a route to a
+ * data extension that the business unit the user is in does not have, and the page with the
+ * dialog is gone. So a link into Contact Builder whose business unit is not known to be the one
+ * the user is in has its route taken out of the address before the page reads it: Contact Builder
+ * opens its start page, and the route is opened only once the business unit was read and is the
+ * right one, by loading the page again with the link. For that the script keeps the id of the
+ * business unit it read last in the page's local storage, and a pass for that one link in the
+ * tab's session storage.
  *
  * A link of another business unit is not followed. Its own dialog says which business unit the
  * link belongs to and offers to switch to it; nothing switches without the click. The dialog comes
@@ -37,9 +52,12 @@
     // the same two of Email Studio's frame
     const EMAIL_WANTED_MESSAGE = 'sfmc-ux-tools:deep-link:email-wanted';
     const EMAIL_SHOWN_MESSAGE = 'sfmc-ux-tools:deep-link:email-shown';
-    // the two apps a link can lead into
+    // what Contact Builder's frame tells: the route it shows. It asks nothing
+    const CONTACT_SHOWN_MESSAGE = 'sfmc-ux-tools:deep-link:contact-shown';
+    // the three apps a link can lead into
     const CONTENT_BUILDER = 'content-builder';
     const EMAIL_STUDIO = 'email-studio';
+    const CONTACT_BUILDER = 'contact-builder';
     // the longest id that is taken for one: as many digits as a whole number holds exactly
     const MOST_DIGITS = 15;
     // Content Builder's route on this page, as the page writes it and as a person may type it
@@ -79,6 +97,25 @@
     const TARGET = String.raw`r\.${WORD}\.${WORD}\.[\dA-Fa-f][\dA-Fa-f-]{0,${MOST_ROUTE_ID - 1}}`;
     const EMAIL_TARGET = new RegExp(`^${TARGET}$`);
     const EMAIL_FIELD = new RegExp(String.raw`^${FIELD}(${DIGITS})\.(${TARGET})$`);
+    // Contact Builder's route on this page, as the page writes it and as a person may type it
+    const CONTACT_APP = '#app/Contact(?:%20| )Builder';
+    const CONTACT_ADDRESS = '#app/Contact%20Builder';
+    // the address of Contact Builder's frame, which the page takes from its own address: seen
+    // live, without it the page stays blank
+    const CONTACT_PAGE = '/contactsmeta/admin.html';
+    const CONTACT_PAGE_PATTERN = String.raw`/contactsmeta/admin\.html`;
+    // the longest route inside Contact Builder that is taken for one
+    const MOST_ROUTE = 200;
+    // such a route: letters, digits, and the four signs seen in Contact Builder's routes
+    const ROUTE = String.raw`[A-Za-z\d/_.-]{1,${MOST_ROUTE}}`;
+    const CONTACT_ROUTE = new RegExp(`^${ROUTE}$`);
+    const CONTACT_ANY_ROUTE = new RegExp(`^${CONTACT_APP}(?:/|$)`);
+    const CONTACT_PLAIN_ROUTE = new RegExp(`^${CONTACT_APP}/?$`);
+    // a link into Contact Builder: the business unit as a field of the frame's address, seen live
+    // to be passed on to the frame and to leave the route working, then the route after %23
+    const CONTACT_LINK = new RegExp(
+        String.raw`^${CONTACT_APP}${CONTACT_PAGE_PATTERN}\?${FIELD}(${DIGITS})(?:%23|#)(${ROUTE})$`,
+    );
     // the path of this page, and of the page that switches the business unit and then opens the
     // address it was given
     const SHELL_PATH = '/cloud/';
@@ -87,7 +124,16 @@
     // the app in the address. The link is kept under this name in the tab's session storage for
     // the switch, and taken out again by the page that opens after it
     const CARRIED = 'sfmcUxToolsDeepLink';
-    const CARRIED_LINK = new RegExp(`^(${CONTENT_BUILDER}|${EMAIL_STUDIO})/(${DIGITS})/(.+)$`);
+    const CARRIED_LINK = new RegExp(
+        `^(${CONTENT_BUILDER}|${EMAIL_STUDIO}|${CONTACT_BUILDER})/(${DIGITS})/(.+)$`,
+    );
+
+    // where the id of the business unit that was read last is kept, in the page's local storage
+    const LAST_UNIT = 'sfmcUxToolsBusinessUnit';
+    // where the one link into Contact Builder that may be opened as it is, because its business
+    // unit was just read to be the right one, is kept in the tab's session storage for the one
+    // load of the page that opens it
+    const PASS = 'sfmcUxToolsDeepLinkPass';
 
     /**
      * Writes a link as one text, by which two links are told apart.
@@ -124,8 +170,7 @@
                 return null;
             }
             const [, app, mid, what] = found;
-            const isWhole = app === EMAIL_STUDIO ? EMAIL_TARGET.test(what) : ID.test(what);
-            return isWhole ? { app, mid, what } : null;
+            return isWhole(app, what) ? { app, mid, what } : null;
         } catch {
             return null;
         }
@@ -321,6 +366,106 @@
     }
 
     /**
+     * Says whether the route of this page is Contact Builder's, whatever follows it.
+     *
+     * @param {unknown} hash the part of the address from the #
+     * @returns {boolean} true for Contact Builder, false for any other app
+     */
+    function isContactBuilderHash(hash) {
+        return typeof hash === 'string' && CONTACT_ANY_ROUTE.test(hash);
+    }
+
+    /**
+     * Says whether a value is a route inside Contact Builder as this script takes it.
+     *
+     * @param {unknown} value what an address or a message holds
+     * @returns {boolean} true when it is
+     */
+    const isRoute = (value) => typeof value === 'string' && CONTACT_ROUTE.test(value);
+
+    /**
+     * Reads the business unit and the route of Contact Builder that an address asks for.
+     *
+     * @param {unknown} hash the part of the address from the #
+     * @returns {{mid: string, route: string}|null} both; null when the address names no business unit with a route
+     */
+    function parseContact(hash) {
+        const found = typeof hash === 'string' ? CONTACT_LINK.exec(hash) : null;
+        return found ? { mid: found[1], route: found[2] } : null;
+    }
+
+    /**
+     * Writes the address of Contact Builder, with or without a route, in the page's own form.
+     *
+     * @param {string} pathname path of this page
+     * @param {string} search what follows the path, from the ?
+     * @param {unknown} mid id of the business unit of the route; unless it is an id, the address names the route alone
+     * @param {unknown} route the route inside Contact Builder; unless it is one, the address is Contact Builder's own
+     * @returns {string} the address, from the path on
+     */
+    function contactAddress(pathname, search, mid, route) {
+        if (!isRoute(route)) {
+            return `${pathname}${search}${CONTACT_ADDRESS}`;
+        }
+        const field = isId(mid) ? `?${FIELD}${mid}` : '';
+        return `${pathname}${search}${CONTACT_ADDRESS}${CONTACT_PAGE}${field}%23${route}`;
+    }
+
+    /**
+     * Writes the address that switches to a business unit and then opens Contact Builder.
+     *
+     * @param {string} origin where this page is, up to its path
+     * @param {unknown} mid id of the business unit
+     * @param {unknown} route the route inside Contact Builder
+     * @returns {string|undefined} the address; nothing unless both are what they should be
+     */
+    function contactSwitchAddress(origin, mid, route) {
+        if (!isId(mid) || !isRoute(route)) {
+            return;
+        }
+        // only to Contact Builder itself, as for the other apps: the link is kept for the page
+        // that opens there (see carry)
+        const to = origin + contactAddress(SHELL_PATH, '', null, null);
+        return `${origin}${SWITCH_PATH}?m=${mid}&h=${encodeURIComponent(to)}`;
+    }
+
+    /**
+     * Says whether a value is what a link names in an app: an asset, a view or a route.
+     *
+     * @param {unknown} app the app
+     * @param {unknown} what what an address or a message holds
+     * @returns {boolean} true when it is; false also for an app that is none of the three
+     */
+    function isWhole(app, what) {
+        if (app === CONTENT_BUILDER) {
+            return isId(what);
+        }
+        if (app === EMAIL_STUDIO) {
+            return isTarget(what);
+        }
+        return app === CONTACT_BUILDER && isRoute(what);
+    }
+
+    /**
+     * Writes the address that switches to the business unit of a link and then opens its app.
+     *
+     * @param {string} origin where this page is, up to its path
+     * @param {{app: string, mid: string, what: string}} link the link
+     * @returns {string|undefined} the address; nothing unless the link is whole and into one of the three apps
+     */
+    function switchOf(origin, link) {
+        if (link.app === CONTENT_BUILDER) {
+            return switchAddress(origin, link.mid, link.what);
+        }
+        if (link.app === EMAIL_STUDIO) {
+            return emailSwitchAddress(origin, link.mid, link.what);
+        }
+        if (link.app === CONTACT_BUILDER) {
+            return contactSwitchAddress(origin, link.mid, link.what);
+        }
+    }
+
+    /**
      * Reads the address that the page was handed to open by itself. Seen live: after a login or a
      * switch of the business unit the page is loaded as ?hash=logged-in<the address from the #,
      * in base64>, and writes that address itself a moment later, over whatever stands there.
@@ -363,12 +508,17 @@
      * @returns {string|undefined} that part of the address; nothing unless the link is whole
      */
     function landing(link) {
-        if (link.app !== EMAIL_STUDIO) {
+        if (link.app === CONTENT_BUILDER) {
             return isId(link.mid) && isId(link.what)
                 ? address('', '', link.mid, link.what)
                 : undefined;
         }
-        if (!isTarget(link.what)) {
+        if (link.app === CONTACT_BUILDER) {
+            return isId(link.mid) && isRoute(link.what)
+                ? contactAddress('', '', link.mid, link.what)
+                : undefined;
+        }
+        if (link.app !== EMAIL_STUDIO || !isTarget(link.what)) {
             return;
         }
         // the section of Email Studio is the first name of the route
@@ -383,7 +533,7 @@
     }
 
     /**
-     * Reads the link that an address holds, into either app.
+     * Reads the link that an address holds, into one of the three apps.
      *
      * @param {unknown} hash the part of the address from the #
      * @returns {{app: string, mid: string, what: string}|null} the app, the business unit and what to open there; null when the address is no link
@@ -394,11 +544,15 @@
             return { app: CONTENT_BUILDER, mid: asset.mid, what: asset.asset };
         }
         const view = parseEmail(hash);
-        return view ? { app: EMAIL_STUDIO, mid: view.mid, what: view.target } : null;
+        if (view) {
+            return { app: EMAIL_STUDIO, mid: view.mid, what: view.target };
+        }
+        const route = parseContact(hash);
+        return route ? { app: CONTACT_BUILDER, mid: route.mid, what: route.route } : null;
     }
 
     /**
-     * Tells which of the two apps the route of this page belongs to.
+     * Tells which of the three apps the route of this page belongs to.
      *
      * @param {unknown} hash the part of the address from the #
      * @returns {string|undefined} the app; nothing for any other
@@ -407,7 +561,10 @@
         if (isContentBuilderHash(hash)) {
             return CONTENT_BUILDER;
         }
-        return isEmailHash(hash) ? EMAIL_STUDIO : undefined;
+        if (isEmailHash(hash)) {
+            return EMAIL_STUDIO;
+        }
+        return isContactBuilderHash(hash) ? CONTACT_BUILDER : undefined;
     }
 
     /**
@@ -463,8 +620,54 @@
         return { ...kept, [enterprise]: entry };
     }
 
-    // what the script hands out: its functions that only compute, for the tests, and the way it
-    // leaves the page, which a test replaces because its page cannot be loaded again
+    /**
+     * Keeps the id of a business unit that was just read as the one the user is in.
+     *
+     * @param {{mid: string}} [found] the business unit; nothing when it could not be read
+     * @returns {object|undefined} the same
+     */
+    function note(found) {
+        if (isId(found?.mid)) {
+            try {
+                localStorage.setItem(LAST_UNIT, found.mid);
+            } catch {
+                // no local storage: a link into Contact Builder is then never known to be right
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Reads the id of the business unit that was read last.
+     *
+     * @returns {string|undefined} the id; nothing when none was kept or what is kept is no id
+     */
+    function noted() {
+        try {
+            const kept = localStorage.getItem(LAST_UNIT);
+            return isId(kept) ? kept : undefined;
+        } catch {
+            // no local storage
+        }
+    }
+
+    /**
+     * Takes out the pass for the one link that may be opened as it is.
+     *
+     * @returns {string|null} that link, as one text; null when there is no pass
+     */
+    function admitted() {
+        try {
+            const pass = sessionStorage.getItem(PASS);
+            sessionStorage.removeItem(PASS);
+            return pass;
+        } catch {
+            return null;
+        }
+    }
+
+    // what the script hands out: its functions that only compute, for the tests, and the ways it
+    // leaves the page and loads it again, which a test replaces because its page cannot do either
     const shared = {
         parse,
         address,
@@ -474,11 +677,16 @@
         parseEmail,
         emailAddress,
         emailSwitchAddress,
+        isContactBuilderHash,
+        parseContact,
+        contactAddress,
+        contactSwitchAddress,
         arrival,
         withArrival,
         landing,
         merge,
         go: (to) => location.assign(to),
+        reload: () => location.reload(),
     };
     // eslint-disable-next-line unicorn/no-global-object-property-assignment -- the tests call the functions by themselves and replace the one that leaves the page, which nothing else of this script lets them
     globalThis.sfmcUxToolsDeepLink = shared;
@@ -498,6 +706,15 @@
     // the link that was taken from the address the page was handed to open, as one text, until
     // the page writes that address itself a moment later: that is no new link either
     let takenArrival = null;
+    // the link into Contact Builder that the address asked for, while it is not known to belong
+    // to the business unit the user is in: until then, and after the dialog about it, its
+    // business unit stays in the address while Contact Builder shows its route. Seen live: the
+    // page opens the route in the business unit the user is in, before the dialog is answered
+    let heldContact = null;
+    // the link into Contact Builder whose route was taken out of the address, until the user is
+    // known to be in its business unit or picked a button of the dialog about it: until then
+    // nothing is written into Contact Builder's address
+    let parked = null;
 
     /**
      * Asks Marketing Cloud's API about the business units, through this page. It never throws.
@@ -532,7 +749,7 @@
      * @returns {Promise.<{mid: string, name: string, parent: string|null}|undefined>} the business unit; nothing when it could not be read
      */
     async function readCurrent() {
-        return unit(await ask('/@current'));
+        return note(unit(await ask('/@current')));
     }
 
     /**
@@ -568,7 +785,7 @@
             function finish(found) {
                 watcher.disconnect();
                 clearTimeout(timer);
-                resolve(found);
+                resolve(note(found));
             }
             /**
              * Takes what one of the two told, if it told a business unit.
@@ -683,6 +900,12 @@
     // the business units of the account this page was loaded in
     const listed = readList();
     remember(listed);
+    // seen live: right after a switch of the business unit, the one that is remembered for
+    // Contact Builder's links was still the one before, because a page without a link never
+    // read it. So every load of the page reads it, link or not
+    if (location.pathname === SHELL_PATH) {
+        findCurrent(true);
+    }
 
     /**
      * Finds a business unit among those this browser has seen.
@@ -781,6 +1004,51 @@
     }
 
     /**
+     * Lets go of a link whose route was taken out of the address, once the user stays where they
+     * are: from then on the address follows Contact Builder as ever.
+     *
+     * @param {{app: string, mid: string, what: string}} link the link the dialog was about
+     */
+    function release(link) {
+        if (parked !== link) {
+            return;
+        }
+        parked = null;
+        if (shown?.app === CONTACT_BUILDER) {
+            write(CONTACT_BUILDER);
+        }
+    }
+
+    /**
+     * Opens a link into Contact Builder whose route was taken out of the address, now that the
+     * user is known to be in its business unit: the link is written back and the page loaded
+     * again, once, with a pass for exactly this link.
+     *
+     * @param {{app: string, mid: string, what: string}} link the link
+     */
+    function reopen(link) {
+        const hash = landing(link);
+        try {
+            if (hash === undefined) {
+                throw new TypeError('no link');
+            }
+            sessionStorage.setItem(PASS, keyOf(link));
+        } catch {
+            // without a pass the page is not loaded again: Contact Builder stays as it is
+            release(link);
+            return;
+        }
+        history.replaceState(
+            history.state,
+            '',
+            arrival(location.search) === null
+                ? location.pathname + location.search + hash
+                : location.pathname + withArrival(location.search, hash) + location.hash,
+        );
+        shared.reload();
+    }
+
+    /**
      * Tells the user why a link was not followed: it belongs to another business unit, to which
      * the dialog offers to switch, or to one that the account does not have.
      *
@@ -809,14 +1077,10 @@
                         text: 'Switch and open',
                         act: () => {
                             carry(link);
-                            shared.go(
-                                link.app === EMAIL_STUDIO
-                                    ? emailSwitchAddress(location.origin, link.mid, link.what)
-                                    : switchAddress(location.origin, link.mid, link.what),
-                            );
+                            shared.go(switchOf(location.origin, link));
                         },
                     },
-                    { text: 'Stay here' },
+                    { text: 'Stay here', act: () => release(link) },
                 ],
             );
             return;
@@ -835,7 +1099,7 @@
         if (before) {
             lines.push(`This browser has seen it before: ${before.name} in ${before.enterprise}.`);
         }
-        tell(lines, [{ text: 'Close' }]);
+        tell(lines, [{ text: 'Close', act: () => release(link) }]);
     }
 
     /**
@@ -850,6 +1114,7 @@
             await explain(link, current);
         } catch {
             // the extension was updated or switched off under this page
+            release(link);
         }
     }
 
@@ -865,7 +1130,19 @@
         const current = await findCurrent(isLoading);
         await whenBody();
         // meanwhile another link may have come
-        if (wanted !== link || current?.mid === link.mid) {
+        if (wanted !== link) {
+            return;
+        }
+        if (current?.mid === link.mid) {
+            if (link.app === CONTACT_BUILDER) {
+                // nothing to hand over: the page opens the route itself. From now on the
+                // address is written as for any route that Contact Builder shows
+                wanted = null;
+                heldContact = null;
+                if (parked === link) {
+                    reopen(link);
+                }
+            }
             return;
         }
         wanted = null;
@@ -877,14 +1154,23 @@
      *
      * @param {{app: string, mid: string, what: string}|null} link what the address asked for; null for none
      * @param {boolean} isLoading true while the page is loaded
+     * @param {boolean} [isTakenOut] true for a link into Contact Builder whose route is not in the address
      */
-    function consider(link, isLoading) {
+    function consider(link, isLoading, isTakenOut = false) {
         wanted = link;
+        parked = null;
         if (link === null) {
             return;
         }
         if (link.app === EMAIL_STUDIO) {
             takenEmail = keyOf(link);
+        }
+        if (link.app === CONTACT_BUILDER) {
+            if (isTakenOut) {
+                parked = link;
+            } else {
+                heldContact = link;
+            }
         }
         deciding = decide(link, isLoading);
     }
@@ -930,43 +1216,80 @@
     }
 
     /**
+     * Writes the address of one of the three apps, for the page as it is now.
+     *
+     * @param {string} app the app whose address this is
+     * @param {string} [mid] id of the business unit the user is in
+     * @param {string|null} what what the app shows; null for nothing
+     * @returns {string|undefined} the address, from the path on; nothing when the app has none to write
+     */
+    function addressOf(app, mid, what) {
+        const { pathname, search, hash } = location;
+        if (app === CONTENT_BUILDER) {
+            return address(pathname, search, mid, what);
+        }
+        if (app === EMAIL_STUDIO) {
+            return emailAddress(pathname, search, hash, mid, what);
+        }
+        if (app === CONTACT_BUILDER) {
+            return contactAddress(pathname, search, mid, what);
+        }
+    }
+
+    /**
      * Writes the address of an app for what it shows now, without making the page route again.
      * The business unit is read for it each time; when it cannot be read, the address names
-     * nothing, because a link without the right business unit would be wrong.
+     * nothing, because a link without the right business unit would be wrong. Contact Builder's
+     * address then names the route alone: that is the page's own form, which nothing checks.
      *
      * @param {string} app the app whose address this is
      * @returns {Promise.<string|null>} the business unit and what is shown, as written into the address; null when it names nothing
      */
     async function write(app) {
         const told = shown;
+        /**
+         * Says whether a link into Contact Builder is held: one whose route was taken out of
+         * the address, or one whose route is what is shown.
+         *
+         * @returns {boolean} true when the address must stay as it is
+         */
+        const isHeld = () =>
+            app === CONTACT_BUILDER &&
+            (parked !== null || (heldContact !== null && told?.what === heldContact.what));
+        if (isHeld()) {
+            // a link that is not decided yet, or the route of a link of another business unit:
+            // the address stays as it is
+            return null;
+        }
         let mid;
         if (told !== null) {
             mid = (await readCurrent())?.mid;
-            // meanwhile the app may show something else, or the page another app
-            if (shown !== told || appOf(location.hash) !== app) {
+            // meanwhile the app may show something else, the page another app, or a link
+            // to this route may have come
+            if (shown !== told || appOf(location.hash) !== app || isHeld()) {
                 return null;
             }
         }
-        const what = told === null || mid === undefined ? null : told.what;
-        const to =
-            app === EMAIL_STUDIO
-                ? emailAddress(location.pathname, location.search, location.hash, mid, what)
-                : address(location.pathname, location.search, mid, what);
+        const isNamed = told !== null && (mid !== undefined || app === CONTACT_BUILDER);
+        const what = isNamed ? told.what : null;
+        const to = addressOf(app, mid, what);
         if (to === undefined) {
-            // a route of Email Studio that does not hold the address of its frame
+            // a route of Email Studio that does not hold the address of its frame, or no app
+            // of the three
             marked = null;
             return null;
         }
-        marked = what === null ? null : keyOf({ app, mid, what });
+        const isLink = what !== null && mid !== undefined;
+        marked = isLink ? keyOf({ app, mid, what }) : null;
         history.replaceState(history.state, '', to);
-        return what === null ? null : `${mid}.${what}`;
+        return isLink ? `${mid}.${what}` : null;
     }
 
     /**
      * Takes what an app shows now into the address, if the address is that app's.
      *
      * @param {string} app the app whose frame told
-     * @param {unknown} what id of the asset or name of the view, or anything else for none
+     * @param {unknown} what id of the asset, name of the view or route, or anything else for none
      * @returns {Promise.<string|null>} what was written into the address; null when it names nothing
      */
     function show(app, what) {
@@ -978,8 +1301,11 @@
             }
             return Promise.resolve(null);
         }
-        const isWhole = app === EMAIL_STUDIO ? isTarget(what) : isId(what);
-        shown = isWhole ? { app, what } : null;
+        if (heldContact !== null && app === CONTACT_BUILDER && what !== heldContact.what) {
+            // Contact Builder went on to another route: the link is done with
+            heldContact = null;
+        }
+        shown = isWhole(app, what) ? { app, what } : null;
         return write(app);
     }
 
@@ -1018,6 +1344,10 @@
             show(CONTENT_BUILDER, message.asset);
             sendResponse({});
         }
+        if (message?.type === CONTACT_SHOWN_MESSAGE) {
+            show(CONTACT_BUILDER, message.route);
+            sendResponse({});
+        }
         return false;
     });
 
@@ -1028,9 +1358,13 @@
      * @returns {boolean} true when the address should be written again
      */
     function isOverwritten(hash) {
-        return shown.app === CONTENT_BUILDER
-            ? PLAIN_ROUTE.test(hash)
-            : emailParts(hash) !== undefined && keyOf(linkOf(hash)) !== marked;
+        if (shown.app === CONTENT_BUILDER) {
+            return PLAIN_ROUTE.test(hash);
+        }
+        if (shown.app === EMAIL_STUDIO) {
+            return emailParts(hash) !== undefined && keyOf(linkOf(hash)) !== marked;
+        }
+        return shown.app === CONTACT_BUILDER && CONTACT_PLAIN_ROUTE.test(hash);
     }
 
     // seen live: a few seconds after it was loaded, the page writes Content Builder's plain route
@@ -1040,6 +1374,16 @@
         const app = appOf(location.hash);
         if (app !== EMAIL_STUDIO) {
             takenEmail = null;
+        }
+        if (app !== CONTACT_BUILDER) {
+            heldContact = null;
+            if (parked !== null) {
+                // the page left Contact Builder before the link was decided: it is done with
+                if (wanted === parked) {
+                    wanted = null;
+                }
+                parked = null;
+            }
         }
         if (app === undefined) {
             takenArrival = null;
@@ -1057,11 +1401,20 @@
         // what this script wrote itself, and what was taken already, is no new link
         const linked = linkOf(location.hash);
         const key = keyOf(linked);
+        if (key !== keyOf(heldContact)) {
+            // the address no longer holds the link that was held
+            heldContact = null;
+        }
         if (linked !== null && key === takenArrival) {
             // the page wrote the address it was handed: once, so the same link pasted later
             // is a new one again
             takenArrival = null;
-        } else if (linked !== null && key !== marked && key !== takenEmail) {
+        } else if (
+            linked !== null &&
+            key !== marked &&
+            key !== takenEmail &&
+            key !== keyOf(heldContact)
+        ) {
             consider(linked, false);
         }
         // after the page's own router has read its plain route: this listener was added first
@@ -1079,10 +1432,56 @@
         return;
     }
     const kept = carried();
+    // a pass is used up by this load of the page, whatever the address holds
+    const pass = admitted();
+    /**
+     * Says whether Contact Builder must not be given the route of a link: its business unit is
+     * not the one that was read last, and the link has no pass.
+     *
+     * @param {{app: string, mid: string, what: string}} asked the link
+     * @returns {boolean} true when the route stays out of the address until the business unit was read
+     */
+    const isUnsure = (asked) =>
+        asked.app === CONTACT_BUILDER && keyOf(asked) !== pass && noted() !== asked.mid;
     // the address the page is about to open by itself, when it was handed over that way
     const arriving = arrival(location.search);
     const routed = linkOf(location.hash);
-    let link = routed ?? (arriving === null ? null : linkOf(arriving));
+    const arrived = arriving === null ? null : linkOf(arriving);
+    let link = routed ?? arrived;
+    let isTakenOut = false;
+    if (arrived !== null && isUnsure(arrived)) {
+        // the address that was handed over is what the page opens, and it writes it over the
+        // route a moment later: that link is the one to decide, and it is taken out of both
+        // places before the page has read them, so that Contact Builder opens its start page
+        link = arrived;
+        history.replaceState(
+            history.state,
+            '',
+            location.pathname +
+                withArrival(location.search, CONTACT_ADDRESS) +
+                (routed === null ? location.hash : CONTACT_ADDRESS),
+        );
+        isTakenOut = true;
+    } else if (link !== null && isUnsure(link)) {
+        // before the page has read its address: Contact Builder opens its start page. (Only
+        // the route holds such a link here: one that was handed over was dealt with above)
+        history.replaceState(
+            history.state,
+            '',
+            location.pathname + location.search + CONTACT_ADDRESS,
+        );
+        isTakenOut = true;
+    } else if (
+        link === null &&
+        kept !== null &&
+        appOf(arriving ?? location.hash) === kept.app &&
+        isUnsure(kept)
+    ) {
+        // the page after a switch of the business unit opens Contact Builder without the link:
+        // the link stays out of the address until the switch is known to have happened
+        link = kept;
+        isTakenOut = true;
+    }
     // a kept link belongs into the address of its own app only: when the page is about to open
     // another app, the kept link is dropped, as it was taken out of the session storage already
     if (link === null && kept !== null && appOf(arriving ?? location.hash) === kept.app) {
@@ -1102,9 +1501,9 @@
             link = kept;
         }
     }
-    if (routed === null && arriving !== null) {
+    if (routed === null && arriving !== null && !isTakenOut) {
         // the link stands in the address that the page writes itself a moment later
         takenArrival = keyOf(link);
     }
-    consider(link, true);
+    consider(link, true, isTakenOut);
 })();

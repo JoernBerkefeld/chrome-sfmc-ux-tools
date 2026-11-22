@@ -253,7 +253,9 @@
         awaited = id;
         deadline = setTimeout(() => {
             awaited = undefined;
-            notice(id, 'not found in this business unit');
+            // seen live: the asset exists here, but Content Builder does not list its kind
+            // (a web page of CloudPages), or the search did not bring it up
+            notice(id, "Content Builder's search did not list it");
         }, ROW_WAIT);
         open();
     }

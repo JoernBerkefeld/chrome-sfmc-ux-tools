@@ -33,16 +33,29 @@
     const UP = 'up';
     // what the page's script tells when Email Studio starts to listen for changes of what is open
     const READY = 'ready';
+    // what the page's script tells for a choice in the menu, which names no view: the same text
+    // as NOTHING in deep-link-email-studio-page.js. (When Email Studio takes a view that has a
+    // route away again, that script tells 'cleared', which counts like any view without a route)
+    const NOTHING = 'none';
     // the field of the address that names the view: ux-tools=<mid>.r.<route with dots>
     const FIELD = 'ux-tools=';
     // what a link names: r for a route of Email Studio
     const ROUTE_KIND = 'r';
     // the views that Email Studio was seen to write into its state, as kind/thing, and the route
-    // that opens each: an open data extension, a folder of data extensions. Seen live: the route
-    // of a folder of lists opened another list than the link's, so that view gets no link
+    // that opens each: an open data extension, a folder of data extensions
     const VIEWS = new Map([
         ['de-pages/de', 'Subscribers/customobject'],
         ['de-grid/dataextension', 'Subscribers/CustomObjects'],
+        // recorded live on 2026-11-22: a folder of lists, of groups and of data filters, and
+        // one list
+        ['list-grid/list', 'Subscribers/lists'],
+        ['list-grid/group', 'Subscribers/groups'],
+        // (the menu writes the kind of thing as filterdefinition, the route as filter)
+        ['filt-grid/filterdefinition', 'Subscribers/filters'],
+        ['filt-grid/filter', 'Subscribers/filters'],
+        ['object-pages/list', 'Subscribers/list'],
+        // (seen live: a list that was opened by its route is written as default-list)
+        ['object-pages/default-list', 'Subscribers/list'],
     ]);
     const ROUTES = new Set(VIEWS.values());
     // the longest id that is taken for one: as long as an id of 32 hex digits with its four
@@ -67,6 +80,8 @@
     // computer or network only makes it later, never wrong. The link is kept up until whoever
     // looks at the page clicks or types in it, or the tries are used up
     const MOST_TRIES = 6;
+    // what a person does in Email Studio that ends the following of a link: a click, a key
+    const INPUTS = ['pointerdown', 'keydown'];
 
     /**
      * Turns what the page's script says is open into what a link names.
@@ -203,11 +218,26 @@
     }
 
     /**
-     * Ends the following of a link: from now on, what is open is told.
+     * Ends the following of a link when a person clicked or typed, not a script of the page.
+     *
+     * @param {Event} event the click or the key
+     */
+    function endByInput(event) {
+        if (isFollowing && event.isTrusted) {
+            endFollowing();
+        }
+    }
+
+    /**
+     * Ends the following of a link: from now on, what is open is told, and clicks and keys
+     * are no longer listened to.
      */
     function endFollowing() {
         isFollowing = false;
         awaited = undefined;
+        for (const type of INPUTS) {
+            removeEventListener(type, endByInput, true);
+        }
         if (counting === undefined) {
             tell();
         }
@@ -260,7 +290,12 @@
             return;
         }
         const view = targetOf(event.detail);
-        if (view !== null || counting === undefined) {
+        // seen live: Email Studio writes the view of a route and takes it away again within a
+        // split second, when its tree puts the first page of the section in its place, or a
+        // view that has no route over it. What it says about the view itself counts in the
+        // order it is said, with or without a route; only a choice in the menu, which is
+        // written around a view in any order, never hides a view
+        if (counting === undefined || event.detail !== NOTHING) {
             counted = view;
         }
         counting ??= setTimeout(count, RECORD_DELAY);
@@ -299,17 +334,9 @@
     }
 
     // whoever clicks or types in Email Studio while a link is still followed goes their own
-    // way: the link must not pull them back
-    for (const type of ['pointerdown', 'keydown']) {
-        addEventListener(
-            type,
-            (event) => {
-                if (isFollowing && event.isTrusted) {
-                    endFollowing();
-                }
-            },
-            true,
-        );
+    // way: the link must not pull them back. Listened to until the following has ended
+    for (const type of INPUTS) {
+        addEventListener(type, endByInput, true);
     }
 
     follow();

@@ -52,6 +52,10 @@ const HEADER =
 const MEMORY_KEY = 'deepLinkBusinessUnits';
 // where a link is kept in the tab's session storage while the business unit is switched
 const CARRIED = 'sfmcUxToolsDeepLink';
+// where the business unit that was read last is kept in the page's local storage, and the pass
+// for one link into Contact Builder in the tab's session storage
+const LAST_UNIT = 'sfmcUxToolsBusinessUnit';
+const PASS = 'sfmcUxToolsDeepLinkPass';
 // the page that switches the business unit, and the plain addresses of the two apps, which are
 // all it is ever sent on to
 const SWITCH = `${ORIGIN}/cloud/context-switch.html`;
@@ -176,6 +180,8 @@ const BACKGROUND = { id: EXTENSION };
  * @param {string} [has.path] path of the page, when it is not the Marketing Cloud page itself
  * @param {string} [has.carried] the link that the tab's session storage holds when the script starts
  * @param {string} [has.search] the query the page is loaded with, from the ?
+ * @param {string} [has.remembered] what the page's local storage holds as the business unit that was read last
+ * @param {string} [has.pass] the pass that the tab's session storage holds when the script starts
  * @returns {object} the page, a way to send the script a message as the background script does, what it asked, kept and showed, and the script's functions
  */
 function shell(hash = '', has = {}) {
@@ -186,6 +192,12 @@ function shell(hash = '', has = {}) {
     });
     if (account.carried !== undefined) {
         window.sessionStorage.setItem(CARRIED, account.carried);
+    }
+    if (account.remembered !== undefined) {
+        window.localStorage.setItem(LAST_UNIT, account.remembered);
+    }
+    if (account.pass !== undefined) {
+        window.sessionStorage.setItem(PASS, account.pass);
     }
     if (account.header) {
         window.document.body.innerHTML = account.header;
@@ -287,6 +299,10 @@ function shell(hash = '', has = {}) {
     window.sfmcUxToolsDeepLink.go = (to) => {
         went.push(to);
     };
+    let reloads = 0;
+    window.sfmcUxToolsDeepLink.reload = () => {
+        reloads++;
+    };
     const dialog = () => window.document.querySelector('dialog');
     return {
         window,
@@ -295,6 +311,11 @@ function shell(hash = '', has = {}) {
         store,
         sets,
         went,
+        // how often the script loaded the page again
+        reloads: () => reloads,
+        // the business unit that the page's local storage holds, and the pass of the tab
+        remembered: () => window.localStorage.getItem(LAST_UNIT),
+        pass: () => window.sessionStorage.getItem(PASS),
         dialog,
         hash: () => window.location.hash,
         // the link that the tab's session storage holds
@@ -314,6 +335,8 @@ function shell(hash = '', has = {}) {
         },
         // how often the business unit the user is in was read
         currentReads: () => calls.filter((call) => call.endsWith('/@current')).length,
+        // how many pages of the list of business units were read
+        listReads: () => calls.filter((call) => !call.endsWith('/@current')).length,
         /**
          * Lets time pass for the script's waits.
          *
@@ -621,10 +644,11 @@ test('the page hands the asset of a link of this business unit to Content Builde
     assert.equal(await at.send({ type: WANTED }, { id: 'another-extension' }), undefined);
     assert.equal(await at.send({ type: WANTED }, { id: EXTENSION, tab: { id: 7 } }), undefined);
     assert.equal(await at.send({ type: 'something else' }), undefined);
-    // read once for the early decision, and anew when Content Builder asks
-    assert.equal(at.currentReads(), 1);
-    assert.deepEqual(await at.send({ type: WANTED }), { asset: '123' });
+    // read once for the load of the page and once for the early decision, and anew when
+    // Content Builder asks
     assert.equal(at.currentReads(), 2);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: '123' });
+    assert.equal(at.currentReads(), 3);
     assert.equal(at.waits(), 0);
     assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
     // asking changes nothing in the address, and no dialog is shown
@@ -808,7 +832,8 @@ test('the dialog comes as soon as the business unit is known, by the API or by t
     // Content Builder asks later: nothing to open, no second dialog, and no wait for the API
     assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
     assert.equal(at.window.document.querySelectorAll('dialog').length, 1);
-    assert.equal(at.currentReads(), 1);
+    // (asked for the load of the page and for the link, and never again)
+    assert.equal(at.currentReads(), 2);
 
     // a header that is there from the start, and one without the name
     const ready = shell(link(OTHER, '123'), { isCurrentHanging: true, header: HEADER });
@@ -941,7 +966,8 @@ test('the open asset is written into the address with its business unit, without
     await at.send({ type: SHOWN, asset: '456' });
     assert.equal(at.hash(), `${MARKER}456`);
     // the business unit is read each time: it may have been switched in another tab
-    assert.equal(at.currentReads(), 2);
+    // (and once for the load of the page)
+    assert.equal(at.currentReads(), 3);
     at.account.current = OTHER;
     await at.send({ type: SHOWN, asset: '789' });
     assert.equal(at.hash(), link(OTHER, '789'));
@@ -975,7 +1001,8 @@ test('the open asset is written into the address with its business unit, without
         await other.send({ type: SHOWN, asset: '123' });
         await other.send({ type: SHOWN, asset: null });
         assert.equal(other.hash(), hash);
-        assert.equal(other.currentReads(), 0);
+        // (read for the load of the page only)
+        assert.equal(other.currentReads(), 1);
     }
 });
 
@@ -1113,7 +1140,11 @@ test('the business units of an account are added to those the browser has seen',
 test('the page reads the business units once when it is loaded and keeps their names in the browser only', async () => {
     const at = shell();
     await settle();
-    assert.deepEqual(at.calls, [`GET ${ACCOUNTS}?$page=1&$pageSize=50&includeParentDetails=true`]);
+    // and, as every load of the page does, the business unit the user is in
+    assert.deepEqual(at.calls, [
+        `GET ${ACCOUNTS}?$page=1&$pageSize=50&includeParentDetails=true`,
+        `GET ${ACCOUNTS}/@current`,
+    ]);
     assert.deepEqual(at.sets, [{ [MEMORY_KEY]: REMEMBERED }]);
 
     // next to another account that was seen before
@@ -1129,7 +1160,7 @@ test('the page reads the business units once when it is loaded and keeps their n
     }
     const long = shell('', { units: many });
     await settle();
-    assert.equal(long.calls.length, 2);
+    assert.equal(long.listReads(), 2);
     assert.equal(Object.keys(long.store[MEMORY_KEY][100].units).length, PAGE_SIZE + 1);
     // a list that does not end is given up after its most pages
     const full = many.slice(0, PAGE_SIZE);
@@ -1137,12 +1168,13 @@ test('the page reads the business units once when it is loaded and keeps their n
     looping.slice = () => full;
     const endless = shell('', { units: looping });
     await settle();
-    assert.equal(endless.calls.length, MOST_PAGES);
+    assert.equal(endless.listReads(), MOST_PAGES);
 
     // a list without the enterprise: the user's business unit says where it belongs
     const partial = shell('', { units: UNITS.slice(1) });
     await settle();
-    assert.equal(partial.currentReads(), 1);
+    // (read for that, and for the load of the page)
+    assert.equal(partial.currentReads(), 2);
     assert.deepEqual(Object.keys(partial.store[MEMORY_KEY]), ['100']);
 
     // a list that cannot be read leaves what was kept as it is
@@ -1156,6 +1188,49 @@ test('the page reads the business units once when it is loaded and keeps their n
     const lost = shell(`${MARKER}123`, { isStorageDown: true });
     await settle();
     assert.deepEqual(await lost.send({ type: WANTED }), { asset: '123' });
+});
+
+test('every load of the Marketing Cloud page reads the business unit the user is in, link or not, and no other page does', async () => {
+    // seen live: right after a switch, the business unit that is remembered for Contact
+    // Builder's links was still the one before, because a page without a link never read it
+    for (const hash of ['', '#home', APP, `${EMAIL}%23Subscribers`, '#app/Journey%20Builder/']) {
+        const at = shell(hash, { remembered: OTHER });
+        assert.equal(at.remembered(), OTHER, hash);
+        await settle();
+        assert.equal(at.currentReads(), 1, hash);
+        assert.equal(at.remembered(), MID, hash);
+        // reading it shows nothing, goes nowhere and leaves the address as it is
+        assert.equal(at.dialog(), null);
+        assert.deepEqual(at.went, []);
+        assert.equal(at.hash(), hash);
+        assert.equal(at.waits(), 0);
+    }
+    // nothing was kept before
+    const first = shell();
+    await settle();
+    assert.equal(first.remembered(), MID);
+    // the API does not answer: the header of the page, which is right while the page is loaded
+    const header = shell('', { isCurrentHanging: true, header: HEADER, remembered: OTHER });
+    await settle();
+    assert.equal(header.remembered(), MID);
+    assert.equal(header.waits(), 0);
+    // neither tells it: what was kept stays, and the wait ends
+    for (const has of [{ isDown: true }, { current: null }, { isCurrentHanging: true }]) {
+        const mute = shell('', { remembered: OTHER, ...has });
+        await settle();
+        await mute.elapse(CURRENT_WAIT);
+        assert.equal(mute.currentReads(), 1, JSON.stringify(has));
+        assert.equal(mute.remembered(), OTHER, JSON.stringify(has));
+        assert.equal(mute.waits(), 0);
+    }
+    // any other page under the same path, such as the one that switches the business unit
+    for (const path of ['/cloud/context-switch.html', '/cloud/tools/', '/cloud', '/']) {
+        const other = shell('', { path, remembered: OTHER });
+        await settle();
+        assert.equal(other.currentReads(), 0, path);
+        assert.equal(other.remembered(), OTHER, path);
+        assert.equal(other.waits(), 0);
+    }
 });
 
 test('the options page forgets the business units on a click, and only them', async () => {
@@ -1373,7 +1448,7 @@ test('a link whose row never comes ends in a notice that can be closed, and clic
     await at.pass(1);
     assert.equal(
         at.notice().querySelector('span').textContent,
-        'SFMC UX Tools: could not open asset 123 from the link (not found in this business unit).',
+        "SFMC UX Tools: could not open asset 123 from the link (Content Builder's search did not list it).",
     );
     assert.deepEqual(at.clicked, []);
     // a row that comes too late is not clicked
@@ -2253,7 +2328,8 @@ test('the view that Email Studio shows is written into its address with the busi
     });
     assert.equal(at.hash(), emailLink(MID, FOLDER));
     // the business unit is read each time: it may have been switched in another tab
-    assert.equal(at.currentReads(), 2);
+    // (and once for the load of the page)
+    assert.equal(at.currentReads(), 3);
     at.account.current = OTHER;
     await at.send({ type: EMAIL_SHOWN, target: VIEW });
     assert.equal(at.hash(), emailLink(OTHER, VIEW));
@@ -2419,4 +2495,987 @@ test('the background script passes Email Studio’s two messages from its frame 
     assert.equal(send({ type: EMAIL_WANTED }, CONTENT_BUILDER), false);
     assert.equal(send({ type: EMAIL_SHOWN, target: VIEW }, CONTENT_BUILDER), false);
     assert.equal(passed.length, count);
+});
+
+// Contact Builder: the message of its frame, its plain route on the Marketing Cloud page, and the
+// routes inside it of a made-up data extension and of the list of data extensions
+const CONTACT_SHOWN = 'sfmc-ux-tools:deep-link:contact-shown';
+const CONTACT = '#app/Contact%20Builder';
+const PLAIN_CONTACT = `${SHELL}${CONTACT}`;
+const CONTACT_PAGE = `${CONTACT}/contactsmeta/admin.html`;
+const OPENED = 'admin/data-extension/0a1b2c3d-0000-4000-8000-00000000abcd/properties/';
+const LISTED = 'admin/data-extension/';
+// the longest route inside Contact Builder that is taken for one
+const MOST_ROUTE = 200;
+/**
+ * Writes the route of the Marketing Cloud page that opens a route of Contact Builder, with the
+ * business unit.
+ *
+ * @param {string} mid id of the business unit
+ * @param {string} route the route inside Contact Builder
+ * @returns {string} the route of the page
+ */
+const contactLink = (mid, route) => `${CONTACT_PAGE}?ux-tools=${mid}%23${route}`;
+/**
+ * Writes the same without a business unit, which is Marketing Cloud's own form.
+ *
+ * @param {string} route the route inside Contact Builder
+ * @returns {string} the route of the page
+ */
+const contactBare = (route) => `${CONTACT_PAGE}%23${route}`;
+// what is no route inside Contact Builder
+const NO_ROUTES = [
+    '',
+    'admin/data extension',
+    'admin?x=1',
+    'admin&x=1',
+    'admin#other',
+    'admin%2Fx',
+    'javascript:alert(1)',
+    'https://example.com/',
+    '<img src=x onerror=alert(1)>',
+    'a'.repeat(MOST_ROUTE + 1),
+];
+const SAID_OTHER =
+    'This link belongs to the business unit Northwind France (600). You are in Northwind Germany (500).';
+
+test('an address names a route of Contact Builder with its business unit only in Marketing Cloud’s own form with one field', () => {
+    const { parseContact, isContactBuilderHash, contactAddress, contactSwitchAddress } =
+        shell().helpers;
+    const WHOLE = contactLink(MID, OPENED);
+    assert.deepEqual(plain(parseContact(WHOLE)), { mid: MID, route: OPENED });
+    const LONGEST_MID = contactLink('123456789012345', 'a');
+    assert.deepEqual(plain(parseContact(LONGEST_MID)), { mid: '123456789012345', route: 'a' });
+    // as a person may type it
+    assert.deepEqual(
+        plain(parseContact('#app/Contact Builder/contactsmeta/admin.html?ux-tools=7#admin/x')),
+        { mid: '7', route: 'admin/x' },
+    );
+    const LONGEST_ROUTE = contactLink(MID, 'a'.repeat(MOST_ROUTE));
+    assert.equal(parseContact(LONGEST_ROUTE).route.length, MOST_ROUTE);
+    for (const hash of [
+        '',
+        CONTACT,
+        `${CONTACT}/`,
+        CONTACT_PAGE,
+        // Marketing Cloud's own form without the field: no link that is checked
+        contactBare(OPENED),
+        // no business unit of digits
+        contactLink('', OPENED),
+        contactLink('12a', OPENED),
+        contactLink('-5', OPENED),
+        contactLink('1234567890123456', OPENED),
+        contactLink('<img src=x onerror=alert(1)>', OPENED),
+        // no route of the form
+        ...NO_ROUTES.map((route) => contactLink(MID, route)),
+        // more fields, another field, another document, another app
+        `${CONTACT_PAGE}?ux-tools=${MID}&x=1%23${OPENED}`,
+        `${CONTACT_PAGE}?x=1&ux-tools=${MID}%23${OPENED}`,
+        `${CONTACT_PAGE}?other=${MID}%23${OPENED}`,
+        `${CONTACT}/contactsmeta/other.html?ux-tools=${MID}%23${OPENED}`,
+        `${CONTACT}/contactsmeta/adminXhtml?ux-tools=${MID}%23${OPENED}`,
+        `${CONTACT}/admin.html?ux-tools=${MID}%23${OPENED}`,
+        `#app/Email/contactsmeta/admin.html?ux-tools=${MID}%23${OPENED}`,
+        `#app/Contact%20BuilderX/contactsmeta/admin.html?ux-tools=${MID}%23${OPENED}`,
+        contactLink(MID, OPENED).slice(1),
+        ` ${contactLink(MID, OPENED)}`,
+        `${contactLink(MID, OPENED)}\n`,
+        undefined,
+        null,
+        5,
+    ]) {
+        assert.equal(parseContact(hash), null, String(hash));
+    }
+
+    for (const hash of [
+        CONTACT,
+        `${CONTACT}/`,
+        '#app/Contact Builder',
+        contactBare(OPENED),
+        contactLink(MID, OPENED),
+        `${CONTACT}/anything/else`,
+    ]) {
+        assert.equal(isContactBuilderHash(hash), true, hash);
+    }
+    for (const hash of [
+        '',
+        '#',
+        APP,
+        '#app/Email',
+        '#app/Contact%20BuilderX',
+        '#app/Contact%20Builder%20Two/',
+        '#app/Contacts',
+        `#app/Journey%20Builder/${CONTACT}`,
+        undefined,
+        null,
+    ]) {
+        assert.equal(isContactBuilderHash(hash), false, String(hash));
+    }
+
+    // the address keeps the path and the query of the page
+    assert.equal(
+        contactAddress('/cloud/', '?x=1', MID, OPENED),
+        `/cloud/?x=1${CONTACT}/contactsmeta/admin.html?ux-tools=500%23${OPENED}`,
+    );
+    // without a business unit of digits: Marketing Cloud's own form, with the path of the frame
+    for (const mid of [undefined, null, '', '12a', '1234567890123456', 500, {}]) {
+        assert.equal(
+            contactAddress('/cloud/', '', mid, OPENED),
+            `/cloud/${CONTACT}/contactsmeta/admin.html%23${OPENED}`,
+            String(mid),
+        );
+        assert.equal(contactSwitchAddress(ORIGIN, mid, OPENED), undefined);
+    }
+    // without a route of the form: Contact Builder's plain address
+    for (const route of [...NO_ROUTES, undefined, null, 5, {}, ['admin']]) {
+        assert.equal(contactAddress('/cloud/', '?x=1', MID, route), `/cloud/?x=1${CONTACT}`);
+        assert.equal(contactSwitchAddress(ORIGIN, OTHER, route), undefined);
+    }
+    // to Contact Builder itself, without the route
+    assert.equal(contactSwitchAddress(ORIGIN, OTHER, OPENED), switchTo(PLAIN_CONTACT));
+});
+
+test('the route that Contact Builder shows is written into its address with the business unit, without routing again, and only there', async () => {
+    const at = shell(CONTACT);
+    let routed = 0;
+    at.window.addEventListener('hashchange', () => routed++);
+    const state = { kept: true };
+    at.window.history.replaceState(state, '');
+
+    assert.deepEqual(await at.send({ type: CONTACT_SHOWN, route: OPENED }), {});
+    assert.equal(
+        at.window.location.href,
+        `${SHELL}?x=1#app/Contact%20Builder/contactsmeta/admin.html?ux-tools=500%23${OPENED}`,
+    );
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(at.hash(), contactLink(MID, LISTED));
+    // the business unit is read each time: it may have been switched in another tab
+    // (and once for the load of the page)
+    assert.equal(at.currentReads(), 3);
+    at.account.current = OTHER;
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(at.hash(), contactLink(OTHER, OPENED));
+    // a business unit that cannot be read: the link is written without it, in Marketing
+    // Cloud's own form
+    at.account.current = null;
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(
+        at.hash(),
+        `#app/Contact%20Builder/contactsmeta/admin.html%23admin/data-extension/`,
+    );
+    at.account.current = MID;
+    // no route any more, for which nothing is read
+    const reads = at.currentReads();
+    await at.send({ type: CONTACT_SHOWN, route: null });
+    assert.equal(at.window.location.href, `${SHELL}?x=1${CONTACT}`);
+    assert.equal(at.currentReads(), reads);
+    // whatever is no route of the form resets the address
+    for (const route of [...NO_ROUTES, undefined, 7, { route: OPENED }]) {
+        await at.send({ type: CONTACT_SHOWN, route: OPENED });
+        assert.equal(at.hash(), contactLink(MID, OPENED));
+        await at.send({ type: CONTACT_SHOWN, route });
+        assert.equal(at.hash(), CONTACT, String(route));
+    }
+    // a route that was left before its business unit was read is not written
+    const first = at.send({ type: CONTACT_SHOWN, route: OPENED });
+    const second = at.send({ type: CONTACT_SHOWN, route: null });
+    await Promise.all([first, second]);
+    assert.equal(at.hash(), CONTACT);
+    // from anyone but the background script nothing is written
+    await at.send({ type: CONTACT_SHOWN, route: OPENED }, { id: 'another-extension' });
+    await at.send({ type: CONTACT_SHOWN, route: OPENED }, { id: EXTENSION, tab: { id: 7 } });
+    assert.equal(at.hash(), CONTACT);
+    assert.equal(routed, 0);
+    assert.deepEqual(at.window.history.state, state);
+
+    // whatever follows Contact Builder's route in the address, the route is written
+    for (const start of [
+        `${CONTACT}/`,
+        '#app/Contact Builder',
+        contactBare(LISTED),
+        `${CONTACT}/anything`,
+    ]) {
+        const other = shell(start);
+        await other.send({ type: CONTACT_SHOWN, route: OPENED });
+        assert.equal(other.hash(), contactLink(MID, OPENED), start);
+    }
+
+    // another app's address is never touched, and nothing is read for it
+    for (const hash of [
+        APP,
+        `${APP}something`,
+        `${EMAIL}%23Subscribers`,
+        '#app/Journey%20Builder/',
+        '#app/Contact%20BuilderX',
+        '',
+        '#home',
+    ]) {
+        const other = shell(hash);
+        await other.send({ type: CONTACT_SHOWN, route: OPENED });
+        await other.send({ type: CONTACT_SHOWN, route: null });
+        assert.equal(other.hash(), hash);
+        // (read for the load of the page only)
+        assert.equal(other.currentReads(), 1);
+    }
+    // and what the other two apps tell never touches Contact Builder's address
+    const contact = shell(contactBare(LISTED));
+    assert.deepEqual(await contact.send({ type: SHOWN, asset: '123' }), {});
+    assert.deepEqual(await contact.send({ type: EMAIL_SHOWN, target: VIEW }), { parameter: null });
+    assert.deepEqual(await contact.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(await contact.send({ type: EMAIL_WANTED }), { target: null });
+    assert.equal(contact.hash(), contactBare(LISTED));
+    assert.equal(contact.dialog(), null);
+});
+
+test('the page keeps the route in Contact Builder’s address when it resets that address, and forgets it with the app', async () => {
+    const at = shell(CONTACT);
+    // the reset before any route is shown stays as it is
+    await at.route(`${CONTACT}/`);
+    assert.equal(at.hash(), `${CONTACT}/`);
+
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(at.hash(), contactLink(MID, OPENED));
+    await at.route(CONTACT);
+    assert.equal(at.hash(), contactLink(MID, OPENED));
+    await at.route(`${CONTACT}/`);
+    assert.equal(at.hash(), contactLink(MID, OPENED));
+    // written again with the business unit as it is then
+    at.account.current = OTHER;
+    await at.route(CONTACT);
+    assert.equal(at.hash(), contactLink(OTHER, OPENED));
+    at.account.current = MID;
+    // another route of Contact Builder on the page is the page's own business
+    await at.route(contactBare(LISTED));
+    assert.equal(at.hash(), contactBare(LISTED));
+    await at.route(`${CONTACT}/something`);
+    assert.equal(at.hash(), `${CONTACT}/something`);
+
+    // forgotten once no route is shown
+    await at.send({ type: CONTACT_SHOWN, route: null });
+    await at.route(`${CONTACT}/`);
+    assert.equal(at.hash(), `${CONTACT}/`);
+
+    // forgotten once the page left Contact Builder, for either of the other apps
+    for (const other of [APP, '#app/Email', '#app/Journey%20Builder']) {
+        await at.route(CONTACT);
+        await at.send({ type: CONTACT_SHOWN, route: OPENED });
+        assert.equal(at.hash(), contactLink(MID, OPENED));
+        await at.route(other);
+        assert.equal(at.hash(), other);
+        // told while another app is open: nothing is written, and nothing kept for later
+        await at.send({ type: CONTACT_SHOWN, route: OPENED });
+        assert.equal(at.hash(), other);
+        await at.route(CONTACT);
+        assert.equal(at.hash(), CONTACT);
+    }
+    // an asset that Content Builder showed is not written into Contact Builder's address
+    await at.route(APP);
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.equal(at.hash(), `${MARKER}123`);
+    await at.route(CONTACT);
+    assert.equal(at.hash(), CONTACT);
+    await at.send({ type: SHOWN, asset: '456' });
+    assert.equal(at.hash(), CONTACT);
+});
+
+test('a link into Contact Builder that was left in the address and is of another business unit after all leads to the dialog, and its address is not written over', async () => {
+    // the business unit that was read last is the link's, which it is no longer: the address
+    // was left alone
+    const STALE = { remembered: OTHER };
+    const at = shell(contactLink(OTHER, OPENED), STALE);
+    await settle();
+    assert.deepEqual(at.said(), [SAID_OTHER]);
+    assert.deepEqual(at.buttons(), ['Switch and open', 'Stay here']);
+    assert.equal(at.window.document.querySelectorAll('dialog').length, 1);
+    // seen live: Marketing Cloud opens the route in the business unit the user is in, and
+    // Contact Builder's frame then tells it. The link keeps its own business unit meanwhile
+    const reads = at.currentReads();
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(at.hash(), contactLink(OTHER, OPENED));
+    assert.equal(at.currentReads(), reads);
+    assert.deepEqual(at.went, []);
+    // nothing is handed to any app
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(await at.send({ type: EMAIL_WANTED }), { target: null });
+    // refused: the same route still does not get the business unit the user is in
+    at.click('Stay here');
+    assert.equal(at.dialog(), null);
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(at.hash(), contactLink(OTHER, OPENED));
+    assert.equal(at.dialog(), null);
+    // a later, different route is written as any other, and so is the first one after it
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(at.hash(), contactLink(MID, LISTED));
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(at.hash(), contactLink(MID, OPENED));
+    assert.equal(at.dialog(), null);
+    assert.deepEqual(at.went, []);
+
+    // told before the business unit the user is in is known: the link is not written over
+    // either, and nothing is read for it
+    const pending = shell(contactLink(OTHER, OPENED), { isCurrentHanging: true, ...STALE });
+    await settle();
+    assert.equal(pending.dialog(), null);
+    await pending.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(pending.hash(), contactLink(OTHER, OPENED));
+    // (asked for the load of the page and for the link only)
+    assert.equal(pending.currentReads(), 2);
+    await pending.elapse(CURRENT_WAIT);
+    assert.deepEqual(pending.said(), [
+        'This link belongs to the business unit Northwind France (600). The business unit you are in could not be read.',
+    ]);
+    assert.equal(pending.hash(), contactLink(OTHER, OPENED));
+
+    // a business unit that the account does not have: the same dialog as for the other apps
+    const nowhere = shell(contactLink(NOWHERE, OPENED), { remembered: NOWHERE });
+    await settle();
+    assert.match(nowhere.said()[0], /^The business unit 999 of this link does not exist/);
+    assert.deepEqual(nowhere.buttons(), ['Close']);
+    await nowhere.send({ type: CONTACT_SHOWN, route: OPENED });
+    nowhere.click('Close');
+    await nowhere.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(nowhere.hash(), contactLink(NOWHERE, OPENED));
+
+    // the page drops the refused link from its address: what is shown is written again
+    const dropped = shell(contactLink(OTHER, OPENED), STALE);
+    await settle();
+    await dropped.send({ type: CONTACT_SHOWN, route: OPENED });
+    dropped.click('Stay here');
+    await dropped.route(CONTACT);
+    assert.equal(dropped.hash(), contactLink(MID, OPENED));
+    // and leaving Contact Builder lets go of the link too
+    const left = shell(contactLink(OTHER, OPENED), STALE);
+    await settle();
+    left.click('Stay here');
+    await left.route(APP);
+    await left.route(CONTACT);
+    await left.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(left.hash(), contactLink(MID, OPENED));
+});
+
+test('a link into Contact Builder of this business unit, or without a business unit, is never asked about', async () => {
+    const here = shell(contactLink(MID, OPENED), { remembered: MID });
+    // the business unit that was read last is the link's: the address is left alone
+    assert.equal(here.hash(), contactLink(MID, OPENED));
+    await settle();
+    assert.equal(here.reloads(), 0);
+    assert.equal(here.pass(), null);
+    assert.equal(here.dialog(), null);
+    // read for the load of the page and for the link
+    assert.equal(here.currentReads(), 2);
+    assert.equal(here.waits(), 0);
+    // nothing is handed over: Marketing Cloud opens the route itself
+    assert.deepEqual(await here.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(await here.send({ type: EMAIL_WANTED }), { target: null });
+    await here.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(here.hash(), contactLink(MID, OPENED));
+    // from here on the address follows with the business unit as it is then
+    here.account.current = OTHER;
+    await here.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(here.hash(), contactLink(OTHER, LISTED));
+    assert.equal(here.dialog(), null);
+    // told before the business unit was known: left as it is, which is the same address
+    const early = shell(contactLink(MID, OPENED), {
+        isCurrentHanging: true,
+        header: HEADER,
+        remembered: MID,
+    });
+    await early.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(early.hash(), contactLink(MID, OPENED));
+    assert.equal(early.dialog(), null);
+
+    // Marketing Cloud's own form, and whatever is no link of the fixed form: not checked
+    for (const hash of [
+        contactBare(OPENED),
+        contactLink('12a', OPENED),
+        contactLink(OTHER, 'admin?x=1'),
+        `${CONTACT_PAGE}?ux-tools=${OTHER}&x=1%23${OPENED}`,
+        `${CONTACT_PAGE}?other=${OTHER}%23${OPENED}`,
+    ]) {
+        const bare = shell(hash);
+        await bare.elapse(CURRENT_WAIT);
+        assert.equal(bare.dialog(), null, hash);
+        // (read for the load of the page only)
+        assert.equal(bare.currentReads(), 1, hash);
+        assert.deepEqual(bare.went, []);
+        assert.equal(bare.hash(), hash);
+    }
+    // the address that the page was handed to open: decided as any other
+    const handedOver = shell('', {
+        search: handed(contactLink(OTHER, OPENED)),
+        remembered: OTHER,
+    });
+    await settle();
+    assert.deepEqual(handedOver.buttons(), ['Switch and open', 'Stay here']);
+    handedOver.click('Stay here');
+    // the page writes that address itself: no new link, and it is not written over
+    await handedOver.route(contactLink(OTHER, OPENED));
+    await settle();
+    assert.equal(handedOver.dialog(), null);
+    await handedOver.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(handedOver.hash(), contactLink(OTHER, OPENED));
+    const own = shell('', { search: handed(contactLink(MID, OPENED)), remembered: MID });
+    await settle();
+    assert.equal(own.reloads(), 0);
+    assert.equal(own.dialog(), null);
+    assert.equal(own.window.location.search, handed(contactLink(MID, OPENED)));
+});
+
+test('a link into Contact Builder that is pasted into the open page is decided the same way, once', async () => {
+    const at = shell(CONTACT);
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(at.hash(), contactLink(MID, LISTED));
+    // another business unit: the dialog, and the route that was shown before is not written
+    // over the link
+    await at.route(contactLink(OTHER, OPENED));
+    await settle();
+    assert.deepEqual(at.said(), [SAID_OTHER]);
+    assert.equal(at.hash(), contactLink(OTHER, OPENED));
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(at.hash(), contactLink(OTHER, OPENED));
+    at.click('Stay here');
+    // what this script wrote itself is no new link
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    await at.route(`${CONTACT}/`);
+    await settle();
+    assert.equal(at.hash(), contactLink(MID, LISTED));
+    assert.equal(at.dialog(), null);
+    // this business unit: no dialog
+    await at.route(contactLink(MID, OPENED));
+    await settle();
+    assert.equal(at.dialog(), null);
+    assert.equal(at.hash(), contactLink(MID, OPENED));
+    // the business unit was switched in another tab: the link of the other one is fine now
+    at.account.current = OTHER;
+    await at.route(contactLink(OTHER, LISTED));
+    await settle();
+    assert.equal(at.dialog(), null);
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(at.hash(), contactLink(OTHER, LISTED));
+    assert.deepEqual(at.went, []);
+});
+
+test('“Switch and open” carries a link into Contact Builder as a route, and the page after the switch writes it back', async () => {
+    const KEPT = `contact-builder/600/${OPENED}`;
+    const { landing } = shell().helpers;
+    const at = shell(contactLink(OTHER, OPENED));
+    await settle();
+    assert.equal(at.kept(), null);
+    at.click('Switch and open');
+    assert.equal(at.kept(), KEPT);
+    // to Contact Builder's plain address: the link itself travels in the session storage
+    assert.deepEqual(at.went, [
+        'https://mc.s7.exacttarget.com/cloud/context-switch.html?m=600&h=https%3A%2F%2Fmc.s7.exacttarget.com%2Fcloud%2F%23app%2FContact%2520Builder',
+    ]);
+    assert.doesNotMatch(at.went[0], /undefined|ux-tools|contactsmeta|admin/);
+
+    assert.equal(
+        landing({ app: 'contact-builder', mid: OTHER, what: OPENED }),
+        contactLink(OTHER, OPENED),
+    );
+    for (const broken of [
+        { app: 'contact-builder', mid: OTHER, what: '' },
+        { app: 'contact-builder', mid: OTHER, what: 'admin?x=1' },
+        { app: 'contact-builder', mid: OTHER, what: 'a'.repeat(MOST_ROUTE + 1) },
+        { app: 'contact-builder', mid: OTHER },
+        { app: 'contact-builder', mid: 'x', what: OPENED },
+        { app: 'contact-builder', mid: '', what: OPENED },
+        { app: 'contact-builder', what: OPENED },
+        // no app of the three names no address, whatever it holds
+        { app: 'contacts', mid: OTHER, what: OPENED },
+        { app: 'another-app', mid: OTHER, what: '123' },
+        { mid: OTHER, what: '123' },
+    ]) {
+        assert.equal(landing(broken), undefined, JSON.stringify(broken));
+    }
+
+    // the page after the switch was handed Contact Builder's plain address: the link is
+    // written into it before the page reads it, and Marketing Cloud opens the route itself
+    // (the business unit that was read last is the link's already; otherwise see the test below)
+    const arrived = shell('', {
+        current: OTHER,
+        carried: KEPT,
+        search: handed(CONTACT),
+        remembered: OTHER,
+    });
+    assert.equal(arrived.window.location.search, handed(contactLink(OTHER, OPENED)));
+    assert.equal(arrived.hash(), '');
+    assert.equal(arrived.kept(), null);
+    await settle();
+    assert.equal(arrived.dialog(), null);
+    // not handed an address: the link goes into the route
+    const routed = shell(CONTACT, { current: OTHER, carried: KEPT, remembered: OTHER });
+    assert.equal(routed.hash(), contactLink(OTHER, OPENED));
+    assert.equal(routed.window.location.search, '?x=1');
+    assert.equal(routed.kept(), null);
+    await settle();
+    assert.equal(routed.dialog(), null);
+    await routed.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(routed.hash(), contactLink(OTHER, OPENED));
+    assert.deepEqual(await routed.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(await routed.send({ type: EMAIL_WANTED }), { target: null });
+    // the switch did not happen: the link that was written is decided as any other
+    const failed = shell(CONTACT, { carried: KEPT, remembered: OTHER });
+    await settle();
+    assert.deepEqual(failed.buttons(), ['Switch and open', 'Stay here']);
+    assert.equal(failed.hash(), contactLink(OTHER, OPENED));
+    // the page that switches leaves the kept link for the page after it
+    const switching = shell('', { path: '/cloud/context-switch.html', carried: KEPT });
+    await settle();
+    assert.equal(switching.kept(), KEPT);
+
+    // a kept link is written into the address of its own app only
+    for (const other of [APP, '#app/Email', '#app/Journey%20Builder']) {
+        const crossed = shell(other, { current: OTHER, carried: KEPT });
+        assert.equal(crossed.window.location.href, `${SHELL}?x=1${other}`);
+        assert.equal(crossed.kept(), null);
+        const handedOver = shell('', { current: OTHER, carried: KEPT, search: handed(other) });
+        assert.equal(handedOver.window.location.search, handed(other));
+        for (const page of [crossed, handedOver]) {
+            await settle();
+            assert.equal(page.dialog(), null, other);
+            assert.deepEqual(await page.send({ type: WANTED }), { asset: null });
+            assert.deepEqual(await page.send({ type: EMAIL_WANTED }), { target: null });
+        }
+    }
+    for (const carried of ['content-builder/600/123', `email-studio/600/${VIEW}`]) {
+        const crossed = shell(CONTACT, { current: OTHER, carried });
+        assert.equal(crossed.hash(), CONTACT, carried);
+        assert.equal(crossed.kept(), null);
+        await settle();
+        assert.equal(crossed.dialog(), null);
+    }
+    // what is kept is a link only with a route of the form; anything else is thrown away
+    for (const carried of [
+        'contact-builder/600/',
+        'contact-builder/600/admin?x=1',
+        'contact-builder/600/admin%23x',
+        'contact-builder/600/admin data',
+        'contact-builder/600/<img src=x>',
+        `contact-builder/600/${'a'.repeat(MOST_ROUTE + 1)}`,
+        'contact-builder/x/admin',
+        'contact-builder//admin',
+        'contacts/600/admin',
+        ` ${KEPT}`,
+        `${KEPT}\n`,
+    ]) {
+        const odd = shell(CONTACT, { current: OTHER, carried });
+        assert.equal(odd.kept(), null, carried);
+        assert.equal(odd.hash(), CONTACT, carried);
+        await settle();
+        assert.equal(odd.dialog(), null, carried);
+    }
+});
+
+// the route that Contact Builder's frame tells on its start page
+const START = 'admin/schema';
+
+test('the route of a link into Contact Builder is taken out of the address unless the business unit that was read last is the link’s', async () => {
+    const LINK = contactLink(OTHER, OPENED);
+    // the same one: the address is left alone, in the route and in the address that was handed
+    const same = shell(LINK, { remembered: OTHER, current: OTHER });
+    assert.equal(same.window.location.href, `${SHELL}?x=1${LINK}`);
+    const sameHanded = shell('', { search: handed(LINK), remembered: OTHER, current: OTHER });
+    assert.equal(sameHanded.window.location.href, `${SHELL}${handed(LINK)}`);
+    for (const page of [same, sameHanded]) {
+        await settle();
+        assert.equal(page.dialog(), null);
+        assert.equal(page.reloads(), 0);
+        assert.equal(page.pass(), null);
+    }
+
+    // another one, none, or what is no id: the route is taken out before the page reads it
+    for (const remembered of [
+        MID,
+        undefined,
+        '',
+        '60',
+        '6000',
+        ' 600',
+        '600\n',
+        '6e2',
+        '-600',
+        '1234567890123456',
+        'null',
+        '{"mid":"600"}',
+    ]) {
+        const routed = shell(LINK, { remembered, isCurrentHanging: true });
+        assert.equal(
+            routed.window.location.href,
+            'https://mc.s7.exacttarget.com/cloud/?x=1#app/Contact%20Builder',
+            String(remembered),
+        );
+        const arrived = shell('', { search: handed(LINK), remembered, isCurrentHanging: true });
+        assert.equal(
+            arrived.window.location.href,
+            'https://mc.s7.exacttarget.com/cloud/?hash=logged-inI2FwcC9Db250YWN0JTIwQnVpbGRlcg%3D%3D',
+            String(remembered),
+        );
+        assert.equal(arrived.window.location.search, handed(CONTACT));
+        // what else the query holds stays
+        const more = shell('', {
+            search: `?x=1&hash=logged-in${encode(LINK)}`,
+            remembered,
+            isCurrentHanging: true,
+        });
+        assert.equal(more.window.location.search, `?x=1&hash=logged-in${encode(CONTACT)}`);
+    }
+    // only a link with a business unit, and only Contact Builder's
+    for (const hash of [
+        contactBare(OPENED),
+        contactLink('12a', OPENED),
+        `${CONTACT_PAGE}?ux-tools=${OTHER}&x=1%23${OPENED}`,
+        link(OTHER, '123'),
+        emailLink(OTHER, VIEW),
+    ]) {
+        const other = shell(hash, { isCurrentHanging: true });
+        assert.equal(other.hash(), hash);
+        const arrived = shell('', { search: handed(hash), isCurrentHanging: true });
+        assert.equal(arrived.window.location.search, handed(hash));
+    }
+    // the page that switches the business unit takes nothing out
+    const switching = shell(LINK, { path: '/cloud/context-switch.html' });
+    assert.equal(switching.hash(), LINK);
+
+    // the business unit is kept whenever it was read: by the API, and by the page's header
+    const read = shell(CONTACT);
+    assert.equal(read.remembered(), null);
+    await read.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(read.remembered(), MID);
+    read.account.current = OTHER;
+    await read.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(read.remembered(), OTHER);
+    // one that could not be read leaves what was kept
+    read.account.current = null;
+    await read.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(read.remembered(), OTHER);
+    const header = shell(link(MID, '123'), { isCurrentHanging: true, header: HEADER });
+    await settle();
+    assert.equal(header.remembered(), MID);
+});
+
+test('a link into Contact Builder of another business unit opens Contact Builder’s start page behind the dialog', async () => {
+    const at = shell(contactLink(OTHER, OPENED), { remembered: MID });
+    assert.equal(at.hash(), CONTACT);
+    // seen live: Contact Builder opens its start page and its frame tells that route. Until
+    // the user decided, nothing is written and nothing is read for it
+    await at.send({ type: CONTACT_SHOWN, route: START });
+    assert.equal(at.hash(), CONTACT);
+    // the dialog comes after the business unit was read anew: for the load of the page and
+    // for the link, not for what Contact Builder's frame told
+    assert.equal(at.currentReads(), 2);
+    assert.deepEqual(at.said(), [SAID_OTHER]);
+    assert.deepEqual(at.buttons(), ['Switch and open', 'Stay here']);
+    // the page writes its plain route: the link is still held
+    await at.route(`${CONTACT}/`);
+    assert.equal(at.hash(), `${CONTACT}/`);
+    assert.equal(at.currentReads(), 2);
+    assert.deepEqual(at.buttons(), ['Switch and open', 'Stay here']);
+    // “Stay here” leaves Contact Builder as it is, and its address follows it from then on
+    at.click('Stay here');
+    await settle();
+    assert.equal(at.dialog(), null);
+    assert.equal(at.hash(), contactLink(MID, START));
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(at.hash(), contactLink(MID, LISTED));
+    // also for the route of the link, which is now a route of the business unit the user is in
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(at.hash(), contactLink(MID, OPENED));
+    assert.equal(at.reloads(), 0);
+    assert.equal(at.pass(), null);
+    assert.equal(at.kept(), null);
+    assert.deepEqual(at.went, []);
+
+    // nothing told yet: plain Contact Builder stays, and what is told later is followed
+    const quiet = shell(contactLink(OTHER, OPENED));
+    await settle();
+    quiet.click('Stay here');
+    await settle();
+    assert.equal(quiet.window.location.href, `${SHELL}?x=1${CONTACT}`);
+    await quiet.send({ type: CONTACT_SHOWN, route: START });
+    assert.equal(quiet.hash(), contactLink(MID, START));
+
+    // “Switch and open” carries the link, and nothing is written meanwhile
+    const switched = shell(contactLink(OTHER, OPENED), { remembered: MID });
+    await switched.send({ type: CONTACT_SHOWN, route: START });
+    switched.click('Switch and open');
+    assert.equal(switched.kept(), `contact-builder/600/${OPENED}`);
+    assert.deepEqual(switched.went, [switchTo(PLAIN_CONTACT)]);
+    await switched.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(switched.hash(), CONTACT);
+    assert.equal(switched.reloads(), 0);
+
+    // handed to the page to open: the same, in the query
+    const arrived = shell('', { search: handed(contactLink(OTHER, OPENED)), remembered: MID });
+    assert.equal(arrived.window.location.search, handed(CONTACT));
+    await settle();
+    assert.deepEqual(arrived.buttons(), ['Switch and open', 'Stay here']);
+    // the page writes the address it was handed, which is no link
+    await arrived.route(CONTACT);
+    await arrived.send({ type: CONTACT_SHOWN, route: START });
+    assert.equal(arrived.hash(), CONTACT);
+    arrived.click('Stay here');
+    await settle();
+    assert.equal(arrived.hash(), contactLink(MID, START));
+    // the same link pasted later is a new one
+    await arrived.route(contactLink(OTHER, OPENED));
+    await settle();
+    assert.deepEqual(arrived.buttons(), ['Switch and open', 'Stay here']);
+
+    // the address copied from a tab that arrived by login: a link in the route and one of
+    // another business unit in the address that was handed over, which is what the page opens.
+    // Both are plain before the page reads them, and the link that was handed over is held
+    const both = shell(contactLink(MID, LISTED), {
+        search: handed(contactLink(OTHER, OPENED)),
+        remembered: MID,
+    });
+    assert.equal(both.window.location.search, handed(CONTACT));
+    assert.equal(both.hash(), CONTACT);
+    // the dialog comes after the business unit was read anew
+    assert.equal(both.dialog(), null);
+    await settle();
+    assert.deepEqual(both.said(), [SAID_OTHER]);
+    assert.deepEqual(both.buttons(), ['Switch and open', 'Stay here']);
+    // the page writes the address it was handed, which is plain now: the link is still held
+    await both.route(`${CONTACT}/`);
+    await both.send({ type: CONTACT_SHOWN, route: START });
+    assert.equal(both.hash(), `${CONTACT}/`);
+    assert.deepEqual(both.buttons(), ['Switch and open', 'Stay here']);
+    assert.equal(both.reloads(), 0);
+    both.click('Switch and open');
+    assert.equal(both.kept(), `contact-builder/600/${OPENED}`);
+
+    // a business unit that the account does not have: “Close” lets go of the link too
+    const nowhere = shell(contactLink(NOWHERE, OPENED), { remembered: MID });
+    await nowhere.send({ type: CONTACT_SHOWN, route: START });
+    assert.deepEqual(nowhere.buttons(), ['Close']);
+    assert.equal(nowhere.hash(), CONTACT);
+    nowhere.click('Close');
+    await settle();
+    assert.equal(nowhere.hash(), contactLink(MID, START));
+
+    // the business unit cannot be read in time: held until then, and the dialog says so
+    const pending = shell(contactLink(OTHER, OPENED), { isCurrentHanging: true });
+    await pending.send({ type: CONTACT_SHOWN, route: START });
+    assert.equal(pending.dialog(), null);
+    assert.equal(pending.hash(), CONTACT);
+    await pending.elapse(CURRENT_WAIT);
+    assert.deepEqual(pending.buttons(), ['Switch and open', 'Stay here']);
+    assert.equal(pending.hash(), CONTACT);
+    assert.equal(pending.reloads(), 0);
+
+    // the page leaves Contact Builder before the link is decided: the link is done with
+    const left = shell(contactLink(OTHER, OPENED), { isCurrentHanging: true });
+    await left.route(APP);
+    await left.elapse(CURRENT_WAIT);
+    assert.equal(left.dialog(), null);
+    assert.equal(left.reloads(), 0);
+    await left.route(CONTACT);
+    left.account.isCurrentHanging = false;
+    await left.send({ type: CONTACT_SHOWN, route: START });
+    assert.equal(left.hash(), contactLink(MID, START));
+});
+
+test('a link into Contact Builder that turns out to be of this business unit is opened by loading the page again, once, with a pass', async () => {
+    const LINK = contactLink(MID, OPENED);
+    const KEY = `contact-builder/500/${OPENED}`;
+    // nothing kept, or another business unit kept, of which the user is no longer in
+    for (const remembered of [undefined, OTHER, 'x']) {
+        const at = shell(LINK, { remembered });
+        assert.equal(at.hash(), CONTACT);
+        assert.equal(at.reloads(), 0);
+        // told before the business unit was read: nothing is written
+        const told = at.send({ type: CONTACT_SHOWN, route: START });
+        assert.equal(at.hash(), CONTACT);
+        await told;
+        assert.equal(at.pass(), KEY);
+        assert.equal(
+            at.window.location.href,
+            `https://mc.s7.exacttarget.com/cloud/?x=1#app/Contact%20Builder/contactsmeta/admin.html?ux-tools=500%23${OPENED}`,
+        );
+        assert.equal(at.reloads(), 1);
+        assert.equal(at.remembered(), MID);
+        assert.equal(at.dialog(), null);
+        // until the page is gone nothing writes over the link, and it is loaded again once
+        await at.send({ type: CONTACT_SHOWN, route: START });
+        await at.route(LINK);
+        await settle();
+        assert.equal(at.hash(), LINK);
+        assert.equal(at.reloads(), 1);
+        // (read for the load of the page and for the link only)
+        assert.equal(at.currentReads(), 2);
+    }
+    // handed to the page to open: the link goes back where it came from
+    const arrived = shell('', { search: handed(LINK) });
+    assert.equal(arrived.window.location.search, handed(CONTACT));
+    await settle();
+    assert.equal(arrived.window.location.href, `${SHELL}${handed(LINK)}`);
+    assert.equal(arrived.pass(), KEY);
+    assert.equal(arrived.reloads(), 1);
+    // the page wrote its plain route meanwhile: that stays, the query is what it opens
+    const written = shell('', { search: handed(LINK), isCurrentHanging: true, header: '' });
+    await written.route(CONTACT);
+    written.window.document.body.innerHTML = HEADER;
+    await settle();
+    assert.equal(written.window.location.href, `${SHELL}${handed(LINK)}${CONTACT}`);
+    assert.equal(written.reloads(), 1);
+
+    // the page that is loaded with the pass: the address is left alone and the pass is gone,
+    // even when the business unit that is kept is another one
+    for (const has of [
+        { pass: KEY },
+        { pass: KEY, remembered: OTHER },
+        { pass: KEY, search: handed(LINK), hash: '' },
+        { pass: KEY, search: handed(LINK), hash: CONTACT },
+    ]) {
+        const next = shell(has.hash ?? LINK, has);
+        const before = `${SHELL}${has.search ?? '?x=1'}${has.hash ?? LINK}`;
+        assert.equal(next.window.location.href, before);
+        assert.equal(next.pass(), null);
+        await settle();
+        assert.equal(next.window.location.href, before);
+        assert.equal(next.reloads(), 0);
+        assert.equal(next.pass(), null);
+        assert.equal(next.dialog(), null);
+    }
+    // from then on the address follows Contact Builder
+    const next = shell(LINK, { pass: KEY });
+    await next.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(next.hash(), LINK);
+    await next.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(next.hash(), contactLink(MID, LISTED));
+    // the business unit was switched meanwhile: the dialog, and never a second load
+    const late = shell(LINK, { pass: KEY, current: OTHER });
+    await settle();
+    assert.equal(late.hash(), LINK);
+    assert.equal(late.reloads(), 0);
+    assert.equal(late.dialog() === null, false);
+
+    // a pass for another link, or what is no pass, is removed and ignored
+    for (const pass of [
+        `contact-builder/500/${LISTED}`,
+        `contact-builder/600/${OPENED}`,
+        `content-builder/500/${OPENED}`,
+        `${KEY} `,
+        ` ${KEY}`,
+        KEY.slice(0, -1),
+        LINK,
+        '',
+        'true',
+        '500',
+        '<img src=x onerror=alert(1)>',
+    ]) {
+        const odd = shell(LINK, { pass, isCurrentHanging: true });
+        assert.equal(odd.hash(), CONTACT, pass);
+        assert.equal(odd.pass(), null, pass);
+    }
+    // a pass is used up by whatever page comes next, also one without a link
+    for (const hash of [CONTACT, APP, '']) {
+        const plainPage = shell(hash, { pass: KEY });
+        assert.equal(plainPage.pass(), null);
+        assert.equal(plainPage.hash(), hash);
+    }
+    // the page that switches the business unit leaves it
+    const switching = shell(LINK, { path: '/cloud/context-switch.html', pass: KEY });
+    assert.equal(switching.pass(), KEY);
+
+    // after “Switch and open”: the link that was carried stays out of the address until the
+    // switch is known to have happened, and is then opened the same way
+    const KEPT = `contact-builder/600/${OPENED}`;
+    const SWITCHED = contactLink(OTHER, OPENED);
+    const carried = shell('', { current: OTHER, carried: KEPT, search: handed(CONTACT) });
+    assert.equal(carried.window.location.search, handed(CONTACT));
+    assert.equal(carried.kept(), null);
+    await settle();
+    assert.equal(carried.window.location.search, handed(SWITCHED));
+    assert.equal(carried.pass(), KEPT);
+    assert.equal(carried.reloads(), 1);
+    const routed = shell(CONTACT, { current: OTHER, carried: KEPT, remembered: MID });
+    assert.equal(routed.hash(), CONTACT);
+    await settle();
+    assert.equal(routed.hash(), SWITCHED);
+    assert.equal(routed.reloads(), 1);
+    // the switch did not happen: the dialog, over plain Contact Builder
+    const failed = shell(CONTACT, { carried: KEPT, remembered: MID });
+    await settle();
+    assert.deepEqual(failed.buttons(), ['Switch and open', 'Stay here']);
+    assert.equal(failed.hash(), CONTACT);
+    assert.equal(failed.reloads(), 0);
+});
+
+test('the background script passes the route from Contact Builder’s frame only, and only a route of the form', async () => {
+    const FRAME = {
+        id: EXTENSION,
+        tab: { id: 7 },
+        frameId: 3,
+        documentId: 'A1',
+        url: 'https://mc.s7.marketingcloudapps.com/contactsmeta/admin.html?hub=1&ks=ks#admin/data-extension/',
+    };
+    const { send, passed } = background();
+    assert.deepEqual(await send({ type: CONTACT_SHOWN, route: OPENED, more: 1 }, FRAME), {});
+    assert.deepEqual(await send({ type: CONTACT_SHOWN, route: null }, FRAME), {});
+    // to the page only, and with nothing but the type and the route
+    assert.deepEqual(passed, [
+        { tabId: 7, message: { type: CONTACT_SHOWN, route: OPENED }, options: { frameId: 0 } },
+        { tabId: 7, message: { type: CONTACT_SHOWN, route: null }, options: { frameId: 0 } },
+    ]);
+    // the business unit the frame was loaded with changes nothing
+    const linked = { ...FRAME, url: FRAME.url.replace('?', '?ux-tools=500&') };
+    assert.deepEqual(await send({ type: CONTACT_SHOWN, route: LISTED }, linked), {});
+    assert.deepEqual(passed.at(-1).message, { type: CONTACT_SHOWN, route: LISTED });
+    // whatever is no route of the form is passed as none
+    for (const route of [...NO_ROUTES, undefined, 7, {}, ['admin']]) {
+        await send({ type: CONTACT_SHOWN, route }, FRAME);
+        assert.deepEqual(
+            passed.at(-1).message,
+            { type: CONTACT_SHOWN, route: null },
+            String(route),
+        );
+    }
+    const count = passed.length;
+
+    for (const other of [
+        { id: 'another-extension' },
+        { tab: undefined },
+        { tab: {} },
+        // the page itself, and a sender without a frame
+        { frameId: 0 },
+        { frameId: undefined },
+        { url: undefined },
+        { url: 'not an address' },
+        // the right host, but not below Contact Builder's path
+        { url: 'https://mc.s7.marketingcloudapps.com/' },
+        { url: 'https://mc.s7.marketingcloudapps.com/contactsmeta' },
+        { url: 'https://mc.s7.marketingcloudapps.com/contactsmetaX/admin.html' },
+        { url: 'https://mc.s7.marketingcloudapps.com/x/contactsmeta/admin.html' },
+        { url: 'https://mc.s7.marketingcloudapps.com/AutomationStudioFuel3/' },
+        { url: 'https://mc.s7.marketingcloudapps.com/?x=/contactsmeta/admin.html' },
+        { url: 'https://mc.s7.marketingcloudapps.com/#/contactsmeta/admin.html' },
+        { url: 'https://content-builder.s7.marketingcloudapps.com/' },
+        // the right path on another host, and without encryption
+        { url: FRAME.url.replace('https:', 'http:') },
+        { url: 'https://mc.s7.marketingcloudapps.com.example.org/contactsmeta/admin.html' },
+        { url: 'https://example.org/contactsmeta/admin.html?x=.marketingcloudapps.com' },
+        { url: 'https://mc.s7.exacttarget.com/contactsmeta/admin.html' },
+        { url: 'https://members.s7.exacttarget.com/C12/Default.aspx' },
+        { url: 'https://mc.s7.exacttarget.com/cloud/' },
+    ]) {
+        const sender = { ...FRAME, ...other };
+        assert.equal(
+            send({ type: CONTACT_SHOWN, route: OPENED }, sender),
+            false,
+            JSON.stringify(other),
+        );
+    }
+    // Contact Builder's frame cannot speak for the other two apps
+    for (const type of [WANTED, SHOWN, EMAIL_WANTED, EMAIL_SHOWN]) {
+        assert.equal(send({ type, asset: '1', target: VIEW }, FRAME), false, type);
+    }
+    assert.equal(passed.length, count);
+
+    // a page that does not listen: the frame gets no answer, and nothing breaks
+    const deaf = background(() => {
+        throw new Error('Could not establish connection');
+    });
+    assert.equal(await deaf.send({ type: CONTACT_SHOWN, route: OPENED }, FRAME), undefined);
 });

@@ -18,7 +18,8 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Transactional SMS, push and OTT messages in a list:** a new entry in the Mobile Studio menu shows them, and lets you create, change and delete them. Marketing Cloud itself has no place for this.
 - **Delete in Mobile Studio:** MobileConnect and MobilePush get what they lack, a way to delete one message or many, after a question that names each of them.
 - **Links to a Content Builder asset:** the address shows which asset is open, and in which business unit, so you can send it to a coworker who also has the extension. In another business unit, the link offers to switch first.
-- **Links into Email Studio:** the same for an open data extension and for a folder of data extensions.
+- **Links into Email Studio:** the same for data extensions and lists, and for folders of data extensions, lists, groups and data filters.
+- **Links into Contact Builder:** the address in the browser now follows what you open in Contact Builder, so you can copy it and send it. Such a link also works for a coworker without the extension.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
 
@@ -35,6 +36,7 @@ Every section below starts with the platforms it works on: [![Engagement](images
 - **Content Builder**: the code view of emails, templates and content blocks, and new content blocks and emails for [readable keys](#readable-keys).
 - **Content Builder, opened from the Marketing Cloud menu**: the address of the page, for [links to an asset](#links-to-a-content-builder-asset).
 - **Email Studio, opened from the Marketing Cloud menu**: the address of the page, for [links into Email Studio](#links-into-email-studio).
+- **Contact Builder, opened from the Marketing Cloud menu**: the address of the page, for [links into Contact Builder](#links-into-contact-builder).
 - **Email Studio and CloudPages**: both open Content Builder's code view, so everything said about Content Builder applies there too.
 - **CloudPages code resources**: files of one kind, such as JavaScript, CSS, JSON, XML, RSS or text.
 - **Automation Studio, script activity**: its code editor gets everything Content Builder's editor gets, unless a section says otherwise.
@@ -576,7 +578,7 @@ The address of Content Builder is always the same, whatever you open in it. So y
 - **Without the extension:** the link opens Content Builder as usual, on its list. Nothing breaks and no error is shown.
 - **When the asset cannot be opened:** a small note of the extension in the corner of Content Builder says so, with the asset's number. Close it with the **×**. Nothing else is clicked or tried again.
 - **Limits:**
-    - It works for assets in the business unit's own content. An asset that the search does not list, such as shared content of another business unit, gives the note.
+    - It works for assets in the business unit's own content. An asset that the search does not list, such as shared content of another business unit or a web page made in CloudPages, gives the note.
     - The search shows 30 assets at most. If very many assets have a name like the one of the link, the asset may not be among them, and you get the note.
     - If the link cannot be followed, the search box keeps the name that was searched for, so you can see what was looked for.
     - The link shows the asset as a click in the list does. It does not jump into the editor.
@@ -602,6 +604,10 @@ Email Studio's address does name what you look at, but opening that address agai
 - **What gets a link:**
     - An open data extension.
     - A folder of data extensions.
+    - An open list.
+    - A folder of lists.
+    - A folder of groups.
+    - A folder of data filters.
     - Nothing else yet. See **What gets no link** below.
 - **What you see:**
     - Open one of these. The address in the browser gets one more part, `ux-tools=`, followed by the number of your business unit and the view, such as `ux-tools=500001234.r.Subscribers.CustomObjects.4711`.
@@ -612,7 +618,7 @@ Email Studio's address does name what you look at, but opening that address agai
     - Your coworker needs this extension too, to land on the exact view.
     - With the extension, the link opens Email Studio and then opens the view.
     - The extension does not go by a clock here. It waits for Email Studio itself to say that it is ready, however long that takes, and then asks for the view once.
-    - Email Studio sometimes shows something else instead, such as the first list of the section. Only then does the extension ask for the view again, at most 6 times in all.
+    - Email Studio sometimes shows something else instead, such as the first list of the section, or shows the view and takes it away again a moment later. Only then does the extension ask for the view again, at most 6 times in all.
     - As soon as you click or type in Email Studio, the extension stops this. The link never pulls you back from where you went yourself.
     - While the link is being opened, the address keeps the link. After your first click or key press, or after the last try, the address follows what you open again.
 - **Without the extension:** the link opens Email Studio at the section, such as **Subscribers**. Nothing breaks and no error is shown.
@@ -621,19 +627,70 @@ Email Studio's address does name what you look at, but opening that address agai
     - For the switch, the browser goes to Email Studio's plain address in that business unit. The link itself waits in this browser tab meanwhile, and the page that opens after the switch picks it up, once.
     - Nothing is opened in the wrong business unit.
 - **What gets no link** (the address then leads to the section only):
-    - A folder of lists. In a try on a real account, such a link opened the wrong list, so it is switched off.
+    - One group. Only the folder it is in gets a link.
+    - One data filter. Only the folder it is in gets a link.
+    - **All Subscribers**.
+    - Everything in **Content**, **Interactions**, **Tracking** and **A/B Testing**, such as emails, templates, sends and reports.
     - The older pages of Email Studio, such as everything under **Admin**. Opening such a page from a link could do more than show it, so this is left out until it is known to be safe.
-    - Everything else in Email Studio: lists, groups, emails, templates, sends and reports in **Subscribers**, **Content**, **Interactions**, **Tracking** and **A/B Testing**. They have not been tried yet.
     - What you did inside a view: the page of a list you paged to, a sort order, a step of a wizard, an open pop-up.
 - **Nothing is changed in Marketing Cloud:**
     - The extension only watches what Email Studio shows and sets Email Studio's own route. It asks Marketing Cloud for nothing here, apart from which business unit you are in.
     - A link can only name one of a short, fixed list of views, with a number or an id. It can never name a web address, and the extension never loads an address from a link.
 - **Always on:** there is no option for it.
 - **Tried on a real account:**
-    - Only an open data extension and a folder of data extensions. For both, the address gets the view and a link opens it.
+    - Every view listed under **What gets a link**: data extensions and their folders, lists, and folders of lists, groups and data filters.
+    - For each of them, the address gets the view, and the link opens it from a freshly loaded page.
     - In another business unit the dialog comes up, and **Switch and open** switches and opens the data extension.
-    - A link to a folder of lists opened the wrong list. It is switched off.
-    - The other views, and the older pages such as **Admin**, get no link yet.
+    - What is listed under **What gets no link** was not made to work and gets no link.
+
+### Links into Contact Builder
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
+In Contact Builder, the address in the browser stays the same whatever you open. So you cannot copy it to show a coworker a data extension. The extension makes the address follow what you open.
+
+- **What you see:**
+    - Open Contact Builder and go somewhere in it, for example to **Data Extensions** and then into one data extension.
+    - The address in the browser changes with every step. For an open data extension it ends with something like `#app/Contact%20Builder/contactsmeta/admin.html?ux-tools=500001234%23admin/data-extension/<id of the data extension>/properties/`.
+    - The number after `ux-tools=` is the number of your business unit (its MID).
+    - Go back to the start of Contact Builder, and the address is Contact Builder's plain address again.
+    - The page is not loaded again for this. Only the address changes.
+- **Sending a link:**
+    - Copy the address from the browser and send it.
+    - The link opens Contact Builder at the same place, with everything Contact Builder normally shows around it.
+- **Without the extension:**
+    - The link works too. This is Marketing Cloud's own kind of link; the extension only writes it into the address for you.
+    - The business unit is not checked then. A coworker in another business unit lands in Contact Builder of their own business unit, where the data extension may not exist.
+- **With the extension, the business unit is checked:**
+    - If your coworker is in another business unit than the link, the same dialog as for [links to a Content Builder asset](#links-to-a-content-builder-asset) comes up. It names both business units.
+    - **Switch and open** changes to the business unit of the link and opens the same place there. Nothing switches without the click.
+    - **Stay here** leaves you in your own business unit, on Contact Builder's start page. From then on the address follows what you open, as always.
+    - If the business unit of the link is not in the account your coworker is logged in to, the dialog says so and only has **Close**.
+    - For the switch, the browser goes to Contact Builder's plain address in that business unit. The link itself waits in this browser tab meanwhile, and the page that opens after the switch picks it up, once.
+- **A link from another business unit opens Contact Builder's start page first:**
+    - Behind the dialog you see the start page of Contact Builder, not the place the link names.
+    - Why: when Contact Builder is asked for a data extension that your business unit does not have, Marketing Cloud throws the browser back to the page you came from. The dialog would be gone before you could answer it. This also happens without the extension.
+    - So the extension holds the place back until it knows which business unit you are in.
+    - If you are in the right business unit after all, the page loads once more and opens the place. You may notice this short second load, for example right after **Switch and open** or the first time you use such a link in a browser.
+    - To know this quickly the next time, the extension remembers the number of the business unit you were in last, in this browser. It looks this up again every time the Marketing Cloud page is loaded, so it is also right after you switched the business unit yourself.
+    - A link that is pasted into a tab where Marketing Cloud is already open is not held back this way.
+- **When the business unit cannot be read:**
+    - The address still follows what you open, only without the number of the business unit.
+    - Such a link opens the same place, but nothing is checked.
+- **What gets no link:**
+    - What you did inside a page: a search, a sort order, an open pop-up.
+    - Contact Builder opened in a browser tab of its own, without the Marketing Cloud page around it.
+- **Nothing is changed in Marketing Cloud:**
+    - The extension only reads which place Contact Builder shows and writes it into the address in your browser.
+    - It asks Marketing Cloud for nothing here, apart from which business unit you are in.
+    - It opens nothing itself. Marketing Cloud opens the place that the address names.
+- **Always on:** there is no option for it.
+- **Tried on a real account:**
+    - Marketing Cloud's own kind of link opens a data extension in Contact Builder after a full reload, with and without the number of the business unit in it.
+    - The address follows what you open.
+    - A link from another business unit brings up the dialog, with Contact Builder's start page behind it.
+    - **Switch and open** switches the business unit and then opens the data extension.
+    - Marketing Cloud throws the browser back when a link names a data extension that the business unit does not have. That is why the extension holds the place back.
 
 ### Options
 

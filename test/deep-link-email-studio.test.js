@@ -26,6 +26,20 @@ const ROUTE = `Subscribers/customobject/${OBJECT_ID}`;
 // a folder of data extensions
 const FOLDER_OPENED = 'de-grid/dataextension/4711';
 const FOLDER = 'r.Subscribers.CustomObjects.4711';
+// every view that gets a link: what the page's script tells of it, what a link names, and the
+// route that opens it. A folder of data filters is written under two names, and so is one list
+const LINKED = [
+    [OPENED, VIEW, ROUTE],
+    [FOLDER_OPENED, FOLDER, 'Subscribers/CustomObjects/4711'],
+    ['list-grid/list/12', 'r.Subscribers.lists.12', 'Subscribers/lists/12'],
+    ['list-grid/group/13', 'r.Subscribers.groups.13', 'Subscribers/groups/13'],
+    ['filt-grid/filterdefinition/14', 'r.Subscribers.filters.14', 'Subscribers/filters/14'],
+    ['filt-grid/filter/14', 'r.Subscribers.filters.14', 'Subscribers/filters/14'],
+    ['object-pages/list/77', 'r.Subscribers.list.77', 'Subscribers/list/77'],
+    ['object-pages/default-list/77', 'r.Subscribers.list.77', 'Subscribers/list/77'],
+];
+// a view that gets no link, as the page's script tells of it
+const UNLINKED = 'email-grid/email/5';
 // the one wait of the frame script: writes to Email Studio's state within it count as one change
 const RECORD_DELAY = 250;
 // how often the frame script sets the route of a link at most
@@ -147,6 +161,14 @@ function frame({
         listeners.push({ type, act });
         listen(type, act, how);
     };
+    const unlisten = view.removeEventListener.bind(view);
+    view.removeEventListener = (type, act, how) => {
+        const index = listeners.findIndex((item) => item.type === type && item.act === act);
+        if (index !== -1) {
+            listeners.splice(index, 1);
+        }
+        unlisten(type, act, how);
+    };
     /**
      * Finds what the script does for one kind of event on its window.
      *
@@ -213,10 +235,42 @@ function page() {
     window.document.addEventListener(STATE, (event) => {
         told.push(event.detail);
     });
+    // what the script listens to on the page and on its document, until it stops listening
+    const listeners = [];
+    const restores = [];
+    for (const [name, target] of [
+        ['window', window],
+        ['document', window.document],
+    ]) {
+        const listen = target.addEventListener.bind(target);
+        const unlisten = target.removeEventListener.bind(target);
+        target.addEventListener = (type, act, how) => {
+            listeners.push({ name, type, act });
+            listen(type, act, how);
+        };
+        target.removeEventListener = (type, act, how) => {
+            const index = listeners.findIndex(
+                (item) => item.name === name && item.type === type && item.act === act,
+            );
+            if (index !== -1) {
+                listeners.splice(index, 1);
+            }
+            unlisten(type, act, how);
+        };
+        restores.push(() => {
+            target.addEventListener = listen;
+        });
+    }
     window.eval(pageScript);
+    // only the script's own listeners are counted, not those the test adds from here on
+    for (const restore of restores) {
+        restore();
+    }
     return {
         window,
         told,
+        // what the script still listens to, as "window load"
+        listening: () => listeners.map((item) => `${item.name} ${item.type}`),
         ...time,
         hash: () => window.location.hash,
         /**
@@ -272,16 +326,20 @@ function page() {
     };
 }
 
+// a route whose opening fails in the stand-in for Email Studio's library
+const FAILING_ROUTE = 'Subscribers/customobject/dead';
+
 /**
  * Builds a stand-in for the library that keeps Email Studio's state.
  *
  * @param {(self: object) => void} [seen] called with the state for each write to it, before anything else
- * @returns {{library: object, model: object, calls: unknown[][], heard: object[], starts: object[]}} the library, one state of it, what was written to that state, who was said to listen to it, and the calls that started the reading of the routes
+ * @returns {{library: object, model: object, calls: unknown[][], heard: object[], starts: object[], loads: object[]}} the library, one state of it, what was written to that state, who was said to listen to it, the calls that started the reading of the routes, and the routes that its reader was handed
  */
 function backbone(seen = () => {}) {
     const calls = [];
     const heard = [];
     const starts = [];
+    const loads = [];
     /**
      * A state of Email Studio.
      */
@@ -337,6 +395,20 @@ function backbone(seen = () => {}) {
             starts.push({ given, on: this });
             return 'started';
         }
+
+        /**
+         * Opens a route, whatever the address holds.
+         *
+         * @param {...unknown} given the route
+         * @returns {boolean} what the library answers
+         */
+        loadUrl(...given) {
+            loads.push({ given, on: this });
+            if (given[0] === FAILING_ROUTE) {
+                throw new Error('Email Studio’s own error');
+            }
+            return true;
+        }
     }
     return {
         library: { Model, History: { started: false }, history: new History() },
@@ -344,6 +416,7 @@ function backbone(seen = () => {}) {
         calls,
         heard,
         starts,
+        loads,
     };
 }
 
@@ -371,8 +444,7 @@ const act = () => {};
 test('what Email Studio shows becomes a route only for the views it was seen to write, with an id of digits or hex', () => {
     const { targetOf, routeOf } = frame().helpers;
     const SEEN = [
-        [OPENED, VIEW, ROUTE],
-        [FOLDER_OPENED, FOLDER, 'Subscribers/CustomObjects/4711'],
+        ...LINKED,
         ['de-grid/dataextension/0', 'r.Subscribers.CustomObjects.0', 'Subscribers/CustomObjects/0'],
     ];
     for (const [described, target, route] of SEEN) {
@@ -402,8 +474,16 @@ test('what Email Studio shows becomes a route only for the views it was seen to 
         'de-pages/list/5',
         'de-grid/de/5',
         'constructor/prototype/5',
-        // seen live: the link of a folder of lists opened another list, so it gets none
-        'list-grid/list/12',
+        // one group and one data filter, and kinds of thing in a view that is not theirs
+        'object-pages/group/5',
+        'object-pages/filter/5',
+        'object-pages/filterdefinition/5',
+        'object-pages/de/5',
+        'list-grid/filter/5',
+        'filt-grid/list/5',
+        'list-grid/default-list/5',
+        'cleared',
+        'ready',
         undefined,
         null,
         7,
@@ -431,8 +511,11 @@ test('what Email Studio shows becomes a route only for the views it was seen to 
         'r.Content.email.5',
         'r.Tracking.send.5',
         'r.Admin.users.1',
-        // a folder of lists, whose route opened another list
-        'r.Subscribers.lists.12',
+        // one group, and names that Email Studio writes into its state but has no route for
+        'r.Subscribers.group.5',
+        'r.Subscribers.filter.5',
+        'r.Subscribers.filterdefinition.5',
+        'r.Subscribers.default-list.5',
         `${MID}.${VIEW}`,
         7,
         {},
@@ -727,6 +810,211 @@ test('the route is set again only when Email Studio shows another view than the 
     assert.equal(at.waits(), 0);
 });
 
+test('each view that gets a link is told with its route, and a link to it is followed and counts as shown under either name', async () => {
+    for (const [described, target, route] of LINKED) {
+        // opened by hand: told as the link names it, and written into the frame's address
+        const at = frame();
+        await at.pass();
+        at.say(described);
+        await at.pass(RECORD_DELAY);
+        assert.deepEqual(at.shown(), [null, target], described);
+        assert.equal(at.place.search, `${QUERY}&ux-tools=${MID}.${target}`, described);
+        assert.deepEqual(at.went, []);
+
+        // opened by a link: its route is set, and what Email Studio then writes is its view
+        const followed = frame({ wanted: target });
+        await followed.pass();
+        followed.say('up');
+        followed.say('ready');
+        assert.deepEqual(followed.went, [route], described);
+        followed.say('none');
+        followed.say(described);
+        await followed.pass(RECORD_DELAY);
+        await followed.pass(LONG);
+        assert.deepEqual(followed.went, [route], described);
+        assert.deepEqual(followed.shown(), []);
+        assert.equal(followed.waits(), 0);
+    }
+    // a folder of data filters and one list are written under two names: a link that was made
+    // from one is shown when Email Studio writes the other
+    const PAIRS = [
+        ['filt-grid/filterdefinition/14', 'filt-grid/filter/14'],
+        ['object-pages/list/77', 'object-pages/default-list/77'],
+    ];
+    for (const [made, written] of PAIRS) {
+        const { targetOf } = frame().helpers;
+        assert.equal(targetOf(made), targetOf(written));
+        const at = frame({ wanted: targetOf(made) });
+        await at.pass();
+        at.say('ready');
+        at.say(written);
+        await at.pass(RECORD_DELAY);
+        assert.equal(at.went.length, 1, made);
+        // the same thing under its other name is no other view: told once
+        at.input('pointerdown');
+        await tick();
+        at.say(made);
+        await at.pass(RECORD_DELAY);
+        assert.deepEqual(at.shown(), [targetOf(made)], made);
+    }
+    // the same kind of thing with another id is another view
+    const other = frame({ wanted: 'r.Subscribers.list.77' });
+    await other.pass();
+    other.say('ready');
+    other.say('object-pages/default-list/78');
+    await other.pass(RECORD_DELAY);
+    assert.deepEqual(other.went, ['Subscribers/list/77', 'Subscribers/list/77']);
+});
+
+test('what Email Studio says about the view itself counts in the order it is said, and a choice in the menu never hides a view', async () => {
+    /**
+     * Lets Email Studio write several things within the time that counts as one change, while
+     * a folder of data extensions is open.
+     *
+     * @param {...string} texts what the page's script tells, in that order
+     * @returns {Promise.<string|null>} the view that the frame takes for open after them
+     */
+    const after = async (...texts) => {
+        const at = frame();
+        await at.pass();
+        // so that the frame tells what comes of the writes, whatever that is
+        at.say('de-grid/dataextension/1');
+        await at.pass(RECORD_DELAY);
+        for (const text of texts) {
+            at.say(text);
+        }
+        await tick();
+        // nothing is told before the time is up, and it is up once, from the first write
+        assert.equal(at.shown().length, 2, texts.join(' '));
+        await at.pass(RECORD_DELAY - 1);
+        assert.equal(at.shown().length, 2, texts.join(' '));
+        await at.pass(1);
+        assert.equal(at.waits(), 0);
+        return at.shown().at(-1);
+    };
+    // a view that is taken away again is gone
+    assert.equal(await after(OPENED, 'cleared'), null);
+    assert.equal(await after('none', OPENED, 'none', 'cleared'), null);
+    assert.equal(await after(OPENED, 'cleared', 'none'), null);
+    // one that is written after that is open
+    assert.equal(await after('cleared', OPENED), VIEW);
+    assert.equal(await after(OPENED, 'cleared', FOLDER_OPENED), FOLDER);
+    assert.equal(await after(OPENED, 'cleared', OPENED, 'none'), VIEW);
+    // of two views the later one
+    assert.equal(await after(OPENED, FOLDER_OPENED), FOLDER);
+    assert.equal(await after(FOLDER_OPENED, OPENED), VIEW);
+    // a view without a route that is put over a view counts as no view, like cleared
+    assert.equal(await after(OPENED, UNLINKED), null);
+    assert.equal(await after('none', OPENED, UNLINKED, 'none'), null);
+    assert.equal(await after(UNLINKED, OPENED), VIEW);
+    // the menu, written before, after or between, hides no view
+    assert.equal(await after(OPENED, 'none'), VIEW);
+    assert.equal(await after('none', OPENED), VIEW);
+    assert.equal(await after('none', OPENED, 'none', 'none'), VIEW);
+    // and by itself it says that nothing more specific than a section is open, as cleared does
+    assert.equal(await after('none'), null);
+    assert.equal(await after('cleared'), null);
+    assert.equal(await after('none', 'cleared'), null);
+    assert.equal(await after('cleared', 'none'), null);
+    // what says nothing about a view does not count at all
+    assert.equal(await after(OPENED, 'up', 'ready'), VIEW);
+
+    // the field goes out of the address when the view was taken away
+    const at = frame();
+    await at.pass();
+    at.say(OPENED);
+    await at.pass(RECORD_DELAY);
+    assert.equal(at.place.search, `${QUERY}&ux-tools=${MID}.${VIEW}`);
+    at.say('cleared');
+    await at.pass(RECORD_DELAY);
+    assert.deepEqual(at.shown(), [null, VIEW, null]);
+    assert.equal(at.place.search, QUERY);
+});
+
+test('a view of a link over which Email Studio puts a view without a route a split second later has its route set again', async () => {
+    const at = frame({ wanted: VIEW, search: `${QUERY}&ux-tools=${MID}.${VIEW}` });
+    await at.pass();
+    at.say('up');
+    at.say('ready');
+    assert.deepEqual(at.went, [ROUTE]);
+    // the view of the link was written, but a view that gets no link is what is open
+    at.say(OPENED);
+    at.say(UNLINKED);
+    at.say('none');
+    await tick();
+    assert.deepEqual(at.went, [ROUTE]);
+    await at.pass(RECORD_DELAY);
+    assert.deepEqual(at.went, [ROUTE, ROUTE]);
+    // the other way round the view of the link is open: not again
+    at.say(UNLINKED);
+    at.say(OPENED);
+    at.say('none');
+    await at.pass(RECORD_DELAY);
+    assert.deepEqual(at.went, [ROUTE, ROUTE]);
+    assert.deepEqual(at.shown(), []);
+});
+
+test('a view of a link that Email Studio writes and takes away again a split second later has its route set again', async () => {
+    const LOADED = `${QUERY}&ux-tools=${MID}.${VIEW}`;
+    const at = frame({ wanted: VIEW, search: LOADED, hash: `#${ROUTE}` });
+    await at.pass();
+    at.say('up');
+    at.say('ready');
+    assert.deepEqual(at.went, [ROUTE]);
+    // seen live: Email Studio writes the view of the route, and clears it when its tree puts
+    // the first page of the section in place. The view was written, but it is not what is open
+    at.say('none');
+    at.say(OPENED);
+    at.say('cleared');
+    await tick();
+    assert.deepEqual(at.went, [ROUTE]);
+    await at.pass(RECORD_DELAY);
+    assert.deepEqual(at.went, [ROUTE, ROUTE]);
+    // the view comes again and stays, whatever the menu writes after it: nothing more is set
+    at.say(OPENED);
+    at.say('none');
+    await at.pass(RECORD_DELAY);
+    at.say('ready');
+    await at.pass(LONG);
+    assert.deepEqual(at.went, [ROUTE, ROUTE]);
+    // cleared in a later change, by itself: set again
+    at.say('cleared');
+    await at.pass(RECORD_DELAY);
+    assert.equal(at.went.length, 3);
+    // cleared and written again within one change: the view is open
+    at.say('cleared');
+    at.say(OPENED);
+    await at.pass(RECORD_DELAY);
+    assert.equal(at.went.length, 3);
+    // all the while nothing was told, and the link stayed in the address
+    assert.deepEqual(at.shown(), []);
+    assert.equal(at.place.search, LOADED);
+
+    // each time the view is taken away is one try, and the tries end
+    const spent = frame({ wanted: VIEW });
+    await spent.pass();
+    spent.say('ready');
+    for (let attempt = 0; attempt < MOST_TRIES * 2; attempt++) {
+        spent.say(OPENED);
+        spent.say('cleared');
+        await spent.pass(RECORD_DELAY);
+    }
+    assert.equal(spent.went.length, MOST_TRIES);
+    // given up: what is open is told from then on
+    assert.deepEqual(spent.shown(), [null]);
+    assert.equal(spent.waits(), 0);
+
+    // whoever clicked meanwhile goes their own way: nothing is set for a view that is cleared
+    const left = frame({ wanted: VIEW });
+    await left.pass();
+    left.say('ready');
+    left.input('pointerdown');
+    left.say(OPENED);
+    left.say('cleared');
+    await left.pass(RECORD_DELAY);
+    assert.deepEqual(left.went, [ROUTE]);
+});
+
 test('the route is also set again when Email Studio drops it from its address without having shown the view', async () => {
     const at = frame({ wanted: VIEW, hash: '#Subscribers' });
     await at.pass();
@@ -800,6 +1088,49 @@ test('whoever clicks or types in Email Studio ends the following of a link: from
     await moved.pass(RECORD_DELAY);
     assert.equal(moved.went.length, 2);
     assert.deepEqual(moved.shown(), []);
+});
+
+/**
+ * Counts what the frame script does for a click or a key.
+ *
+ * @param {object} at the frame
+ * @returns {number} how many of its functions listen for either
+ */
+const inputs = (at) => at.heard('pointerdown').length + at.heard('keydown').length;
+
+test('the frame stops listening for clicks and keys once the following of a link has ended, however it ended', async () => {
+    // while a link is followed, both are listened to
+    const at = frame({ wanted: VIEW });
+    await at.pass();
+    at.say('ready');
+    assert.equal(inputs(at), 2);
+    // what a script of the page makes up ends nothing
+    for (const act of at.heard('pointerdown')) {
+        act({ type: 'pointerdown', isTrusted: false });
+    }
+    assert.equal(inputs(at), 2);
+    // ended by a click
+    at.input('pointerdown');
+    assert.equal(inputs(at), 0);
+    // the change of the route is still listened to
+    assert.equal(at.heard('hashchange').length, 1);
+
+    // no link to follow
+    const none = frame({ wanted: null });
+    assert.equal(inputs(none), 2);
+    await none.pass();
+    assert.equal(inputs(none), 0);
+
+    // the tries are used up
+    const spent = frame({ wanted: VIEW });
+    await spent.pass();
+    spent.say('ready');
+    for (let attempt = 0; attempt < MOST_TRIES; attempt++) {
+        spent.say('none');
+        await spent.pass(RECORD_DELAY);
+    }
+    assert.equal(spent.went.length, MOST_TRIES);
+    assert.equal(inputs(spent), 0);
 });
 
 test('the frame never follows its own address: without a view from the page around it, nothing is opened', async () => {
@@ -986,6 +1317,46 @@ test('the page’s script takes the library only once the loader holds it, and n
     assert.equal(calls, 0);
 });
 
+test('the page’s script stops listening for loaded scripts and the loaded page once it took the library', async () => {
+    const LOOKING = ['document load', 'document DOMContentLoaded', 'window load'];
+    const GO_ONLY = [`document ${GO}`];
+    const at = page();
+    await at.started();
+    assert.deepEqual(at.listening(), [...LOOKING, ...GO_ONLY]);
+    // a loader that does not hold the library yet: still looked for
+    const { library } = backbone();
+    const held = at.loader(library);
+    held.has = false;
+    at.scriptLoaded();
+    assert.deepEqual(at.listening(), [...LOOKING, ...GO_ONLY]);
+    // taken: nothing is looked for any more, and a route can still be asked for
+    held.has = true;
+    at.scriptLoaded();
+    assert.deepEqual(held.asked, [['backbone']]);
+    assert.deepEqual(at.listening(), GO_ONLY);
+    const checks = held.checked.length;
+    at.scriptLoaded();
+    at.window.dispatchEvent(new at.window.Event('load'));
+    assert.equal(held.checked.length, checks);
+    at.go(ROUTE);
+    assert.equal(at.hash(), `#${ROUTE}`);
+
+    // a loader that had the library from the start: taken by the script's first look
+    const early = new JSDOM('<!doctype html><body></body>', {
+        runScripts: 'outside-only',
+        url: `${ADDRESS}#Overview`,
+    }).window;
+    const removed = [];
+    const unlisten = early.document.removeEventListener.bind(early.document);
+    early.document.removeEventListener = (type, ...rest) => {
+        removed.push(type);
+        unlisten(type, ...rest);
+    };
+    early.require = Object.assign(() => backbone().library, { defined: () => true });
+    early.eval(pageScript);
+    assert.deepEqual(removed, ['load', 'DOMContentLoaded']);
+});
+
 test('the page’s script tells each write to Email Studio’s state that says what is open, as one text', async () => {
     const at = page();
     await at.started();
@@ -1017,7 +1388,8 @@ test('the page’s script tells each write to Email Studio’s state that says w
     model.set({ carbonContent: { content: 'de-grid', object: 'dataextension', categoryId: 4711 } });
     model.set({ carbonContent: { content: 'list-grid', object: 'list', categoryId: '12' } });
     assert.deepEqual(at.told.slice(2), [FOLDER_OPENED, 'list-grid/list/12']);
-    // a page of the older kind, and a choice in the menu: nothing more specific than a section
+    // a write that says no view is open, which a page of the older kind does too: cleared. A
+    // choice in the menu says nothing about the view: none
     model.set({ carbonContent: null });
     model.set('carbonContent', null);
     model.set({
@@ -1026,11 +1398,43 @@ test('the page’s script tells each write to Email Studio’s state that says w
         sectionId: 3,
     });
     model.set('curNavItem', 'Admin');
-    assert.deepEqual(at.told.slice(4), ['none', 'none', 'none', 'none']);
-    // a view in the same write as the choice in the menu is the view
+    model.set('curSubNavItem', null);
+    assert.deepEqual(at.told.slice(4), ['cleared', 'cleared', 'none', 'none', 'none']);
+    // what is written about the view in the same write as the choice in the menu is what counts
     model.set({ curNavItem: 'Subscribers', carbonContent: opened });
     assert.equal(at.told.at(-1), OPENED);
-    // what is no id, or no name of a kind, is not passed on
+    model.set({ curNavItem: 'Subscribers', carbonContent: null });
+    assert.equal(at.told.at(-1), 'cleared');
+    // each view that gets a link, as Email Studio was seen to write it. Seen live: one list
+    // holds its id as listInfo.listId
+    const LIST = { content: 'object-pages', object: 'list' };
+    const WRITTEN = [
+        [{ content: 'list-grid', object: 'group', categoryId: 13 }, 'list-grid/group/13'],
+        [
+            { content: 'filt-grid', object: 'filterdefinition', categoryId: 14 },
+            'filt-grid/filterdefinition/14',
+        ],
+        [{ content: 'filt-grid', object: 'filter', categoryId: '14' }, 'filt-grid/filter/14'],
+        [{ ...LIST, listInfo: { listId: 77 } }, 'object-pages/list/77'],
+        [
+            { content: 'object-pages', object: 'default-list', listInfo: { listId: '77' } },
+            'object-pages/default-list/77',
+        ],
+        // the id of the view itself comes first, then that of the list, then that of the folder
+        [{ ...LIST, id: 1, listInfo: { listId: 2 }, categoryId: 3 }, 'object-pages/list/1'],
+        [{ ...LIST, listInfo: { listId: 2 }, categoryId: 3 }, 'object-pages/list/2'],
+        // what is no id is passed over for the next
+        [{ ...LIST, id: 'x y', listInfo: { listId: 2 } }, 'object-pages/list/2'],
+        [{ ...LIST, listInfo: { listId: '../x' }, categoryId: 3 }, 'object-pages/list/3'],
+        [{ ...LIST, listInfo: 5, categoryId: 3 }, 'object-pages/list/3'],
+        [{ ...LIST, listInfo: null, categoryId: 3 }, 'object-pages/list/3'],
+        [{ ...LIST, listInfo: {}, categoryId: 3 }, 'object-pages/list/3'],
+    ];
+    for (const [view, text] of WRITTEN) {
+        model.set({ carbonContent: view });
+        assert.equal(at.told.at(-1), text, JSON.stringify(view));
+    }
+    // what is no id, or no name of a kind, is not passed on: no view with an id is open
     const count = at.told.length;
     const ODD = [
         { content: 'de-pages', object: 'de' },
@@ -1044,12 +1448,17 @@ test('the page’s script tells each write to Email Studio’s state that says w
         { content: 'de-pages', object: '<b>', id: 1 },
         { content: 7, object: 'de', id: 1 },
         { content: 'de-pages', id: 1 },
+        { ...LIST, listInfo: { listId: '<b>' } },
+        { ...LIST, listInfo: { id: 5 } },
+        { ...LIST, listInfo: [5] },
+        {},
         'de-pages/de/1',
         7,
+        undefined,
     ];
     for (const view of ODD) {
         model.set({ carbonContent: view });
-        assert.equal(at.told.at(-1), 'none', JSON.stringify(view));
+        assert.equal(at.told.at(-1), 'cleared', JSON.stringify(view));
     }
     assert.equal(at.told.length, count + ODD.length);
     // other writes say nothing
@@ -1137,7 +1546,7 @@ test('the page’s script says once when Email Studio is up, and each time a par
     assert.equal(third.library.Model.prototype.bind, undefined);
     third.model.on('change:carbonContent', act);
     third.model.set({ carbonContent: null });
-    assert.deepEqual(bare.told, ['ready', 'none']);
+    assert.deepEqual(bare.told, ['ready', 'cleared']);
 });
 
 test('before the page’s script sets a route, it makes Email Studio forget a view that it took into its state but did not draw', async () => {
@@ -1211,23 +1620,118 @@ test('before the page’s script sets a route, it makes Email Studio forget a vi
     assert.equal(broken.hash(), `#${ROUTE}`);
 });
 
-test('a route that is in the address already is set by way of its section, because Email Studio only acts on a change', async () => {
+test('a route that is in the address already is handed to the reader of routes of Email Studio’s library, any other is set', async () => {
     const at = page();
     await at.started();
+    // what the page reports as an error that nobody caught
+    const errors = [];
+    at.window.addEventListener('error', (event) => {
+        errors.push(event.message);
+    });
+    const written = [];
+    const { library, model, calls, loads } = backbone(() => {
+        written.push(loads.length);
+    });
+    at.loader(library);
+    at.scriptLoaded();
+    // another route than the address holds: set, which Email Studio acts on by itself
     at.go(ROUTE);
     assert.equal(at.hash(), `#${ROUTE}`);
-    // the section this time, the route with the next try
+    assert.deepEqual(loads, []);
+    // seen live: Email Studio keeps the route in its address, and setting it again changes
+    // nothing. The reader of routes opens it whatever the address is: called on the library's
+    // own object, with the route alone, and the address is left as it is
     at.go(ROUTE);
-    assert.equal(at.hash(), '#Subscribers');
+    assert.deepEqual(loads, [{ given: [ROUTE], on: library.history }]);
+    assert.equal(at.hash(), `#${ROUTE}`);
+    at.go(ROUTE);
+    assert.equal(loads.length, 2);
+    // another route is a change by itself again
+    const OTHER_ROUTE = 'Subscribers/CustomObjects/4711';
+    at.go(OTHER_ROUTE);
+    assert.equal(at.hash(), `#${OTHER_ROUTE}`);
+    assert.equal(loads.length, 2);
+    at.go(OTHER_ROUTE);
+    assert.deepEqual(loads.at(-1), { given: [OTHER_ROUTE], on: library.history });
+    assert.equal(at.hash(), `#${OTHER_ROUTE}`);
+    // a view that was not drawn is forgotten first, then the route is handed over
+    model.set({ carbonContent: { content: 'de-grid', object: 'dataextension', categoryId: 4711 } });
+    calls.length = 0;
+    written.length = 0;
+    const handed = loads.length;
+    at.go(OTHER_ROUTE);
+    assert.deepEqual(structuredClone(calls), [[{ carbonContent: null }, { silent: true }]]);
+    assert.deepEqual(written, [handed]);
+    assert.equal(loads.length, handed + 1);
+    // what is no route is not handed over, even when the address holds it
+    at.window.location.hash = 'Subscribers';
+    at.go('Subscribers');
+    at.window.location.hash = 'Admin/users/7';
+    at.go('Admin/users/7');
+    assert.equal(loads.length, handed + 1);
+
+    // a reader that fails breaks nothing: the error stays in the script, the address is left
+    // alone, and the next route is set as any other
+    at.go(FAILING_ROUTE);
+    assert.equal(at.hash(), `#${FAILING_ROUTE}`);
+    const failed = loads.length;
+    at.go(FAILING_ROUTE);
+    assert.equal(loads.length, failed + 1);
+    assert.equal(at.hash(), `#${FAILING_ROUTE}`);
     at.go(ROUTE);
     assert.equal(at.hash(), `#${ROUTE}`);
-    // another route is a change by itself
-    at.go('Subscribers/CustomObjects/4711');
-    assert.equal(at.hash(), '#Subscribers/CustomObjects/4711');
-    at.go('Subscribers/CustomObjects/4711');
-    assert.equal(at.hash(), '#Subscribers');
-    // the page was not left
-    assert.equal(at.window.location.href, `${ADDRESS}#Subscribers`);
+    at.go(ROUTE);
+    assert.deepEqual(loads.at(-1), { given: [ROUTE], on: library.history });
+    assert.deepEqual(errors, []);
+    // the page was not left, and nothing was done by a clock
+    assert.equal(at.window.location.href, `${ADDRESS}#${ROUTE}`);
+    assert.equal(at.waits(), 0);
+
+    // a library that was found when Email Studio was up already has its reader too
+    const ready = page();
+    await ready.started();
+    const second = backbone();
+    second.library.History.started = true;
+    ready.loader(second.library);
+    ready.scriptLoaded();
+    ready.go(ROUTE);
+    ready.go(ROUTE);
+    assert.deepEqual(second.loads, [{ given: [ROUTE], on: second.library.history }]);
+
+    // no library yet, a library without a reader, or a reader that cannot open a route: the
+    // route is set, which leaves an address that holds it already as it is
+    const READERS = {
+        none: () => {},
+        bare: (other, { library: found }) => {
+            delete found.history;
+            other.loader(found);
+            other.scriptLoaded();
+        },
+        old: (other, { library: found }) => {
+            found.history.loadUrl = 'no function';
+            other.loader(found);
+            other.scriptLoaded();
+        },
+    };
+    for (const [name, prepare] of Object.entries(READERS)) {
+        const other = page();
+        await other.started();
+        other.window.addEventListener('error', (event) => {
+            errors.push(event.message);
+        });
+        const third = backbone();
+        prepare(other, third);
+        let routed = 0;
+        other.window.addEventListener('hashchange', () => routed++);
+        other.go(ROUTE);
+        assert.equal(other.hash(), `#${ROUTE}`, name);
+        other.go(ROUTE);
+        await tick();
+        assert.equal(other.hash(), `#${ROUTE}`, name);
+        assert.equal(routed, 1, name);
+        assert.deepEqual(third.loads, [], name);
+    }
+    assert.deepEqual(errors, []);
 });
 
 test('the page’s script sets only the listed routes of Email Studio, with an id of digits or hex and no slash at the end', async () => {
@@ -1324,6 +1828,8 @@ test('the two scripts load no address into anything, ask nothing of Marketing Cl
         /history\.replaceState\(history\.state, '', location\.pathname \+ search \+ location\.hash\)/,
     );
     assert.deepEqual(pageScript.match(/location\.hash\s*=[^=]/g)?.length, 1);
+    // and hands a route that the address holds already to the library's reader, in one place
+    assert.deepEqual(pageScript.match(/\.loadUrl\(/g), ['.loadUrl(']);
     assert.doesNotMatch(pageScript, /replaceState|pushState|chrome\./);
     // nothing is done by a clock: the frame script only counts several writes as one change,
     // and the page's script waits for nothing

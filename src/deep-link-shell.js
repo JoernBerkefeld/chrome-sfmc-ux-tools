@@ -19,6 +19,22 @@
  * own form: #app/Contact%20Builder/contactsmeta/admin.html?ux-tools=<mid>%23<route>. Without the
  * extension such an address opens the same route. Nothing is handed to that frame.
  *
+ * Seen live: neither Content Builder nor Contact Builder adds an entry to the browser's history
+ * for what the user opens. So in these two apps the script adds one itself, when the user opened
+ * something else than the address names: the browser's Back and Forward then step through what
+ * was opened. Everything else is written over the entry that is there. On such a step the script
+ * never writes the address back.
+ *
+ * Seen live: left to Marketing Cloud, a step to an entry with an asset loads Content Builder's
+ * frame anew, which adds an entry that the browser's Back cannot pass, and a step to a route of
+ * Contact Builder makes Marketing Cloud move that frame, which removes the entries after it. So
+ * the script shows such an entry itself and keeps the step from Marketing Cloud's own router:
+ * it asks Content Builder's frame to open the asset, or to close the open one for the plain
+ * address, and Contact Builder's frame to show the route. It does so only within one app whose
+ * frame has told what it shows, and for a link only when its business unit is the one that was
+ * read last. Any other step is left to Marketing Cloud, and its link is decided as ever. Email
+ * Studio is left out of this: it adds entries of its own.
+ *
  * Seen live: Contact Builder goes back in the browser's history when it is given a route to a
  * data extension that the business unit the user is in does not have, and the page with the
  * dialog is gone. So a link into Contact Builder whose business unit is not known to be the one
@@ -54,10 +70,23 @@
     const EMAIL_SHOWN_MESSAGE = 'sfmc-ux-tools:deep-link:email-shown';
     // what Contact Builder's frame tells: the route it shows. It asks nothing
     const CONTACT_SHOWN_MESSAGE = 'sfmc-ux-tools:deep-link:contact-shown';
+    // what this page asks of Content Builder's frame, passed on by background.js: to close the
+    // asset that is open, and to open one
+    const CLOSE_MESSAGE = 'sfmc-ux-tools:deep-link:close';
+    const OPEN_MESSAGE = 'sfmc-ux-tools:deep-link:open';
+    // and of Contact Builder's frame: to show a route
+    const CONTACT_OPEN_MESSAGE = 'sfmc-ux-tools:deep-link:contact-open';
     // the three apps a link can lead into
     const CONTENT_BUILDER = 'content-builder';
     const EMAIL_STUDIO = 'email-studio';
     const CONTACT_BUILDER = 'contact-builder';
+    // the apps in which the browser's Back and Forward step through what was opened: seen live,
+    // these two add no entries of their own to the browser's history. Email Studio does
+    const STEPPED = [CONTENT_BUILDER, CONTACT_BUILDER];
+    // what a person does on the page that may open something: a click, a key
+    const INPUTS = ['pointerdown', 'keydown'];
+    // how the browser names a step through its history, by Back or Forward
+    const TRAVERSE = 'traverse';
     // the longest id that is taken for one: as many digits as a whole number holds exactly
     const MOST_DIGITS = 15;
     // Content Builder's route on this page, as the page writes it and as a person may type it
@@ -715,6 +744,26 @@
     // known to be in its business unit or picked a button of the dialog about it: until then
     // nothing is written into Contact Builder's address
     let parked = null;
+    // whether the user clicked or typed on this page since an app last told what it shows
+    let isByUser = false;
+    // whether the change of the address that comes next is a step through the browser's history
+    let isStep = false;
+    // the app the address belongs to now; nothing for any other
+    let here = appOf(location.hash);
+    // the app for which this script wrote an address since that app became the one of the
+    // address; null for none. Only after that does an address get an entry of its own, so that
+    // what an app shows first never adds one
+    let written = null;
+    // whether a link into Content Builder is being followed: from the link until Content Builder
+    // tells an open asset. Its frame tells "nothing open" first, which must not take the link
+    // out of the address
+    let isFollowing = false;
+    // whether such a "nothing open" was kept out of the address meanwhile
+    let isHeldBack = false;
+    // the link into Content Builder of an entry that was stepped to, which its frame was asked
+    // to open, until Content Builder tells that asset open; null for none. Seen live: a frame
+    // that is loaded anew meanwhile never got that request, and asks for what to open instead
+    let steppedTo = null;
 
     /**
      * Asks Marketing Cloud's API about the business units, through this page. It never throws.
@@ -1010,12 +1059,27 @@
      * @param {{app: string, mid: string, what: string}} link the link the dialog was about
      */
     function release(link) {
+        // the click on the dialog's button opened nothing: it adds no entry to the history
+        isByUser = false;
         if (parked !== link) {
             return;
         }
         parked = null;
         if (shown?.app === CONTACT_BUILDER) {
             write(CONTACT_BUILDER);
+        }
+    }
+
+    /**
+     * Ends the following of a link into Content Builder that leads to no asset. What Content
+     * Builder told meanwhile is written now, over the entry that is there.
+     */
+    function unfollow() {
+        const isBehind = isFollowing && isHeldBack;
+        isFollowing = false;
+        isHeldBack = false;
+        if (isBehind && shown === null && appOf(location.hash) === CONTENT_BUILDER) {
+            write(CONTENT_BUILDER);
         }
     }
 
@@ -1146,6 +1210,9 @@
             return;
         }
         wanted = null;
+        if (link.app === CONTENT_BUILDER) {
+            unfollow();
+        }
         await refuse(link, current);
     }
 
@@ -1159,6 +1226,10 @@
     function consider(link, isLoading, isTakenOut = false) {
         wanted = link;
         parked = null;
+        // from here on, not only once the frame was answered: the frame asks and tells "nothing
+        // open" at once, and is answered only after the business unit was read
+        isFollowing = link?.app === CONTENT_BUILDER;
+        isHeldBack = false;
         if (link === null) {
             return;
         }
@@ -1197,10 +1268,23 @@
             waited = deciding;
             await waited;
         } while (waited !== deciding);
+        if (
+            app === CONTENT_BUILDER &&
+            steppedTo !== null &&
+            keyOf(linkOf(location.hash)) === keyOf(steppedTo)
+        ) {
+            // the frame was loaded anew while the asset of a step was being opened: it is given
+            // that asset again, as often as it asks, and the link stays in the address
+            answer(steppedTo.what);
+            return;
+        }
         const link = wanted;
         // a link into the other app is left for that one
         if (link === null || link.app !== app) {
             answer(null);
+            if (app === CONTENT_BUILDER) {
+                unfollow();
+            }
             return;
         }
         // a link is followed once
@@ -1212,6 +1296,9 @@
             return;
         }
         answer(null);
+        if (app === CONTENT_BUILDER) {
+            unfollow();
+        }
         await refuse(link, current);
     }
 
@@ -1242,10 +1329,16 @@
      * nothing, because a link without the right business unit would be wrong. Contact Builder's
      * address then names the route alone: that is the page's own form, which nothing checks.
      *
+     * The address is written over the entry of the browser's history that is there. It gets an
+     * entry of its own only when the user caused it, in one of the two apps that add none
+     * themselves, when it names something else than the address does now, and not for the first
+     * address that is written for the app.
+     *
      * @param {string} app the app whose address this is
+     * @param {boolean} [canAdd] true when the user caused what is shown; otherwise the entry that is there is always written over
      * @returns {Promise.<string|null>} the business unit and what is shown, as written into the address; null when it names nothing
      */
-    async function write(app) {
+    async function write(app, canAdd = false) {
         const told = shown;
         /**
          * Says whether a link into Contact Builder is held: one whose route was taken out of
@@ -1280,8 +1373,20 @@
             return null;
         }
         const isLink = what !== null && mid !== undefined;
-        marked = isLink ? keyOf({ app, mid, what }) : null;
-        history.replaceState(history.state, '', to);
+        const key = isLink ? keyOf({ app, mid, what }) : null;
+        // the plain address of an app names nothing, as an address without a link does
+        const isAdded =
+            canAdd &&
+            STEPPED.includes(app) &&
+            written === app &&
+            key !== keyOf(linkOf(location.hash));
+        marked = key;
+        written = app;
+        if (isAdded) {
+            history.pushState(history.state, '', to);
+        } else {
+            history.replaceState(history.state, '', to);
+        }
         return isLink ? `${mid}.${what}` : null;
     }
 
@@ -1290,9 +1395,10 @@
      *
      * @param {string} app the app whose frame told
      * @param {unknown} what id of the asset, name of the view or route, or anything else for none
+     * @param {boolean} [isToldByUser] true when the frame saw a click or a key of the user since it told last
      * @returns {Promise.<string|null>} what was written into the address; null when it names nothing
      */
-    function show(app, what) {
+    function show(app, what, isToldByUser = false) {
         if (appOf(location.hash) !== app) {
             // another app's address is never touched
             if (shown === null || shown.app === app) {
@@ -1301,12 +1407,32 @@
             }
             return Promise.resolve(null);
         }
+        // a click or a key on this page counts for the one address that is written next,
+        // whatever comes of that
+        const canAdd = isToldByUser || isByUser;
+        isByUser = false;
         if (heldContact !== null && app === CONTACT_BUILDER && what !== heldContact.what) {
             // Contact Builder went on to another route: the link is done with
             heldContact = null;
         }
         shown = isWhole(app, what) ? { app, what } : null;
-        return write(app);
+        if (app === CONTENT_BUILDER && (isToldByUser || shown?.what === steppedTo?.what)) {
+            // the asset of the step is open, or the user went on by hand
+            steppedTo = null;
+        }
+        if (app === CONTENT_BUILDER && isFollowing) {
+            if (shown === null && !isToldByUser) {
+                // the frame of a link that is being followed has nothing open yet: the link
+                // stays in the address
+                isHeldBack = true;
+                marked = null;
+                return Promise.resolve(null);
+            }
+            // the asset is open, or the user went on by hand
+            isFollowing = false;
+            isHeldBack = false;
+        }
+        return write(app, canAdd);
     }
 
     /**
@@ -1341,15 +1467,101 @@
             return true;
         }
         if (message?.type === SHOWN_MESSAGE) {
-            show(CONTENT_BUILDER, message.asset);
+            show(CONTENT_BUILDER, message.asset, message.byUser === true);
             sendResponse({});
         }
         if (message?.type === CONTACT_SHOWN_MESSAGE) {
-            show(CONTACT_BUILDER, message.route);
+            show(CONTACT_BUILDER, message.route, message.byUser === true);
             sendResponse({});
         }
         return false;
     });
+
+    /**
+     * Notes a click or a key of the user on this page, as opposed to one that a script made up.
+     *
+     * @param {Event} event the click or the key
+     */
+    function noteInput(event) {
+        if (!event.isTrusted) {
+            return;
+        }
+        isByUser = true;
+        // the user went on by hand: a link that was being followed no longer holds the address
+        isFollowing = false;
+        isHeldBack = false;
+        steppedTo = null;
+    }
+    for (const type of INPUTS) {
+        // before the page's own scripts, which may keep the event to themselves
+        addEventListener(type, noteInput, true);
+    }
+
+    // the browser tells a step through its history before the address changes. Where it does
+    // not tell, no change of the address is taken for such a step
+    globalThis.navigation?.addEventListener('navigate', (event) => {
+        // only a step that changes nothing but the route is followed by a change of the address
+        if (event.navigationType === TRAVERSE && event.hashChange === true) {
+            isStep = true;
+        }
+    });
+
+    /**
+     * Asks something of the frames below this page, through background.js. It never throws.
+     *
+     * @param {object} message what is asked: to close the open asset, to open one, or to show a route
+     */
+    async function request(message) {
+        try {
+            await chrome.runtime.sendMessage(message);
+        } catch {
+            // the extension was updated or switched off under this page
+        }
+    }
+
+    /**
+     * Shows the entry of the browser's history that was stepped to, in place of Marketing Cloud:
+     * only Content Builder's plain address, and a link of the business unit that was read last.
+     * The address is left as the entry has it, and the link is not decided again.
+     *
+     * @param {string} app the app of the address, which is one of the two whose entries this script adds
+     * @returns {boolean} true when the script shows the entry; false when the step is left to Marketing Cloud
+     */
+    function hasTakenOver(app) {
+        const linked = linkOf(location.hash);
+        // the address names something else than the asset of an earlier step, or nothing
+        steppedTo = null;
+        if (linked === null) {
+            if (app !== CONTENT_BUILDER || !PLAIN_ROUTE.test(location.hash)) {
+                return false;
+            }
+            // nothing is followed any more. The frame is asked whatever was told last, which
+            // may be behind: without an open asset it closes nothing
+            marked = null;
+            isFollowing = false;
+            isHeldBack = false;
+            request({ type: CLOSE_MESSAGE });
+            return true;
+        }
+        if (linked.mid !== noted()) {
+            return false;
+        }
+        // the link of the entry is shown from here, in place of any link that was waited for
+        wanted = null;
+        heldContact = null;
+        marked = keyOf(linked);
+        if (app === CONTENT_BUILDER) {
+            // until the asset is open, "nothing open" must not take the link out of the entry.
+            // The frame is asked whatever was told last: it knows itself what is open
+            isFollowing = true;
+            isHeldBack = false;
+            steppedTo = linked;
+            request({ type: OPEN_MESSAGE, asset: linked.what });
+        } else {
+            request({ type: CONTACT_OPEN_MESSAGE, route: linked.what });
+        }
+        return true;
+    }
 
     /**
      * Says whether the address lacks what the app shows now, after the page wrote its own route.
@@ -1369,9 +1581,54 @@
 
     // seen live: a few seconds after it was loaded, the page writes Content Builder's plain route
     // over whatever followed it, and the address of Email Studio's frame whenever that changes.
-    // While something is shown, the address gets it back
-    addEventListener('hashchange', () => {
-        const app = appOf(location.hash);
+    // While something is shown, the address gets it back. A step through the browser's history
+    // that this script shows itself is kept apart
+    addEventListener(
+        'hashchange',
+        (event) => {
+            const app = appOf(location.hash);
+            // a step through the browser's history, by Back or Forward, in one of the two apps
+            // whose entries this script adds. In any other app it is a change like any other
+            const isStepped = isStep && STEPPED.includes(app);
+            isStep = false;
+            // within one app whose frame told what it shows since the page came to it: that
+            // frame is there to be asked
+            if (isStepped && app === here && written === app && hasTakenOver(app)) {
+                // the click or key that made the step opened nothing
+                isByUser = false;
+                // Marketing Cloud's own router does not get to see the step
+                event.stopImmediatePropagation();
+                return;
+            }
+            follow(app, isStepped);
+        },
+        // before the page's own listeners, so that a step can be kept from them
+        true,
+    );
+
+    /**
+     * Takes a change of the address that is left to Marketing Cloud.
+     *
+     * @param {string} [app] the app the address belongs to now; nothing for any other
+     * @param {boolean} isStepped true for a step through the browser's history in one of the two apps whose entries this script adds
+     */
+    function follow(app, isStepped) {
+        // the address changed again: the asset of an earlier step is no longer what it names
+        steppedTo = null;
+        if (app !== here) {
+            // another app, or none: its first address adds no entry to the history
+            here = app;
+            written = null;
+            isByUser = false;
+        }
+        if (isStepped) {
+            // the click or key that made the step opened nothing
+            isByUser = false;
+        }
+        if (app !== CONTENT_BUILDER) {
+            isFollowing = false;
+            isHeldBack = false;
+        }
         if (app !== EMAIL_STUDIO) {
             takenEmail = null;
         }
@@ -1417,6 +1674,15 @@
         ) {
             consider(linked, false);
         }
+        if (isStepped) {
+            // the address of the entry is never written over with what is shown. Seen live:
+            // for an entry with a link Marketing Cloud shows what it names by itself, but for
+            // Content Builder's plain address it leaves the asset open
+            if (shown?.app === CONTENT_BUILDER && PLAIN_ROUTE.test(location.hash)) {
+                request({ type: CLOSE_MESSAGE });
+            }
+            return;
+        }
         // after the page's own router has read its plain route: this listener was added first
         // and would otherwise hide that route from it
         setTimeout(() => {
@@ -1424,7 +1690,7 @@
                 write(shown.app);
             }
         }, 0);
-    });
+    }
 
     // only the Marketing Cloud page itself takes a link: the page that switches the business
     // unit lies under the same path and would use up the link that was kept for the page after it

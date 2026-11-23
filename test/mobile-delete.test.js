@@ -9,6 +9,12 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const DETAILS_BUTTON = '[data-sfmc-ux-tools-mobile-delete="details"]';
 const SELECTED_BUTTON = '[data-sfmc-ux-tools-mobile-delete="selected"]';
 const ROW_BOX = 'input[data-sfmc-ux-tools-mobile-delete="row"]';
+// the room of a row's checkbox in the app's own first cell, and the classes that make that room
+const GUTTER = 'span[data-sfmc-ux-tools-mobile-delete="gutter"]';
+const GUTTER_CELL = 'sfmc-ux-tools-mobile-delete-gutter-cell';
+const GUTTER_HEAD = 'sfmc-ux-tools-mobile-delete-gutter-head';
+// whatever the script put somewhere
+const ADDED = '[data-sfmc-ux-tools-mobile-delete]';
 const HOST = 'https://mc.s7.marketingcloudapps.com';
 const CONNECT = `${HOST}/MobileConnectFuel3/`;
 const PUSH = `${HOST}/mobilepush/`;
@@ -35,7 +41,7 @@ const smsRow = (id) =>
  * @returns {string} the list
  */
 const smsList = (...ids) =>
-    `<div id="messagesGridRepeater"><div class="repeater-header"><div class="repeater-header-left"><span>Messages</span></div></div><table><tbody>${ids.map((id) => smsRow(id)).join('')}</tbody></table></div>`;
+    `<div id="messagesGridRepeater"><div class="repeater-header"><div class="repeater-header-left"><span>Messages</span></div></div><table><colgroup><col><col></colgroup><thead><tr><th>Name</th><th>Status</th></tr></thead><tbody>${ids.map((id) => smsRow(id)).join('')}</tbody></table></div>`;
 /**
  * Builds a row of MobilePush's list.
  *
@@ -51,7 +57,7 @@ const pushRow = (id) =>
  * @returns {string} the list
  */
 const pushList = (...ids) =>
-    `<div id="messageGridRepeater"><div class="repeater-header"></div><table><tbody>${ids.map((id) => pushRow(id)).join('')}</tbody></table></div>`;
+    `<div id="messageGridRepeater"><div class="repeater-header"></div><table><thead><tr><th>Name</th></tr></thead><tbody>${ids.map((id) => pushRow(id)).join('')}</tbody></table></div>`;
 const DETAILS =
     '<div class="container"><header class="header"><h3 class="title">A message</h3></header><div id="details"></div><div id="activity-log"></div></div>';
 
@@ -492,6 +498,36 @@ test('the Delete button waits for the header, and a header without a title gets 
     assert.equal(other.detailsButton(), null);
 });
 
+test('the page of a message in the older MobileConnect gets the Delete button, and asks through the app of the list', async () => {
+    // seen live: this is where Marketing Cloud shows one message, under either spelling
+    const OLD_PAGE =
+        '<div id="page"><div class="clearfix"><div class="mc-header-left">' +
+        '<div class="fuel-template-header"><h3 class="fuel-template-header-text">A message</h3></div></div>' +
+        '<div id="alter-message-status"><span class="message-status">Message Status</span></div></div></div>';
+    for (const path of ['/Mobile/', '/mobile/']) {
+        const at = page(`${HOST}${path}#!/message/view/MTo3`, OLD_PAGE);
+        await tick();
+        const button = at.detailsButton();
+        assert.equal(button.parentElement.id, 'alter-message-status');
+        assert.equal(button.value, 'MTo3');
+        button.click();
+        await tick();
+        assert.ok(at.calls.length > 0);
+        for (const call of at.calls) {
+            assert.match(call, /^GET \/MobileConnectFuel3\/fuelapi\//);
+        }
+        // without the title, the header is not that of a message
+        const bare = page(
+            `${HOST}${path}#!/message/view/MTo3`,
+            '<div id="alter-message-status"></div>',
+        );
+        await tick();
+        assert.equal(bare.detailsButton(), null);
+        // the list of the app is not on this page: nothing else is added
+        assert.equal(at.selectedButton(), null);
+    }
+});
+
 test('deleting from the page of a message asks first and goes to the overview afterwards', async () => {
     const messages = { 7: smsMessage('7') };
     const at = page(`${CONNECT}#!/message/view/7`, DETAILS, sms({ messages }));
@@ -553,6 +589,57 @@ test('each row of MobileConnect’s list gets a checkbox that does not open the 
     assert.deepEqual(at.calls, []);
 });
 
+test('a click in the room of a checkbox never reaches the app, next to the box does nothing, and the name still opens the message', () => {
+    const at = page(CONNECT, smsList('1', '2'));
+    const { document } = at;
+    const button = at.selectedButton();
+    // the app listens wherever a click on a row passes by
+    let heard = 0;
+    const [row] = document.querySelector('tbody').rows;
+    const places = [row.cells[0], row, document.querySelector('table'), document.body, document];
+    for (const place of places) {
+        place.addEventListener('click', () => heard++);
+    }
+    const gutter = row.querySelector(GUTTER);
+    const [box] = at.boxes();
+    // next to the box: no message is opened, and nothing is ticked
+    gutter.click();
+    assert.equal(heard, 0);
+    assert.equal(box.checked, false);
+    assert.equal(button.textContent, 'Delete selected (0)');
+    assert.equal(button.disabled, true);
+    // the box itself is ticked and counted, and unticked again
+    box.click();
+    assert.equal(heard, 0);
+    assert.equal(box.checked, true);
+    assert.equal(button.textContent, 'Delete selected (1)');
+    gutter.click();
+    assert.equal(box.checked, true);
+    assert.equal(button.textContent, 'Delete selected (1)');
+    box.click();
+    assert.equal(box.checked, false);
+    assert.equal(button.textContent, 'Delete selected (0)');
+    assert.equal(heard, 0);
+    // the name, in the same cell as the box, is heard at every place
+    row.querySelector('a[data-id]').click();
+    assert.equal(heard, places.length);
+    // and so is the cell itself, beside the room of the box
+    row.cells[0].click();
+    assert.equal(heard, 2 * places.length);
+    // the same in MobilePush
+    const other = page(PUSH, pushList('a'));
+    let opened = 0;
+    other.document.querySelector('tbody').rows[0].addEventListener('click', () => opened++);
+    other.document.querySelector(GUTTER).click();
+    assert.equal(opened, 0);
+    assert.equal(other.boxes()[0].checked, false);
+    other.boxes()[0].click();
+    assert.equal(opened, 0);
+    assert.equal(other.selectedButton().textContent, 'Delete selected (1)');
+    other.document.querySelector('.message-name-cell').click();
+    assert.equal(opened, 1);
+});
+
 test('what is ticked survives a list that is drawn again, and is dropped with its row', async () => {
     const at = page(CONNECT, smsList('1', '2', '3'));
     at.boxes()[0].click();
@@ -598,6 +685,125 @@ test('what is ticked survives a list that is drawn again, and is dropped with it
     assert.deepEqual(at.boxes(), []);
 });
 
+/**
+ * Makes sure that a list has its checkboxes without anything added to its rows, header or
+ * widths: every row has the app's own cells and no other, the first of them with room on its
+ * left that holds the row's checkbox, once, and the first cell of the header has the same room.
+ *
+ * @param {Document} document the page
+ * @param {string[]} ids ids of the messages the list shows, in its order
+ * @param {string[]} titles what the header of the app says, one for each of its columns
+ * @param {number} [widths] how many widths the app has; none when the table has no colgroup
+ */
+function hasGutter(document, ids, titles, widths) {
+    // nothing of the script is a child of a row or of the widths
+    assert.equal(document.querySelectorAll(`tr > ${ADDED}, colgroup > ${ADDED}`).length, 0);
+    const rows = [...document.querySelector('tbody').rows];
+    assert.equal(rows.length, ids.length);
+    for (const [index, row] of rows.entries()) {
+        // as many cells as the app drew
+        assert.equal(row.cells.length, titles.length);
+        const [cell] = row.cells;
+        assert.equal(row.querySelectorAll(GUTTER).length, 1);
+        assert.equal(row.querySelectorAll(ROW_BOX).length, 1);
+        assert.equal(row.querySelectorAll(`.${GUTTER_CELL}`).length, 1);
+        assert.ok(cell.classList.contains(GUTTER_CELL));
+        const gutter = row.querySelector(GUTTER);
+        assert.equal(gutter.parentElement, cell);
+        assert.equal(gutter.children.length, 1);
+        assert.ok(gutter.firstElementChild.matches(ROW_BOX));
+        assert.equal(gutter.firstElementChild.value, ids[index]);
+        // the name is the app's alone: nothing of the script is read with it
+        assert.equal(cell.textContent, `name of ${ids[index]}`);
+        assert.equal(cell.querySelector('[data-id]').dataset.id, ids[index]);
+    }
+    const head = document.querySelector('thead tr');
+    assert.deepEqual(
+        [...head.cells].map((cell) => cell.textContent),
+        titles,
+    );
+    assert.deepEqual([...head.querySelectorAll(`.${GUTTER_HEAD}`)], [head.cells[0]]);
+    assert.equal(head.querySelector(ADDED), null);
+    const group = document.querySelector('colgroup');
+    if (widths === undefined) {
+        assert.equal(group, null);
+    } else {
+        assert.equal(group.children.length, widths);
+    }
+}
+
+test('MobileConnect’s list gets its checkboxes in the app’s own first cells, and no cell, header cell or width is added', async () => {
+    const messages = { 1: smsMessage('1'), 2: smsMessage('2') };
+    const at = page(CONNECT, smsList('1', '2'), sms({ messages }));
+    hasGutter(at.document, ['1', '2'], ['Name', 'Status'], 2);
+    // other changes of the page add nothing more
+    at.document.body.append(at.document.createElement('div'));
+    await tick();
+    hasGutter(at.document, ['1', '2'], ['Name', 'Status'], 2);
+    // the message of a row is still read from the cell that holds the box as well
+    await at.choose('2');
+    assert.deepEqual(at.calls, [`GET ${SMS_MESSAGE}2`]);
+    assert.match(at.text(), /Will be deleted \(1\)/);
+    assert.match(at.text(), /name of 2/);
+});
+
+test('the checkbox comes back when the app draws rows, cells, the content of a cell or the header again', async () => {
+    const at = page(CONNECT, smsList('1', '2'));
+    const { document } = at;
+    at.boxes()[1].click();
+    const body = document.querySelector('tbody');
+    // the rows
+    body.innerHTML = smsRow('2') + smsRow('3');
+    await tick();
+    hasGutter(document, ['2', '3'], ['Name', 'Status'], 2);
+    // the cells of a row, the row itself kept
+    body.rows[0].innerHTML = '<td><a data-id="2" data-status="1">name of 2</a></td><td>Draft</td>';
+    await tick();
+    hasGutter(document, ['2', '3'], ['Name', 'Status'], 2);
+    assert.equal(at.boxes()[0].checked, true);
+    // the content of the first cell, the cell itself kept
+    const [cell] = body.rows[0].cells;
+    cell.innerHTML = '<a data-id="2" data-status="1">name of 2</a>';
+    assert.equal(cell.querySelector(ROW_BOX), null);
+    await tick();
+    hasGutter(document, ['2', '3'], ['Name', 'Status'], 2);
+    assert.equal(at.boxes()[0].checked, true);
+    assert.equal(at.selectedButton().textContent, 'Delete selected (1)');
+    // the header and the widths
+    document.querySelector('thead').innerHTML = '<tr><th>Name</th><th>Status</th></tr>';
+    document.querySelector('colgroup').innerHTML = '<col><col>';
+    await tick();
+    hasGutter(document, ['2', '3'], ['Name', 'Status'], 2);
+    // a cell copied with what the script put into it: one box is left, and it still counts
+    cell.prepend(cell.querySelector(GUTTER).cloneNode(true));
+    body.rows[1].cells[1].append(body.rows[1].querySelector(GUTTER).cloneNode(true));
+    await tick();
+    hasGutter(document, ['2', '3'], ['Name', 'Status'], 2);
+    at.boxes()[0].click();
+    assert.equal(at.selectedButton().textContent, 'Delete selected (0)');
+    at.boxes()[0].click();
+    assert.equal(at.selectedButton().textContent, 'Delete selected (1)');
+    // a row whose first cell no longer names the message keeps nothing of the script
+    body.rows[1].prepend(body.rows[1].cells[1]);
+    await tick();
+    assert.equal(body.rows[1].querySelector(`${ADDED}, .${GUTTER_CELL}`), null);
+    assert.equal(body.rows[1].cells.length, 2);
+    body.rows[1].prepend(body.rows[1].cells[1]);
+    await tick();
+    hasGutter(document, ['2', '3'], ['Name', 'Status'], 2);
+    // a list that shows no message has no room for a box, and gets it back with its rows
+    body.innerHTML = '<tr><td colspan="2">No messages</td></tr>';
+    await tick();
+    assert.equal(document.querySelector(`${GUTTER}, .${GUTTER_CELL}, .${GUTTER_HEAD}`), null);
+    assert.equal(document.querySelector('thead tr').cells.length, 2);
+    assert.equal(document.querySelector('colgroup').children.length, 2);
+    assert.equal(body.rows[0].cells.length, 1);
+    body.innerHTML = smsRow('4');
+    await tick();
+    hasGutter(document, ['4'], ['Name', 'Status'], 2);
+    assert.deepEqual(at.calls, []);
+});
+
 test('MobilePush’s list gets the same, and a list without a header gets nothing', async () => {
     const at = page(PUSH, pushList('a', 'b'));
     assert.deepEqual(
@@ -605,12 +811,19 @@ test('MobilePush’s list gets the same, and a list without a header gets nothin
         ['a', 'b'],
     );
     assert.equal(at.selectedButton().parentElement.className, 'repeater-header');
+    // the same room, in a table without widths
+    hasGutter(at.document, ['a', 'b'], ['Name']);
+    at.document.querySelector('tbody').innerHTML = pushRow('b') + pushRow('c');
+    at.document.querySelector('thead').innerHTML = '<tr><th>Name</th></tr>';
+    await tick();
+    hasGutter(at.document, ['b', 'c'], ['Name']);
     // the row of the other app is not one of this app
     const mixed = page(
         PUSH,
         pushList().replace('<tbody>', () => `<tbody>${smsRow('1')}`),
     );
     assert.deepEqual(mixed.boxes(), []);
+    assert.equal(mixed.document.querySelector(`${GUTTER}, .${GUTTER_CELL}, .${GUTTER_HEAD}`), null);
     const bare = page(
         PUSH,
         `<div id="messageGridRepeater"><table><tbody>${pushRow('a')}</tbody></table></div>`,
@@ -1103,6 +1316,8 @@ test('the manifest runs the script in the frames of both apps, in the extension�
     assert.deepEqual(entries[0], {
         matches: [
             'https://*.marketingcloudapps.com/MobileConnectFuel3/*',
+            'https://*.marketingcloudapps.com/Mobile/*',
+            'https://*.marketingcloudapps.com/mobile/*',
             'https://*.marketingcloudapps.com/mobilepush/*',
         ],
         js: ['mobile-delete.js'],

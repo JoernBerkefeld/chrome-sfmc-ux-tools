@@ -65,6 +65,30 @@
         'editor-highlight.js',
         'editor-language.js',
     ];
+    // what formats the message in the editor of a form: the button, its key, and "format on
+    // save". It brings Prettier and is large, so it is loaded only once a form has its editor
+    const FORMAT_SCRIPT = 'editor-format.js';
+    // tells that script about an editor of the panel, on the element around it: whether it is
+    // one to format, which the editor of a form is and the one of the details is not
+    const FORMAT_MARK = 'data-sfmc-ux-tools-format';
+    const FORMATTED = 'on';
+    const NOT_FORMATTED = 'off';
+    // tells that script which button sends a form: with "format on save" it holds the click back
+    // until the message is formatted
+    const FORMAT_SAVE = 'data-sfmc-ux-tools-format-save';
+    // the longest id that is taken for one: as many digits as a whole number holds exactly
+    const MOST_DIGITS = 15;
+    const ID = new RegExp(String.raw`^\d{1,${MOST_DIGITS}}$`);
+    /**
+     * Reads an id that is made of digits.
+     *
+     * @param {unknown} value what an answer of the API holds
+     * @returns {string|undefined} the id; nothing for anything else
+     */
+    const idOf = (value) => {
+        const text = typeof value === 'number' || typeof value === 'string' ? String(value) : '';
+        return ID.test(text) ? text : undefined;
+    };
     // the name Marketing Cloud's editors have for their mode, by which those scripts know an editor
     const EDITOR_MODE = 'ampScriptHtmlMixed';
     // said of a stored code or keyword that the lists of the business unit do not hold
@@ -272,6 +296,8 @@
                     items.map((item) => ({
                         value: item.customerKey,
                         label: item.name,
+                        // what Content Builder opens the message by
+                        id: idOf(item.id),
                         views: (Array.isArray(item.availableViews) ? item.availableViews : []).map(
                             String,
                         ),
@@ -283,6 +309,12 @@
                 ),
             // the list that names the folders
             folders: 'folders',
+        },
+        // the business unit the user is in: one answer, kept as a list of one, and an empty
+        // one when the answer names no id
+        unit: {
+            path: 'platform-internal/v1/accounts/@current',
+            read: (answer) => [{ value: idOf(answer.accountId) }],
         },
         // the folders of Content Builder, by their id
         folders: {
@@ -392,6 +424,8 @@
                     isNamed: true,
                     // the details show what the content says
                     isSaid: true,
+                    // the details and the form point to the content in Content Builder
+                    isLinked: true,
                     help: 'The customer key of the push message in Content Builder.',
                 },
                 { path: 'options.sound', label: 'Sound' },
@@ -985,6 +1019,62 @@
             'MobileConnect/MobileConnectFuel3/%23!/administration/code',
             id,
         );
+
+    /**
+     * Builds a link to a mobile message in Content Builder, in the form that the extension's
+     * links to an asset have: with the business unit the user is in and the id of the asset.
+     * Both are read for it, each once for the page; the list of the contents is the one the
+     * fields choose from.
+     *
+     * @param {unknown} key customer key of the content
+     * @param {() => boolean} isWanted false once nobody waits for the link any more
+     * @returns {Promise.<HTMLAnchorElement|undefined>} the link; nothing when the content is not in the list, has no id made of digits, or the business unit is not known
+     */
+    async function contentLink(key, isWanted) {
+        if (typeof key !== 'string' || !key) {
+            return;
+        }
+        const contents = await readOffers('contents', isWanted);
+        const asset = contents?.find((entry) => entry.value === key)?.id;
+        if (!asset) {
+            return;
+        }
+        const [unit] = (await readOffers('unit', isWanted)) ?? [];
+        if (!unit) {
+            return;
+        }
+        return screenLink(
+            'Open in Content Builder',
+            `Content%20Builder/ux-tools/${unit.value}/asset`,
+            asset,
+        );
+    }
+
+    /**
+     * Keeps a link to the content that a field of a form holds below that field, for as long as
+     * the content is one of the list; another content gets another link, and none gets none.
+     *
+     * @param {HTMLInputElement} input the field that holds the customer key of the content
+     */
+    function contentTools(input) {
+        const tools = make('div', 'content-tools');
+        tools.hidden = true;
+        input.closest(`.${NAME}-field`).after(tools);
+        // counts what the field held, so that a late link for something else is dropped
+        let drawn = 0;
+        const draw = async () => {
+            const mine = ++drawn;
+            const link = await contentLink(input.value.trim(), () => input.isConnected);
+            if (mine !== drawn) {
+                return;
+            }
+            tools.replaceChildren(...(link ? [link] : []));
+            tools.hidden = !link;
+        };
+        // typing and choosing from the list both come as this
+        input.addEventListener('input', draw);
+        draw();
+    }
 
     /**
      * Builds the place that names what a field holds, which stays empty until the list is read
@@ -2216,6 +2306,36 @@
         return editorScripts;
     }
 
+    // the script that formats, on its way into the page or there; none before the first form
+    // with a message has its editor
+    let formatScript;
+
+    /**
+     * Loads what formats the message of a form, once for the page. The editor does not wait for
+     * it: the script finds the editors that are there when it has run, and those that come
+     * later. Without it the editor is one that does not format.
+     */
+    function loadFormatter() {
+        if (formatScript) {
+            return;
+        }
+        const loading = load(FORMAT_SCRIPT);
+        formatScript = loading;
+        const forgetFailed = async () => {
+            try {
+                await loading;
+            } catch (ex) {
+                // asked for again the next time
+                if (formatScript === loading) {
+                    formatScript = undefined;
+                }
+                // eslint-disable-next-line no-console -- the only trace of why the message cannot be formatted
+                console.warn(`${MADE_BY}: the formatter for the message could not be loaded`, ex);
+            }
+        };
+        forgetFailed();
+    }
+
     /**
      * Keeps Escape for a code editor while a list of suggestions or a box of it is open (an
      * explanation, quick fixes, parameter help): the key closes that, not the panel. The editor
@@ -2258,6 +2378,8 @@
             return;
         }
         const mount = make('div', 'code-view');
+        // read only: no button to format it, and never formatted
+        mount.setAttribute(FORMAT_MARK, NOT_FORMATTED);
         try {
             await loadEditor();
             // the details were left meanwhile
@@ -2312,6 +2434,7 @@
     async function codeEditor(input) {
         const row = input.closest(`.${NAME}-field`);
         const mount = make('div', 'code');
+        mount.setAttribute(FORMAT_MARK, FORMATTED);
         let editor;
         try {
             await loadEditor();
@@ -2329,7 +2452,8 @@
                 lineWrapping: true,
                 extraKeys: {
                     // the form is sent with its button; the browser's dialog for saving the
-                    // page stays away
+                    // page stays away. The formatter leaves these two keys of its own editors
+                    // alone
                     'Ctrl-S': () => {},
                     'Cmd-S': () => {},
                     // these are left to the browser, as everywhere in the form: on to the next
@@ -2384,6 +2508,7 @@
         if (isFocused) {
             editor.focus();
         }
+        loadFormatter();
         return editor;
     }
 
@@ -3092,6 +3217,7 @@
         says.hidden = true;
         const send = make('button', 'save', loaded ? 'Save' : 'Create');
         send.type = 'submit';
+        send.setAttribute(FORMAT_SAVE, '');
         const cancel = make('button', 'keep', 'Cancel');
         cancel.type = 'button';
         cancel.addEventListener('click', () =>
@@ -3119,6 +3245,11 @@
             );
         }
         accountSettings(kind.fields, inputs, filled);
+        for (const spec of kind.fields) {
+            if (spec.isLinked) {
+                contentTools(inputs.get(spec.path));
+            }
+        }
         fill(
             make(
                 'h3',
@@ -3225,9 +3356,19 @@
         if (coded) {
             point();
         }
-        for (const { path, isSaid, input } of kind.fields) {
+        // the content of a push message gets a link once its id and the business unit are known
+        const link = async (path) => {
+            const found = await contentLink(valueAt(definition, path), () => shown.isConnected);
+            if (found && shown.isConnected) {
+                cellOf(path)?.append(found);
+            }
+        };
+        for (const { path, isSaid, isLinked, input } of kind.fields) {
             if (isSaid) {
                 showTexts(shown, path, valueAt(definition, path));
+            }
+            if (isLinked) {
+                link(path);
             }
             // the message of an SMS, as the form shows it
             if (input === 'textarea') {

@@ -3,8 +3,9 @@
  *
  * Neither app lets a message be deleted from its list, and MobileConnect lets none be deleted at
  * all; Marketing Cloud's API can. This adds a "Delete" button to the details page of a
- * MobileConnect message, and to both lists a checkbox in front of each row with a button
- * "Delete selected (n)".
+ * MobileConnect message, and to both lists a checkbox in front of the name of each row, and a
+ * button "Delete selected (n)". Both apps find the cells of their lists by their place, so no cell
+ * or column is added: the checkbox is in the app's own first cell, in room made on its left.
  *
  * Deleting cannot be undone, and some messages must not be deleted here, so:
  * - nothing is sent before the click in the script's own dialog, which names each message;
@@ -27,6 +28,13 @@
     const SELECTED_BUTTON = '[data-sfmc-ux-tools-mobile-delete="selected"]';
     const ROW_BOX = 'input[data-sfmc-ux-tools-mobile-delete="row"]';
     const ROWS = ':scope tbody tr';
+    // the room on the left of the app's own first cell of a row, which holds the row's checkbox:
+    // an element of the script in that cell, and the classes that make the room in the cell and
+    // in the first cell of the table's header
+    const GUTTER = 'span[data-sfmc-ux-tools-mobile-delete="gutter"]';
+    const GUTTER_CELL = `${NAME}-gutter-cell`;
+    const GUTTER_HEAD = `${NAME}-gutter-head`;
+    const HEAD_ROWS = ':scope > thead > tr';
     // where the extension lists the transactional messages, and deletes them safely
     const PANEL = 'Mobile Studio → Transactional Messages';
     // the largest page the API hands out of the definitions
@@ -203,9 +211,25 @@
             repeater: '#messagesGridRepeater',
             rowId: (row) =>
                 row.cells[0]?.querySelector('a[data-id][data-status]')?.dataset.id || undefined,
-            // the page of one message: its route, with the id, and the header the button goes into
+            // the page of one message: its route, with the id, the header the button goes into
+            // and the title that shows the header is that of a message
             route: /^#!\/message\/view\/([^/?#]+)$/,
             header: '.container > header.header',
+            title: '.container > header.header h3.title',
+        },
+        {
+            // seen live: the page of one message is not drawn by the app of the list but by the
+            // older MobileConnect under another path, whose address is written with a capital
+            // letter or without. It has no list, and asks the API through the app of the list
+            kind: 'sms',
+            path: '/mobile/',
+            api: '/MobileConnectFuel3/',
+            message: 'legacy/v1/beta/mobile/message/',
+            definitions: 'messaging/v1/sms/definitions',
+            route: /^#!\/message\/view\/([^/?#]+)$/,
+            // where that page holds the message's status and its own buttons, next to the title
+            header: '#alter-message-status',
+            title: 'h3.fuel-template-header-text',
         },
         {
             kind: 'push',
@@ -218,13 +242,14 @@
                 undefined,
         },
     ];
-    const app = APPS.find((item) => location.pathname.startsWith(item.path));
+    const here = location.pathname.toLowerCase();
+    const app = APPS.find((item) => here.startsWith(item.path.toLowerCase()));
     if (!app) {
         return;
     }
     const ICON = chrome.runtime.getURL('icons/icon16.png');
     // where the app passes calls on to the REST API
-    const API = `${app.path}fuelapi/`;
+    const API = `${app.api ?? app.path}fuelapi/`;
     // the ids of the messages ticked in the list
     const selected = new Set();
     // the dialog that is open, if any
@@ -672,7 +697,7 @@
     function syncDetails() {
         const id = routeId();
         const found = id === undefined ? null : document.querySelector(app.header);
-        const header = found?.querySelector('h3.title') ? found : null;
+        const header = found && document.querySelector(app.title) ? found : null;
         for (const old of document.querySelectorAll(DETAILS_BUTTON)) {
             if (old.parentElement !== header || old.value !== id) {
                 old.remove();
@@ -710,6 +735,67 @@
     }
 
     /**
+     * Keeps the checkbox of a row where it belongs: in room on the left of the app's own first
+     * cell, once. It is made again when the app drew the content of that cell again, and whatever
+     * the app copied or moved elsewhere in the row is taken away. A row that names no message
+     * keeps nothing of the script.
+     *
+     * @param {HTMLTableRowElement} row a row of a list
+     * @param {string} [id] id of the row's message, if it names one
+     * @returns {HTMLInputElement|undefined} the checkbox; nothing for a row that names no message
+     */
+    function syncRow(row, id) {
+        const [cell] = row.cells;
+        const kept = id
+            ? [...cell.children].find(
+                  (child) => child.matches(GUTTER) && child.querySelector(ROW_BOX),
+              )
+            : undefined;
+        for (const old of row.querySelectorAll(GUTTER)) {
+            if (old !== kept) {
+                old.remove();
+            }
+        }
+        for (const old of row.querySelectorAll(`.${GUTTER_CELL}`)) {
+            if (!id || old !== cell) {
+                old.classList.remove(GUTTER_CELL);
+            }
+        }
+        if (!id) {
+            return;
+        }
+        cell.classList.add(GUTTER_CELL);
+        if (kept) {
+            return kept.querySelector(ROW_BOX);
+        }
+        const gutter = make('span', 'gutter');
+        gutter.setAttribute(MARK, 'gutter');
+        const box = make('input', 'check');
+        box.type = 'checkbox';
+        box.setAttribute(MARK, 'row');
+        box.title = `Select for “Delete selected” (${MADE_BY})`;
+        box.setAttribute('aria-label', 'Select this message for deleting');
+        gutter.append(box);
+        cell.prepend(gutter);
+        return box;
+    }
+
+    /**
+     * Keeps the header of a table in step with its rows: the same room on the left of its first
+     * cell while a row has a checkbox, none otherwise.
+     *
+     * @param {HTMLTableElement} table a table of the list
+     * @param {boolean} isWanted true while a row of it has a checkbox
+     */
+    function syncHead(table, isWanted) {
+        for (const row of table.querySelectorAll(HEAD_ROWS)) {
+            for (const cell of row.cells) {
+                cell.classList.toggle(GUTTER_HEAD, isWanted && cell === row.cells[0]);
+            }
+        }
+    }
+
+    /**
      * Keeps the checkboxes of the list and its "Delete selected" button in step with the rows
      * the list shows now. A message that the list no longer shows is no longer chosen.
      */
@@ -731,38 +817,25 @@
             (header.querySelector('.repeater-header-left') ?? header).append(button);
         }
         const present = new Set();
+        // the tables that have a row with a checkbox
+        const boxed = new Set();
         for (const row of repeater.querySelectorAll(ROWS)) {
             const id = app.rowId(row);
-            let box = row.querySelector(ROW_BOX);
-            if (!id) {
-                box?.remove();
+            const box = syncRow(row, id);
+            if (!box) {
                 continue;
             }
             present.add(id);
-            if (!box) {
-                box = make('input', 'check');
-                box.type = 'checkbox';
-                box.setAttribute(MARK, 'row');
-                box.title = `Select for “Delete selected” (${MADE_BY})`;
-                box.setAttribute('aria-label', 'Select this message for deleting');
-                // a click on the row opens the message; one on the box must not
-                box.addEventListener('click', (event) => event.stopPropagation());
-                box.addEventListener('change', () => {
-                    if (box.checked) {
-                        selected.add(box.value);
-                    } else {
-                        selected.delete(box.value);
-                    }
-                    syncList();
-                });
-                row.cells[0].prepend(box);
-            }
+            boxed.add(row.closest('table'));
             if (box.value !== id) {
                 box.value = id;
             }
             if (box.checked !== selected.has(id)) {
                 box.checked = selected.has(id);
             }
+        }
+        for (const table of repeater.querySelectorAll('table')) {
+            syncHead(table, boxed.has(table));
         }
         // a list without rows is one that is being drawn again: what was chosen is kept until
         // its rows are back, and does not count while they are away
@@ -792,6 +865,33 @@
         syncList();
     }
 
+    // a click on a row opens its message; one in the room of the checkbox must not, on the box
+    // or next to it. That room is an element of the script that lies over the left of the cell,
+    // so whatever is clicked there is the script's, and a click on the name is the app's. The
+    // click is stopped on its way down, before anything of the app hears of it. The browser
+    // still ticks a box that was clicked, and next to the box nothing happens
+    document.addEventListener(
+        'click',
+        (event) => {
+            if (event.target instanceof Element && event.target.closest(GUTTER)) {
+                event.stopPropagation();
+            }
+        },
+        { capture: true },
+    );
+    // heard here and not on each box, so that a box the app copied along with its row counts too
+    document.addEventListener('change', (event) => {
+        const box = event.target;
+        if (!(box instanceof Element) || !box.matches(ROW_BOX)) {
+            return;
+        }
+        if (box.checked) {
+            selected.add(box.value);
+        } else {
+            selected.delete(box.value);
+        }
+        syncList();
+    });
     // both apps draw their pages without loading them: the route changes, and so does the page
     new MutationObserver(sync).observe(document.documentElement, {
         childList: true,

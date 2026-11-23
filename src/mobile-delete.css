@@ -23,10 +23,37 @@
     cursor: default;
     opacity: 0.5;
 }
+/*
+ * The checkboxes look like a column of their own, but no cell is added: the app's own first cell
+ * of a row, and of the header, gets room on its left, as wide as named here once.
+ */
+.sfmc-ux-tools-mobile-delete-gutter-cell,
+.sfmc-ux-tools-mobile-delete-gutter-head {
+    --sfmc-ux-tools-mobile-delete-gutter: 44px;
+
+    /* important, because the apps set the padding of their cells with rules that are more
+       specific than one class, or in the cell's own style, and either would win otherwise */
+    padding-left: var(--sfmc-ux-tools-mobile-delete-gutter) !important;
+}
+/* what the room is measured from */
+.sfmc-ux-tools-mobile-delete-gutter-cell {
+    position: relative;
+}
+/* the room itself: over the left of the cell at its full height, the box in its middle */
+.sfmc-ux-tools-mobile-delete-gutter {
+    align-items: center;
+    bottom: 0;
+    cursor: default;
+    display: flex;
+    justify-content: center;
+    left: 0;
+    position: absolute;
+    top: 0;
+    width: var(--sfmc-ux-tools-mobile-delete-gutter);
+}
 .sfmc-ux-tools-mobile-delete-check {
     cursor: pointer;
-    margin: 0 8px 0 0;
-    vertical-align: middle;
+    margin: 0;
 }
 .sfmc-ux-tools-mobile-delete-dialog {
     background: #fff;

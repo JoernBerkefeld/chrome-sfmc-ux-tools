@@ -7,6 +7,11 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const frameScript = read('../src/deep-link-contact-builder.js');
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const SHOWN = 'sfmc-ux-tools:deep-link:contact-shown';
+// what the Marketing Cloud page asks of the frame, and how Chrome describes the background script
+// that passes it on
+const OPEN = 'sfmc-ux-tools:deep-link:contact-open';
+const EXTENSION = 'this-extension';
+const BACKGROUND = { id: EXTENSION };
 // the address of Contact Builder's frame, as Marketing Cloud loads it
 const PATH = '/contactsmeta/admin.html';
 const QUERY = '?hub=1&ks=ks';
@@ -43,7 +48,7 @@ const HOSTILE = [
  * @param {string} [has.depth] top for no page around it, nested for a frame inside Contact Builder's
  * @param {string} [has.pathname] the path of the frame's address
  * @param {boolean} [has.isDown] true when the extension cannot be reached
- * @returns {object} the frame, what was sent, how many timers were started, a way to change the route as Contact Builder does, and the script's function
+ * @returns {object} the frame, what was sent, how many timers were started, a way to change the route as Contact Builder does, a way to send the script a message, the routes it wrote over the frame's own, and the script's function
  */
 function frame({ hash = '', depth = 'frame', pathname = PATH, isDown = false } = {}) {
     const { window: top } = new JSDOM('<!doctype html><body><iframe></iframe></body>', {
@@ -61,9 +66,24 @@ function frame({ hash = '', depth = 'frame', pathname = PATH, isDown = false } =
     }
     // the frame of the test has no address of its own: the script gets one that behaves like it
     const place = { pathname, search: QUERY, hash };
+    // the routes the script wrote over the one in the frame's address. As in the browser, that
+    // adds no entry to the history and tells the frame of the change
+    const replaced = [];
+    place.replace = (to) => {
+        replaced.push(to);
+        place.hash = to;
+        view.dispatchEvent(new view.Event('hashchange'));
+    };
     const sent = [];
+    const listeners = [];
     view.chrome = {
         runtime: {
+            id: EXTENSION,
+            onMessage: {
+                addListener: (item) => {
+                    listeners.push(item);
+                },
+            },
             sendMessage: async (message) => {
                 sent.push({ ...message });
                 if (isDown) {
@@ -74,10 +94,30 @@ function frame({ hash = '', depth = 'frame', pathname = PATH, isDown = false } =
         },
     };
     view.place = place;
+    // what the script listens for in the frame, so that a test can click or type as a person
+    // does: the page of a test cannot make up an event that the browser trusts
+    const heard = [];
+    const listen = view.addEventListener.bind(view);
+    view.addEventListener = (type, act, options) => {
+        heard.push({ type, act });
+        listen(type, act, options);
+    };
     view.eval(`((location) => {${frameScript}\n})(place);`);
     return {
         view,
         sent,
+        /**
+         * Clicks or types in the frame, as a person does.
+         *
+         * @param {string} type pointerdown or keydown
+         */
+        input: (type) => {
+            for (const item of heard) {
+                if (item.type === type) {
+                    item.act({ type, isTrusted: true });
+                }
+            }
+        },
         timers: () => timers,
         /**
          * Changes the route inside Contact Builder, as Contact Builder does.
@@ -89,6 +129,16 @@ function frame({ hash = '', depth = 'frame', pathname = PATH, isDown = false } =
             view.dispatchEvent(new view.Event('hashchange'));
         },
         routes: () => sent.map((message) => message.route),
+        replaced,
+        /**
+         * Sends the script a message, as the background script does unless said otherwise.
+         *
+         * @param {object} message the message
+         * @param {object} [sender] who sent it
+         * @returns {boolean[]} what each of the script's listeners returned
+         */
+        receive: (message, sender = BACKGROUND) =>
+            listeners.map((item) => item(message, sender, () => {})),
         helpers: view.sfmcUxToolsDeepLinkContactBuilder,
     };
 }
@@ -165,12 +215,59 @@ test('only Contact Builder’s own document, directly below the Marketing Cloud 
     }
 });
 
-test('the script only tells: it asks nothing of Marketing Cloud, opens nothing and writes nothing', () => {
+test('the script asks nothing of Marketing Cloud, clicks nothing and writes nothing but a route over the one of its frame', () => {
     assert.doesNotMatch(frameScript, /\bfetch\(|XMLHttpRequest|sendBeacon/);
     assert.doesNotMatch(frameScript, /innerHTML|outerHTML|insertAdjacentHTML|createElement/);
-    assert.doesNotMatch(frameScript, /location\.(?:assign|replace|href|hash\s*=)|history\./);
-    assert.doesNotMatch(frameScript, /\.click\(\)|onMessage/);
+    assert.doesNotMatch(frameScript, /location\.(?:assign|href|hash\s*=)|history\./);
+    // the one place that changes the frame's address writes over it, a route after a #
+    assert.deepEqual(frameScript.match(/location\.replace\([^)]*\)/g), [
+        'location.replace(`#${route}`)',
+    ]);
+    assert.doesNotMatch(frameScript, /\.click\(\)/);
     assert.deepEqual(frameScript.match(/sendMessage\(/g), ['sendMessage(']);
+    assert.deepEqual(frameScript.match(/onMessage/g), ['onMessage']);
+});
+
+test('Contact Builder’s frame shows the route that the page asks for by writing it over its own, and tells it as nobody’s click', async () => {
+    const at = frame({ hash: `#${OPENED}` });
+    await tick();
+    at.sent.length = 0;
+    // a click before the step, on the browser's Back for one, is not what opened the route
+    at.input('pointerdown');
+    assert.deepEqual(at.receive({ type: OPEN, route: LISTED }), [false]);
+    assert.deepEqual(at.replaced, [`#${LISTED}`]);
+    assert.deepEqual(at.sent, [{ type: SHOWN, route: LISTED }]);
+    // the route that is shown already is left alone
+    at.receive({ type: OPEN, route: LISTED });
+    assert.equal(at.replaced.length, 1);
+    assert.equal(at.sent.length, 1);
+    // and a click of the user after it still counts for what the user opens next
+    at.input('pointerdown');
+    at.receive({ type: OPEN, route: LISTED });
+    at.route(`#${OPENED}`);
+    assert.deepEqual(at.sent.at(-1), { type: SHOWN, route: OPENED, byUser: true });
+    // what is no route of the form is not written, with or without a # before it
+    for (const route of [...HOSTILE, `#${LISTED}`, '', undefined, null, 7, {}, [LISTED]]) {
+        at.receive({ type: OPEN, route });
+    }
+    // from anyone but the background script, and for any other message, nothing is written
+    at.receive({ type: OPEN, route: LISTED }, { id: 'another-extension' });
+    at.receive({ type: OPEN, route: LISTED }, { id: EXTENSION, tab: { id: 7 } });
+    at.receive({ type: SHOWN, route: LISTED });
+    at.receive(null);
+    assert.equal(at.replaced.length, 1);
+    // a frame without a route yet is given one
+    const plain = frame();
+    plain.receive({ type: OPEN, route: LISTED });
+    assert.deepEqual(plain.replaced, [`#${LISTED}`]);
+    assert.equal(at.timers(), 0);
+
+    // a document that is not Contact Builder's own does not listen
+    for (const has of [{ depth: 'top' }, { depth: 'nested' }, { pathname: '/contactsmeta/' }]) {
+        const other = frame({ hash: `#${OPENED}`, ...has });
+        assert.deepEqual(other.receive({ type: OPEN, route: LISTED }), [], JSON.stringify(has));
+        assert.deepEqual(other.replaced, []);
+    }
 });
 
 test('the manifest runs the script in Contact Builder’s frame, in the extension’s own world, without a new permission', () => {
@@ -195,4 +292,40 @@ test('the manifest runs the script in Contact Builder’s frame, in the extensio
         assert.equal(script.includes(FORM), true, file);
         assert.match(script, new RegExp(`const MOST_ROUTE = ${MOST_ROUTE};`), file);
     }
+});
+
+test('Contact Builder’s frame says with its route whether the user clicked or typed, and only then', async () => {
+    const at = frame({ hash: `#${OPENED}` });
+    await tick();
+    for (const type of ['pointerdown', 'keydown']) {
+        at.input(type);
+        at.route(`#${LISTED}`);
+        // said once: the route that follows is not the user's doing
+        at.route(`#${OPENED}`);
+        assert.deepEqual(
+            at.sent.slice(-2),
+            [
+                { type: SHOWN, route: LISTED, byUser: true },
+                { type: SHOWN, route: OPENED },
+            ],
+            type,
+        );
+    }
+    // what a script of the page makes up is nobody's click or key
+    for (const type of ['pointerdown', 'keydown']) {
+        at.view.dispatchEvent(new at.view.Event(type, { bubbles: true }));
+    }
+    at.route(`#${LISTED}`);
+    assert.deepEqual(at.sent.at(-1), { type: SHOWN, route: LISTED });
+    // a click before the frame was reached is used up by what it tells, also when that fails
+    const lost = frame({ hash: `#${OPENED}`, isDown: true });
+    lost.input('pointerdown');
+    lost.route(`#${LISTED}`);
+    lost.route(`#${OPENED}`);
+    await tick();
+    assert.deepEqual(lost.sent.slice(1), [
+        { type: SHOWN, route: LISTED, byUser: true },
+        { type: SHOWN, route: OPENED },
+    ]);
+    assert.equal(at.timers(), 0);
 });

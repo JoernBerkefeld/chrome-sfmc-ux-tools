@@ -6,9 +6,17 @@
  * asked for: it reads the asset's name, searches for it and clicks the row with that id. Once
  * the asset is open, it empties the search again.
  *
+ * With what it tells, it says whether the user clicked or typed in this frame since it told last:
+ * only then does the Marketing Cloud page give the address an entry of its own in the browser's
+ * history. When the browser steps Back or Forward, that page asks this script to show what the
+ * entry names: for Content Builder's plain address to close the open asset, by one click on the
+ * asset's own close button, and for an asset to open it as for a link, after closing another one
+ * that is open. Seen live: left to Marketing Cloud, such a step loaded Content Builder anew, which
+ * added an entry that the browser's Back could not pass.
+ *
  * It changes nothing in Marketing Cloud: one GET of the asset's id and name, one search, one click
- * on a row of the list. Only the document that holds Content Builder's list, directly below the
- * Marketing Cloud page, talks to that page.
+ * on a row of the list, one on the close button of an open asset. Only the document that holds
+ * Content Builder's list, directly below the Marketing Cloud page, talks to that page.
  */
 (() => {
     'use strict';
@@ -24,6 +32,11 @@
     // what is asked of and told to the Marketing Cloud page, passed on by background.js
     const WANTED_MESSAGE = 'sfmc-ux-tools:deep-link:wanted';
     const SHOWN_MESSAGE = 'sfmc-ux-tools:deep-link:shown';
+    // what the Marketing Cloud page asks of this frame, passed on by background.js: to close the
+    // asset that is open
+    const CLOSE_MESSAGE = 'sfmc-ux-tools:deep-link:close';
+    // and to open an asset, when the browser stepped to an entry with a link to it
+    const OPEN_MESSAGE = 'sfmc-ux-tools:deep-link:open';
     // the longest id that is taken for one: as many digits as a whole number holds exactly
     const MOST_DIGITS = 15;
     const ID = new RegExp(String.raw`^\d{1,${MOST_DIGITS}}$`);
@@ -39,6 +52,11 @@
     // the page of an open asset, and where it holds the asset's id
     const DETAILS = '.contentproperties-detailsview';
     const DETAILS_ID = '[data-content-field="id"] input.contentinput-copyvalue';
+    // the control of that page that closes it and leads back to the list (from Content
+    // Builder's own template)
+    const DETAILS_CLOSE = '.contentproperties-close button[data-action="close"]';
+    // what a person does in Content Builder that may open or close an asset: a click, a key
+    const INPUTS = ['pointerdown', 'keydown'];
     // where the app passes calls on to the REST API
     const ASSETS = '/fuelapi/asset/v1/content/assets/';
 
@@ -51,10 +69,19 @@
     let deadline;
     // the name that was searched for that asset
     let searchedFor;
+    // the asset a link asked for, while its name is still being read
+    let reading;
     // the asset that was clicked for a link and the name searched for it, until it is open
     let followed;
+    // how many times an asset was asked for or its opening was called off: what is still read
+    // for an earlier time is dropped
+    let requests = 0;
     // the look at the page that is due, if any
     let due;
+    // whether the user clicked or typed in this frame since it told last
+    let isByUser = false;
+    // the open asset whose close button was clicked, while it is still open: it is asked once
+    let closing;
 
     /**
      * Sends a message to the Marketing Cloud page. It never throws.
@@ -101,6 +128,32 @@
         // the id is what the field holds now, which no change of the page announces
         const value = view.querySelector(DETAILS_ID)?.value;
         return typeof value === 'string' && ID.test(value) ? value : null;
+    }
+
+    /**
+     * Clicks an element for the user. What follows is not the user's doing, whatever they
+     * clicked or typed before.
+     *
+     * @param {HTMLElement} element the row of a link, or the close button of the open asset
+     */
+    function press(element) {
+        isByUser = false;
+        element.click();
+    }
+
+    /**
+     * Closes the asset that is open, as its own close button does. Without an open asset, or
+     * without that button, nothing is clicked.
+     */
+    function close() {
+        const view = document.querySelector(DETAILS);
+        const button = document.querySelector(DETAILS_CLOSE);
+        if (!(view && button && isDisplayed(view) && isDisplayed(button))) {
+            return;
+        }
+
+        closing = openAsset();
+        press(button);
     }
 
     /**
@@ -186,9 +239,20 @@
 
     /**
      * Opens the awaited asset once the list shows its row: one click on the name in that row.
+     * While another asset is open, the row is not clicked: that asset is asked to close, and the
+     * next change of the page is looked at again. It may have been open when the awaited one was
+     * asked for, or its row was clicked for an earlier request and its page is drawn only now.
+     * Each such asset is asked once, however many times the page is looked at meanwhile.
      */
     function open() {
         if (awaited === undefined) {
+            return;
+        }
+        const now = openAsset();
+        if (now !== null && now !== awaited) {
+            if (now !== closing) {
+                close();
+            }
             return;
         }
         // the id is digits only, so it cannot end the selector
@@ -203,7 +267,7 @@
         awaited = undefined;
         // seen live: the search box's list of suggestions stays open over the asset otherwise
         document.querySelector(SEARCH)?.blur();
-        cell.click();
+        press(cell);
     }
 
     /**
@@ -231,14 +295,33 @@
     }
 
     /**
-     * Asks the Marketing Cloud page once whether its address named an asset, and opens that one.
+     * Calls off the opening of an asset that is under way: its row is no longer waited for, its
+     * name that is still being read is dropped, and its search is left as it is.
      */
-    async function follow() {
-        const id = (await send({ type: WANTED_MESSAGE }))?.asset;
-        if (typeof id !== 'string' || !ID.test(id)) {
+    function cancel() {
+        requests++;
+        clearTimeout(deadline);
+        reading = undefined;
+        awaited = undefined;
+        followed = undefined;
+    }
+
+    /**
+     * Opens an asset by its id, in place of whatever was being opened before: reads its name,
+     * searches for it and waits for its row.
+     *
+     * @param {string} id id of the asset
+     */
+    async function find(id) {
+        cancel();
+        const request = requests;
+        reading = id;
+        const name = await readName(id);
+        if (request !== requests) {
+            // meanwhile another asset was asked for, or the page asked to close
             return;
         }
-        const name = await readName(id);
+        reading = undefined;
         if (name === undefined) {
             notice(id, 'not found in this business unit');
             return;
@@ -253,11 +336,54 @@
         awaited = id;
         deadline = setTimeout(() => {
             awaited = undefined;
+            const now = openAsset();
+            if (now !== null && now !== id) {
+                // the asset that was asked to close never did, so the row was never clicked,
+                // listed or not
+                notice(id, 'another asset is still open');
+                return;
+            }
             // seen live: the asset exists here, but Content Builder does not list its kind
             // (a web page of CloudPages), or the search did not bring it up
             notice(id, "Content Builder's search did not list it");
         }, ROW_WAIT);
         open();
+    }
+
+    /**
+     * Asks the Marketing Cloud page once whether its address named an asset, and opens that one.
+     */
+    async function follow() {
+        const id = (await send({ type: WANTED_MESSAGE }))?.asset;
+        if (typeof id === 'string' && ID.test(id)) {
+            await find(id);
+        }
+    }
+
+    /**
+     * Shows the asset of the entry that the browser stepped to. An asset that is open already
+     * stays as it is, and so does one that is being opened already; another one that is open is
+     * closed first.
+     *
+     * @param {unknown} id id of the asset
+     */
+    function step(id) {
+        // asked again for the asset that is being opened: its name is read, its row is waited
+        // for, or its row was clicked
+        const isUnderWay = reading === id || awaited === id || followed?.id === id;
+        if (isUnderWay || typeof id !== 'string' || !ID.test(id)) {
+            return;
+        }
+        if (openAsset() === id) {
+            // whatever else was being opened is not what the entry names
+            cancel();
+            return;
+        }
+        // a step through the browser's history is no click or key in this frame, whatever the
+        // user did here before it: only what they do after this request counts as theirs
+        isByUser = false;
+        close();
+        find(id);
     }
 
     /**
@@ -275,13 +401,59 @@
             follow();
         }
         const now = openAsset();
+        if (now !== closing) {
+            // the asset that was asked to close is gone
+            closing = undefined;
+        }
         if (now !== told) {
+            const pending = awaited ?? reading;
+            if (isByUser && now !== null && pending !== undefined && now !== pending) {
+                // the user opened another asset by hand meanwhile: that one stays, and the one
+                // that was asked for is given up
+                cancel();
+            }
             told = now;
-            send({ type: SHOWN_MESSAGE, asset: now });
+            send(
+                isByUser
+                    ? { type: SHOWN_MESSAGE, asset: now, byUser: true }
+                    : { type: SHOWN_MESSAGE, asset: now },
+            );
+            isByUser = false;
         }
         tidy(now);
         open();
     }
+
+    for (const type of INPUTS) {
+        // before the page's own scripts, which may keep the event to themselves
+        addEventListener(
+            type,
+            (event) => {
+                // the keys this script makes up for its search are nobody's
+                if (event.isTrusted) {
+                    isByUser = true;
+                }
+            },
+            true,
+        );
+    }
+
+    chrome.runtime.onMessage.addListener((message, sender) => {
+        // only what the extension's own background script passes on, and only in the document
+        // that was seen to hold the list
+        if (!isList || sender.tab || sender.id !== chrome.runtime.id) {
+            return false;
+        }
+        if (message?.type === CLOSE_MESSAGE) {
+            // an asset that was being opened must not open after this
+            cancel();
+            close();
+        }
+        if (message?.type === OPEN_MESSAGE) {
+            step(message.asset);
+        }
+        return false;
+    });
 
     // Content Builder draws its pages without loading them. A change only books one look
     new MutationObserver(() => {

@@ -11,8 +11,16 @@ import * as html from 'prettier/plugins/html';
 import * as postcss from 'prettier/plugins/postcss';
 import * as sfmc from 'prettier-plugin-sfmc';
 import { format } from 'prettier/standalone';
-import { IS_NEXT, fileKind, isInMode, report, watchEditors } from './editor-language/editors.js';
+import {
+    IS_NEXT,
+    editorsOnPage,
+    fileKind,
+    isInMode,
+    report,
+    watchEditors,
+} from './editor-language/editors.js';
 import { watchAceFormat } from './editor-language/ace/format.js';
+import { coveringDialog } from './editor-language/tooltip.js';
 
 // the settings the SFMC Language Service extension for VS Code formats with
 const OPTIONS = {
@@ -49,6 +57,14 @@ const SAVE_BUTTON = '[data-action="editor-save"]';
 // where Marketing Cloud's editor keeps its own buttons
 const TOOLBAR = '.et-codemirror-toolbar ul';
 const EDITOR_FRAME = '.et-codemirror';
+// an editor the extension draws itself, in its panel Transactional Messages, stands in an element
+// with this attribute, which says whether the editor is one to format: the one of a form is, the
+// one that only shows a message is not
+const OWN_EDITOR = 'data-sfmc-ux-tools-format';
+const OWN_EDITORS = '[data-sfmc-ux-tools-format]';
+const OWN_FORMATTED = 'on';
+// the extension's own button that sends the form such an editor stands in
+const OWN_SAVE_BUTTON = '[data-sfmc-ux-tools-format-save]';
 // time for the page to take note of the formatted content before it saves
 const SETTLE_TIME = 300;
 // a save never waits longer than this for the formatting
@@ -56,7 +72,12 @@ const FORMAT_TIME_LIMIT = 5000;
 const IS_MAC = /mac/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? '');
 const SHORTCUT = IS_MAC ? '⇧⌥F' : 'Shift+Alt+F';
 const busy = new WeakSet();
-const editors = new Set();
+// Marketing Cloud's own editors that were set up to be formatted, and the editors of the
+// extension's own forms that were. None is ever taken out of either: one that leaves the page and
+// comes back is still one of them, and one that is gone for good is not kept alive by being in
+// here
+const editors = new WeakSet();
+const ownEditors = new WeakSet();
 const state = { isSaving: false, isPending: false };
 
 /**
@@ -74,7 +95,8 @@ function notify(wrapper, ex) {
     const { top, right } = wrapper.getBoundingClientRect();
     notice.style.top = `${Math.round(top) + 4}px`;
     notice.style.right = `${Math.round(wrapper.ownerDocument.defaultView.innerWidth - right) + 20}px`;
-    wrapper.ownerDocument.body.append(notice);
+    // a dialog that is open covers everything that is not inside of it
+    (coveringDialog(wrapper) ?? wrapper.ownerDocument.body).append(notice);
     setTimeout(() => notice.remove(), NOTICE_TIME);
 }
 
@@ -183,17 +205,28 @@ async function formatEditor(cm) {
 }
 
 /**
+ * Reads what an editor that the extension drew itself says about being formatted.
+ *
+ * @param {object} cm CodeMirror instance
+ * @returns {string | null} what it says; null for an editor of Marketing Cloud
+ */
+function ownMark(cm) {
+    return cm.getWrapperElement().closest(OWN_EDITORS)?.getAttribute(OWN_EDITOR) ?? null;
+}
+
+/**
  * Tells whether an editor is one whose content may be formatted right now.
  *
  * @param {object} cm CodeMirror instance
- * @returns {boolean} true for an AMPscript editor on the page that can be edited and whose kind of file there is a formatter for
+ * @returns {boolean} true for an AMPscript editor on the page that can be edited, whose kind of file there is a formatter for and that, if the extension drew it itself, is one to format
  */
 function canFormat(cm) {
     return (
         isInMode(cm) &&
         !cm.isReadOnly() &&
         cm.getWrapperElement().isConnected &&
-        !UNFORMATTED_KINDS.has(fileKind())
+        !UNFORMATTED_KINDS.has(fileKind()) &&
+        (ownMark(cm) ?? OWN_FORMATTED) === OWN_FORMATTED
     );
 }
 
@@ -340,10 +373,13 @@ function onClick(event) {
     formatBeforeClick(
         event,
         SAVE_BUTTONS,
-        // only what the user sees is saved now; editors of hidden views are left alone
+        // only what the user sees is saved now; editors of hidden views are left alone. Looked up
+        // on the page at the click, so an editor that was away and is back counts
         () =>
-            [...editors]
-                .filter((cm) => canFormat(cm) && isOnShow(cm.getWrapperElement()))
+            [...editorsOnPage()]
+                .filter(
+                    (cm) => editors.has(cm) && canFormat(cm) && isOnShow(cm.getWrapperElement()),
+                )
                 .map((cm) => () => formatEditor(cm)),
         (button) => {
             const selector = `[data-action="${button.dataset.action}"]`;
@@ -352,6 +388,37 @@ function onClick(event) {
                 ? button
                 : (saveButton(selector) ?? document.querySelector(selector));
             current?.click();
+        },
+    );
+}
+
+/**
+ * Holds a click on the button that sends one of the extension's own forms back until the editors
+ * of that form are formatted. A form that was left meanwhile, or whose button is switched off, is
+ * not sent.
+ *
+ * @param {MouseEvent} event the click
+ */
+function onOwnClick(event) {
+    formatBeforeClick(
+        event,
+        OWN_SAVE_BUTTON,
+        (button) => {
+            const form = button.closest('form');
+            // looked up on the page at the click, so an editor that was away and is back counts
+            return [...editorsOnPage()]
+                .filter(
+                    (cm) =>
+                        ownEditors.has(cm) &&
+                        canFormat(cm) &&
+                        form?.contains(cm.getWrapperElement()),
+                )
+                .map((cm) => () => formatEditor(cm));
+        },
+        (button) => {
+            if (button.isConnected && !button.disabled) {
+                button.click();
+            }
         },
     );
 }
@@ -388,11 +455,22 @@ function formatOnKey(cm) {
 
 /**
  * Sets up formatting for one editor: the button, Shift-Alt-F as in VS Code, and Ctrl-S or
- * Cmd-S for saving, which Marketing Cloud's editor does not have.
+ * Cmd-S for saving, which Marketing Cloud's editor does not have. An editor that the extension
+ * drew itself keeps its own keys for saving, and gets nothing unless it is one to format.
  *
  * @param {object} cm CodeMirror instance
  */
 function registerFormat(cm) {
+    const own = ownMark(cm);
+    if (own !== null) {
+        if (own !== OWN_FORMATTED) {
+            return;
+        }
+        ownEditors.add(cm);
+        cm.addKeyMap({ 'Shift-Alt-F': formatOnKey });
+        addButton(cm);
+        return;
+    }
     editors.add(cm);
     cm.addKeyMap({ 'Shift-Alt-F': formatOnKey, 'Ctrl-S': save, 'Cmd-S': save });
     addButton(cm);
@@ -413,6 +491,7 @@ if (IS_NEXT) {
 } else {
     // in the capture phase, so that the page has not acted on the click yet
     document.addEventListener('click', onClick, { capture: true });
+    document.addEventListener('click', onOwnClick, { capture: true });
     watchEditors('format', [registerFormat]);
     // Automation Studio's script activity has another editor, Ace, which is formatted in the same way
     watchAceFormat({ formatContent, createButton, formatBeforeClick, isOnShow });

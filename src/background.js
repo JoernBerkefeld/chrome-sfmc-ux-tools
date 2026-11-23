@@ -1,7 +1,7 @@
 /*
  * SFMC UX Tools — background script: loads the TypeScript script into a document that asks for it,
  * and passes messages about links from the frames of Content Builder, Email Studio and Contact
- * Builder to the page around them.
+ * Builder to the page around them, and three from that page to the frames below it.
  *
  * The TypeScript script is too large to run in every frame of Content Builder and Automation
  * Studio. A document with a code editor asks for it through editor-typescript-loader.js; it then
@@ -23,6 +23,17 @@
     const DEEP_LINK_WANTED = 'sfmc-ux-tools:deep-link:wanted';
     const DEEP_LINK_SHOWN = 'sfmc-ux-tools:deep-link:shown';
     const DEEP_LINK_MESSAGES = [DEEP_LINK_WANTED, DEEP_LINK_SHOWN];
+    // what the Marketing Cloud page asks of Content Builder's frame: to close the asset that is
+    // open, when the browser stepped back to Content Builder's plain address
+    const DEEP_LINK_CLOSE = 'sfmc-ux-tools:deep-link:close';
+    // what that page asks of the frames when the browser stepped to an entry with a link: of
+    // Content Builder's to open an asset, of Contact Builder's to show a route
+    const DEEP_LINK_OPEN = 'sfmc-ux-tools:deep-link:open';
+    const CONTACT_LINK_OPEN = 'sfmc-ux-tools:deep-link:contact-open';
+    // where that page is, on any stack: the start and the end of its host, and its path
+    const SHELL_HOST = 'mc.';
+    const SHELL_DOMAIN = '.exacttarget.com';
+    const SHELL_PATH = '/cloud/';
     // the same two of Email Studio's frame, for the links to a view of it: see
     // deep-link-email-studio.js
     const EMAIL_LINK_WANTED = 'sfmc-ux-tools:deep-link:email-wanted';
@@ -196,6 +207,34 @@
     }
 
     /**
+     * Tells whether a message comes from the Marketing Cloud page itself, not from a frame in it.
+     *
+     * @param {object} sender who sent the message, as Chrome describes it
+     * @returns {boolean} true for that page only
+     */
+    function isShellPage(sender) {
+        if (
+            typeof sender.tab?.id !== 'number' ||
+            sender.frameId !== TOP_FRAME ||
+            typeof sender.url !== 'string'
+        ) {
+            return false;
+        }
+        try {
+            // read as the browser reads it, so that nothing in the address can pass for its host
+            const { protocol, hostname, pathname } = new URL(sender.url);
+            return (
+                protocol === APP_PROTOCOL &&
+                hostname.startsWith(SHELL_HOST) &&
+                hostname.endsWith(SHELL_DOMAIN) &&
+                pathname === SHELL_PATH
+            );
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * Tells whether a message about a link comes from the frame of the app it is about.
      *
      * @param {unknown} type the type of the message
@@ -216,9 +255,10 @@
 
     /**
      * Reads what of a message about a link is passed on: its type and, of what a frame says it
-     * shows, one text of the form that is expected there, or null.
+     * shows, one text of the form that is expected there, or null. That the user caused what
+     * Content Builder or Contact Builder shows is passed on only as the one value that says so.
      *
-     * @param {{type: string, asset?: unknown, target?: unknown, route?: unknown}} message what a frame sent
+     * @param {{type: string, asset?: unknown, target?: unknown, route?: unknown, byUser?: unknown}} message what a frame sent
      * @returns {object} what the page gets
      */
     function passable(message) {
@@ -235,6 +275,10 @@
         if (message.type === CONTACT_LINK_SHOWN) {
             const isRoute = typeof message.route === 'string' && CONTACT_ROUTE.test(message.route);
             passed.route = isRoute ? message.route : null;
+        }
+        const isStepped = message.type === DEEP_LINK_SHOWN || message.type === CONTACT_LINK_SHOWN;
+        if (isStepped && message.byUser === true) {
+            passed.byUser = true;
         }
         return passed;
     }
@@ -256,7 +300,53 @@
         }
     }
 
+    /**
+     * Reads what of a request of the Marketing Cloud page is passed on to the frames below it:
+     * its type and, for a request to open, the one id or route of the form that is expected.
+     *
+     * @param {{type?: unknown, asset?: unknown, route?: unknown}|null|undefined} message what was sent
+     * @returns {object|null|undefined} what the frames get; null for a request to open that names nothing of the form; nothing when the message is no such request
+     */
+    function downward(message) {
+        const type = message?.type;
+        if (type === DEEP_LINK_CLOSE) {
+            return { type };
+        }
+        if (type === DEEP_LINK_OPEN) {
+            const isId = typeof message.asset === 'string' && ASSET_ID.test(message.asset);
+            return isId ? { type, asset: message.asset } : null;
+        }
+        if (type !== CONTACT_LINK_OPEN) {
+            return;
+        }
+        const isRoute = typeof message.route === 'string' && CONTACT_ROUTE.test(message.route);
+        return isRoute ? { type, route: message.route } : null;
+    }
+
+    /**
+     * Passes a request of the Marketing Cloud page on to the frames of its tab. Only the script
+     * of the app that the request is for listens for it. It never throws.
+     *
+     * @param {number} tabId the tab of that page
+     * @param {object} passed what the frames get
+     */
+    async function passDown(tabId, passed) {
+        try {
+            await chrome.tabs.sendMessage(tabId, passed);
+        } catch {
+            // no frame listens: nothing is closed or opened
+        }
+    }
+
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        const down = downward(message);
+        if (down !== undefined) {
+            // taken from the Marketing Cloud page only; nobody waits for an answer
+            if (down !== null && sender.id === chrome.runtime.id && isShellPage(sender)) {
+                passDown(sender.tab.id, down);
+            }
+            return false;
+        }
         // each app's messages are taken from that app's frame only
         const isItsFrame = isFromItsFrame(message?.type, sender);
         if (isItsFrame !== undefined) {

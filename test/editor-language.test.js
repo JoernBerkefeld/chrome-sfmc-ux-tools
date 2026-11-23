@@ -1082,6 +1082,28 @@ test('format on save: the save waits for the formatting, and happens exactly onc
     assert.equal(saves.at(-1), '%%[ set @d=4 ]%%');
 });
 
+test('format on save leaves an editor that was taken off the page alone, and formats it again once it is back', async () => {
+    const context = page();
+    const { editor, saveButton, saves } = inFrame(context);
+    runExtension(context.window);
+    context.window.document.documentElement.setAttribute(ON_SAVE, 'on');
+    const wrapper = editor.getWrapperElement();
+    const holder = wrapper.parentElement;
+
+    // off the page: the save is not held back for it, and its content stays as it is
+    wrapper.remove();
+    saveButton.click();
+    assert.deepEqual(saves, ['%%[ set @a=1 ]%%']);
+    await formatPause();
+    assert.equal(editor.getValue(), '%%[ set @a=1 ]%%');
+
+    // back on the page: it is still one of the editors to format
+    holder.append(wrapper);
+    saveButton.click();
+    await formatPause();
+    assert.deepEqual(saves.slice(1), ['%%[\n    set @a = 1\n]%%']);
+});
+
 test('the format-on-save setting reaches the page, off by default', async () => {
     const script = read('../src/editor-format-setting.js');
     const run = (stored) => {

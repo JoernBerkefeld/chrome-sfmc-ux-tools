@@ -381,6 +381,7 @@ The folder names of contents, the texts of a push content, the list for personal
         - You can mark and copy the text. You cannot change it there; use **Edit** for that.
         - It is as tall as the text, up to a limit; a longer text scrolls.
         - If the editor cannot be loaded, the text is shown as plain text, as before.
+        - It has no **{ }** button and is never tidied: nothing changes a message you only look at.
 
     ![The details of a made-up push message: its app by name with a link to its settings, the title, subtitle and message of its content, and its two custom keys with their values](images/push-details.png)
 
@@ -390,6 +391,11 @@ The folder names of contents, the texts of a push content, the list for personal
         - The **Push** list shows a warning sign in the **App** column of such a message. Point at it to read the keys.
         - Nothing is marked when the list of apps cannot be read or does not have the app.
     - **Open this app's settings in MobilePush:** a link next to the app of a push message opens the screen where the custom keys of that app are set up, in a new tab.
+    - **Open in Content Builder:** a link next to the content of a push message opens that push message in Content Builder, in a new tab. The details and the form stay open.
+        - The form for changing a push message has the same link, below the **Content** field. Choose another content there and the link follows.
+        - The link is one of the extension's [links to an asset](#links-to-a-content-builder-asset), so it also works for a colleague who has the extension.
+        - There is no link when the content is not in the list of Content Builder, or when the panel cannot find out which business unit you are in.
+        - SMS and OTT messages have no such link.
     - **Open this code in MobileConnect:** a link next to the code of an SMS message opens that code in a new tab. It is shown once the list of codes is read and has the code.
 - **Create a message:** every list has a **New … message** button. It opens a form with the fields of that channel:
     - **SMS:** name, key, description, status, the text of the message, the code and keyword it is sent with, the country code of a short code, and whether the recipient is added or updated as a subscriber.
@@ -403,7 +409,12 @@ The folder names of contents, the texts of a push content, the list for personal
     - **Colours** for AMPscript and personalisation strings, in the light or dark theme chosen in the options.
     - **Suggestions** while you type and on **Ctrl+Space**, **explanations** when you point at a function, **help with a function's inputs**, and **underlined mistakes**.
     - **Keys:** **Tab** moves on to the next field. **Esc** closes an open list of suggestions and leaves the form open. **Ctrl+S** does nothing here; the message is saved with the button of the form.
-    - There is no formatting (**Shift+Alt+F**) in this editor.
+    - **Tidy the message with one click:** the **{ }** button in the corner of the editor, or **Shift+Alt+F**, tidies the AMPscript in the message: indentation, line breaks and spacing. One **Ctrl+Z** takes it back.
+        - Plain text lines stay exactly as you typed them.
+        - If the message cannot be tidied, a small box in the editor says why, and the message stays as it is.
+    - **Format on save** (the option of that name, off by default): a click on **Save** or **Create** tidies the message first and then saves it.
+        - The save is never lost: if the message cannot be tidied, it is saved as it is.
+        - If you leave the form while it is still tidying, nothing is saved.
     - If the editor cannot be loaded, the plain text field stays and works as before.
     - The forms for push and OTT have no such field and are unchanged.
 - **Helpers below the text of an SMS:**
@@ -513,10 +524,11 @@ MobileConnect has no way to delete a message once it exists, and MobilePush only
 
 - **Where the buttons are:**
     - **MobileConnect, page of a message:** a **Delete** button in the header, next to the name.
-    - **MobileConnect and MobilePush, list of messages:** a checkbox in front of every row, and a button **Delete selected (n)** above the list. The button is grey while nothing is ticked.
+    - **MobileConnect and MobilePush, list of messages:** a checkbox in front of the name of every row, and a button **Delete selected (n)** above the list. The button is grey while nothing is ticked.
     - All of them carry the extension's small icon, to show who added them.
 - **Ticking rows:**
     - A click on the checkbox ticks the row and does not open the message.
+    - A click right next to the checkbox does nothing. A click on the name opens the message, as before.
     - What is ticked is kept when you search, sort or page the list, as long as the message is still shown. A message that is no longer in the list is no longer ticked.
 - **Nothing happens before you confirm:**
     - A dialog reads every chosen message again from Marketing Cloud. It does not rely on what the list shows.
@@ -551,6 +563,14 @@ The address of Content Builder is always the same, whatever you open in it. So y
     - Open an asset in Content Builder. The address in the browser now ends with the number of your business unit and the number of the asset, such as `#app/Content%20Builder/ux-tools/500001234/asset/12345`.
     - Go back to the list, and the numbers are gone again.
     - The page is not loaded again for this. Only the address changes.
+- **The browser's Back and Forward buttons:**
+    - They step through what you opened in Content Builder: from an asset back to the list, and forward to the asset again.
+    - Before, Back left Content Builder at once and went to the page you were on before it.
+    - Back from an asset to the list closes the asset, as its own close button does.
+    - Back or Forward to an asset opens it by searching for it, as a link does. Content Builder is not loaded again for this.
+    - You can go back and forward as often as you like.
+    - Only what you open yourself, with a click or a key, gets a step. What Content Builder shows first, and an asset opened by a link, do not add one.
+    - Email Studio is not part of this yet.
 - **Sending a link:**
     - Copy the address from the browser and send it.
     - Your coworker needs this extension too.
@@ -585,6 +605,7 @@ The address of Content Builder is always the same, whatever you open in it. So y
     - Content Builder inside Email Studio's **Content** tab gets no link.
 - **Nothing is changed in Marketing Cloud:**
     - To follow a link, the extension reads the asset's name once, searches for it and clicks its row.
+    - For the browser's Back and Forward buttons, it clicks the close button of the open asset, or searches for the asset and clicks its row.
     - To know the business unit, it reads which one you are in, and the list of business units of your account. When a link is opened, it also looks at the business unit shown at the top of the Marketing Cloud page, and takes whichever is known first.
     - If the business unit is not known after about 10 seconds, the link is not followed and the dialog says so.
     - It saves and deletes nothing in Marketing Cloud. Switching the business unit is what Marketing Cloud's own menu does too.
@@ -655,6 +676,11 @@ In Contact Builder, the address in the browser stays the same whatever you open.
     - The number after `ux-tools=` is the number of your business unit (its MID).
     - Go back to the start of Contact Builder, and the address is Contact Builder's plain address again.
     - The page is not loaded again for this. Only the address changes.
+- **The browser's Back and Forward buttons:**
+    - They step through the places you opened in Contact Builder, one by one, back and forward as often as you like.
+    - Before, Back left Contact Builder at once and went to the page you were on before it.
+    - Only a place you open yourself, with a click or a key, gets a step. The place Contact Builder shows first, and a place it moves on to by itself, do not add one.
+    - Email Studio is not part of this yet.
 - **Sending a link:**
     - Copy the address from the browser and send it.
     - The link opens Contact Builder at the same place, with everything Contact Builder normally shows around it.
@@ -683,7 +709,8 @@ In Contact Builder, the address in the browser stays the same whatever you open.
 - **Nothing is changed in Marketing Cloud:**
     - The extension only reads which place Contact Builder shows and writes it into the address in your browser.
     - It asks Marketing Cloud for nothing here, apart from which business unit you are in.
-    - It opens nothing itself. Marketing Cloud opens the place that the address names.
+    - For a link it opens nothing itself. Marketing Cloud opens the place that the address names.
+    - For the browser's Back and Forward buttons, it tells Contact Builder which place to show.
 - **Always on:** there is no option for it.
 - **Tried on a real account:**
     - Marketing Cloud's own kind of link opens a data extension in Contact Builder after a full reload, with and without the number of the business unit in it.

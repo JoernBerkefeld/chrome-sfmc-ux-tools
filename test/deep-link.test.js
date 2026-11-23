@@ -182,6 +182,7 @@ const BACKGROUND = { id: EXTENSION };
  * @param {string} [has.search] the query the page is loaded with, from the ?
  * @param {string} [has.remembered] what the page's local storage holds as the business unit that was read last
  * @param {string} [has.pass] the pass that the tab's session storage holds when the script starts
+ * @param {boolean} [has.hasNavigation] true for a browser that tells a step through its history before the address changes
  * @returns {object} the page, a way to send the script a message as the background script does, what it asked, kept and showed, and the script's functions
  */
 function shell(hash = '', has = {}) {
@@ -236,10 +237,45 @@ function shell(hash = '', has = {}) {
     const listeners = [];
     const store = account.memory === undefined ? {} : { [MEMORY_KEY]: account.memory };
     const sets = [];
+    // what the script listens for on the page, so that a test can click or type as a person
+    // does: the page of a test cannot make up an event that the browser trusts
+    const heard = [];
+    const listen = window.addEventListener.bind(window);
+    window.addEventListener = (type, act, options) => {
+        heard.push({ type, act });
+        listen(type, act, options);
+    };
+    // what the script wants to be told about the browser's navigation, if the browser tells
+    const navigations = [];
+    if (account.hasNavigation) {
+        window.navigation = {
+            addEventListener: (type, act) => {
+                assert.equal(type, 'navigate');
+                navigations.push(act);
+            },
+        };
+    }
+    // each address the script writes, and whether it added an entry to the history for it
+    const writes = [];
+    for (const [name, how] of [
+        ['pushState', 'push'],
+        ['replaceState', 'replace'],
+    ]) {
+        const act = window.history[name].bind(window.history);
+        window.history[name] = (state, title, to) => {
+            writes.push(`${how} ${to}`);
+            act(state, title, to);
+        };
+    }
+    // what the script asked of the frames below the page
+    const asked = [];
     window.chrome = {
         runtime: {
             id: EXTENSION,
             getURL: (path) => `chrome-extension://id/${path}`,
+            sendMessage: async (message) => {
+                asked.push(structuredClone(message));
+            },
             onMessage: {
                 addListener: (item) => {
                     listeners.push(item);
@@ -311,6 +347,46 @@ function shell(hash = '', has = {}) {
         store,
         sets,
         went,
+        writes,
+        asked,
+        // the addresses that got an entry of their own in the history
+        pushes: () =>
+            writes.filter((item) => item.startsWith('push ')).map((item) => item.slice(5)),
+        /**
+         * Clicks or types on the page, as a person does.
+         *
+         * @param {string} type pointerdown or keydown
+         */
+        input: (type) => {
+            for (const item of heard) {
+                if (item.type === type) {
+                    item.act({ type, isTrusted: true });
+                }
+            }
+        },
+        /**
+         * Tells the script of a navigation, as the browser does before the address changes.
+         *
+         * @param {string} navigationType how the browser names it
+         * @param {unknown} [isHashChange] what the browser says about whether only the part of the address from the # changes
+         */
+        navigate: (navigationType, isHashChange = false) => {
+            for (const act of navigations) {
+                act({ navigationType, hashChange: isHashChange });
+            }
+        },
+        /**
+         * Steps through the history to an entry with another route, as Back and Forward do.
+         *
+         * @param {string} to the route of that entry
+         */
+        step: async (to) => {
+            for (const act of navigations) {
+                act({ navigationType: 'traverse', hashChange: true });
+            }
+            window.location.hash = to;
+            await settle();
+        },
         // how often the script loaded the page again
         reloads: () => reloads,
         // the business unit that the page's local storage holds, and the pass of the tab
@@ -396,7 +472,7 @@ function shell(hash = '', has = {}) {
  * @param {object} [has] what the document and the account hold
  * @param {string} [has.html] content of the document
  * @param {string|null} [has.wanted] the asset the page around the frame was asked for
- * @param {Object.<string, object>} [has.assets] what the API answers by the id of an asset: {status, body}
+ * @param {Object.<string, object>} [has.assets] what the API answers by the id of an asset: {status, body}, and with until a promise that the answer waits for
  * @param {string} [has.depth] top for no page around it, nested for a frame inside Content Builder's
  * @returns {object} the document, what was sent, asked, searched and clicked, and a way to let time pass
  */
@@ -424,19 +500,35 @@ function frame({ html = '', wanted = null, assets = {}, depth = 'frame' } = {}) 
         timers.delete(id);
     };
     const sent = [];
+    const listeners = [];
     view.chrome = {
         runtime: {
+            id: EXTENSION,
             sendMessage: async (message) => {
                 sent.push({ ...message });
                 return message.type === WANTED ? { asset: wanted } : {};
             },
+            onMessage: {
+                addListener: (item) => {
+                    listeners.push(item);
+                },
+            },
         },
+    };
+    // what the script listens for in the frame, so that a test can click or type as a person
+    // does: the page of a test cannot make up an event that the browser trusts
+    const heard = [];
+    const listen = view.addEventListener.bind(view);
+    view.addEventListener = (type, act, options) => {
+        heard.push({ type, act });
+        listen(type, act, options);
     };
     const calls = [];
     view.fetch = async (address, options) => {
         calls.push(`${options.method} ${address}`);
         const id = /assets\/([^?]+)/.exec(address)[1];
-        const { status = 200, body, isDown } = assets[id] ?? { status: 404 };
+        const { status = 200, body, isDown, until } = assets[id] ?? { status: 404 };
+        await until;
         if (isDown) {
             throw new TypeError('Failed to fetch');
         }
@@ -490,6 +582,29 @@ function frame({ html = '', wanted = null, assets = {}, depth = 'frame' } = {}) 
             await tick();
         },
         shown: () => sent.filter((message) => message.type === SHOWN).map((item) => item.asset),
+        // what was told, whole: with what says that the user caused it, when it was said
+        told: () => sent.filter((message) => message.type === SHOWN),
+        /**
+         * Clicks or types in the frame, as a person does.
+         *
+         * @param {string} type pointerdown or keydown
+         */
+        input: (type) => {
+            for (const item of heard) {
+                if (item.type === type) {
+                    item.act({ type, isTrusted: true });
+                }
+            }
+        },
+        /**
+         * Sends the script a message, as the background script does unless said otherwise.
+         *
+         * @param {object} message the message
+         * @param {object} [sender] who sent it
+         * @returns {boolean[]} what each of the script's listeners returned
+         */
+        receive: (message, sender = BACKGROUND) =>
+            listeners.map((item) => item(message, sender, () => {})),
         asked: () => sent.filter((message) => message.type === WANTED).length,
         notice: () => document.querySelector(NOTICE),
     };
@@ -3478,4 +3593,1202 @@ test('the background script passes the route from Contact Builder’s frame only
         throw new Error('Could not establish connection');
     });
     assert.equal(await deaf.send({ type: CONTACT_SHOWN, route: OPENED }, FRAME), undefined);
+});
+
+// what the Marketing Cloud page asks of Content Builder's frame, and its own address up to the #
+const CLOSE = 'sfmc-ux-tools:deep-link:close';
+// and what it asks of the frames for a step through the history to an entry with a link
+const OPEN = 'sfmc-ux-tools:deep-link:open';
+const CONTACT_OPEN = 'sfmc-ux-tools:deep-link:contact-open';
+const PAGE = '/cloud/?x=1';
+// the page of the open asset 123 with its own close button
+const CLOSABLE =
+    '<div class="contentproperties-detailsview"><div class="contentproperties-close"><button data-action="close">x</button></div><div data-content-field="id"><input class="contentinput-copyvalue" value="123"></div></div>';
+
+test('in Content Builder an address gets an entry of its own in the history only when the user opened something else', async () => {
+    const at = shell(APP);
+    const state = { kept: true };
+    at.window.history.replaceState(state, '');
+    at.writes.length = 0;
+    // the first address of the visit is written over the entry that is there, also after a click
+    at.input('pointerdown');
+    await at.send({ type: SHOWN, asset: null });
+    assert.deepEqual(at.writes, [`replace ${PAGE}${APP}`]);
+    // the user opened an asset in the frame: an entry of its own, with the exact address
+    await at.send({ type: SHOWN, asset: '123', byUser: true });
+    assert.deepEqual(at.pushes(), [`${PAGE}${MARKER}123`]);
+    assert.equal(at.hash(), `${MARKER}123`);
+    assert.deepEqual(at.window.history.state, state);
+    // nobody clicked: Content Builder went on by itself, which adds none
+    await at.send({ type: SHOWN, asset: '456' });
+    assert.equal(at.hash(), `${MARKER}456`);
+    assert.equal(at.pushes().length, 1);
+    // only the one value says that the user did it
+    for (const byUser of [false, 'true', 1, {}, null]) {
+        await at.send({ type: SHOWN, asset: '457', byUser });
+        await at.send({ type: SHOWN, asset: '456', byUser });
+    }
+    assert.equal(at.pushes().length, 1);
+    // a click or a key on the page itself counts the same, for the one address that follows
+    for (const [type, asset] of [
+        ['pointerdown', '789'],
+        ['keydown', '790'],
+    ]) {
+        at.input(type);
+        await at.send({ type: SHOWN, asset });
+        assert.equal(at.pushes().at(-1), `${PAGE}${MARKER}${asset}`);
+        await at.send({ type: SHOWN, asset: '456' });
+    }
+    assert.equal(at.pushes().length, 3);
+    // what a script of the page makes up is nobody's click or key
+    for (const type of ['pointerdown', 'keydown']) {
+        at.window.dispatchEvent(new at.window.Event(type, { bubbles: true }));
+    }
+    await at.send({ type: SHOWN, asset: '791' });
+    assert.equal(at.pushes().length, 3);
+    // the same asset again names nothing else, and uses the click up
+    at.input('pointerdown');
+    await at.send({ type: SHOWN, asset: '791' });
+    await at.send({ type: SHOWN, asset: '792' });
+    await at.send({ type: SHOWN, asset: '792', byUser: true });
+    assert.equal(at.pushes().length, 3);
+    // closing the asset is something else than the asset: the plain address gets an entry
+    await at.send({ type: SHOWN, asset: null, byUser: true });
+    assert.equal(at.pushes().at(-1), `${PAGE}${APP}`);
+    await at.send({ type: SHOWN, asset: null, byUser: true });
+    assert.equal(at.pushes().length, 4);
+    // a click whose telling came to nothing is used up too
+    at.input('pointerdown');
+    const first = at.send({ type: SHOWN, asset: '123' });
+    const second = at.send({ type: SHOWN, asset: null });
+    await Promise.all([first, second]);
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.equal(at.pushes().length, 4);
+
+    // another app in between: the click that led there is forgotten, and what Content Builder
+    // shows first when the page comes back adds no entry
+    at.input('pointerdown');
+    await at.route('#app/Email/');
+    await at.route(APP);
+    await at.send({ type: SHOWN, asset: '5', byUser: true });
+    assert.equal(at.pushes().length, 4);
+    await at.send({ type: SHOWN, asset: '6', byUser: true });
+    assert.equal(at.pushes().length, 5);
+    at.input('pointerdown');
+    await at.route('#home');
+    await at.route(APP);
+    await at.send({ type: SHOWN, asset: '7' });
+    await at.send({ type: SHOWN, asset: '8' });
+    assert.equal(at.pushes().length, 5);
+
+    // the address that the page reset is written again over the entry that is there
+    const reset = shell(APP);
+    await reset.send({ type: SHOWN, asset: null });
+    await reset.send({ type: SHOWN, asset: '123', byUser: true });
+    reset.input('pointerdown');
+    await reset.route(APP);
+    assert.equal(reset.hash(), `${MARKER}123`);
+    assert.equal(reset.pushes().length, 1);
+
+    // Email Studio adds entries of its own: its address is always written over
+    const email = shell(`${EMAIL}%23Subscribers`);
+    await email.send({ type: EMAIL_SHOWN, target: VIEW });
+    email.input('pointerdown');
+    await email.send({ type: EMAIL_SHOWN, target: FOLDER, byUser: true });
+    assert.equal(email.hash(), emailLink(MID, FOLDER));
+    assert.deepEqual(email.pushes(), []);
+});
+
+test('in Contact Builder a route that the user opened gets an entry of its own, and one that Contact Builder went on to does not', async () => {
+    const at = shell(CONTACT);
+    at.writes.length = 0;
+    // the route Contact Builder starts with, after the click in Marketing Cloud's menu
+    at.input('pointerdown');
+    await at.send({ type: CONTACT_SHOWN, route: START });
+    assert.deepEqual(at.writes, [`replace ${PAGE}${contactLink(MID, START)}`]);
+    // a click on one of Contact Builder's tabs, which are links of the Marketing Cloud page
+    at.input('pointerdown');
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.deepEqual(at.pushes(), [`${PAGE}${contactLink(MID, LISTED)}`]);
+    // Contact Builder went on by itself
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    assert.equal(at.hash(), contactLink(MID, OPENED));
+    assert.equal(at.pushes().length, 1);
+    // a click inside Contact Builder's frame
+    await at.send({ type: CONTACT_SHOWN, route: LISTED, byUser: true });
+    assert.deepEqual(at.pushes().slice(1), [`${PAGE}${contactLink(MID, LISTED)}`]);
+    assert.deepEqual(at.asked, []);
+
+    // “Stay here” writes over the entry that is there, and its click is used up by that
+    const stayed = shell(contactLink(OTHER, OPENED), { remembered: MID });
+    await stayed.send({ type: CONTACT_SHOWN, route: START });
+    stayed.input('pointerdown');
+    stayed.click('Stay here');
+    await settle();
+    assert.equal(stayed.hash(), contactLink(MID, START));
+    await stayed.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(stayed.hash(), contactLink(MID, LISTED));
+    assert.deepEqual(stayed.pushes(), []);
+    await stayed.send({ type: CONTACT_SHOWN, route: OPENED, byUser: true });
+    assert.equal(stayed.pushes().length, 1);
+});
+
+test('a step through the history is never written over, and closes the asset for Content Builder’s plain address', async () => {
+    const at = shell(APP, { hasNavigation: true });
+    await at.send({ type: SHOWN, asset: null });
+    await at.send({ type: SHOWN, asset: '123', byUser: true });
+    assert.equal(at.pushes().length, 1);
+    at.writes.length = 0;
+    // back to the plain address while the asset is shown: the frame is asked to close it,
+    // once, and the asset's link is not written over the entry
+    at.input('keydown');
+    await at.step(APP);
+    assert.deepEqual(at.asked, [{ type: CLOSE }]);
+    assert.equal(at.hash(), APP);
+    assert.deepEqual(at.writes, []);
+    // the frame closed it and tells so: the same address, and no entry, whoever clicked before
+    await at.send({ type: SHOWN, asset: null, byUser: true });
+    assert.deepEqual(at.writes, [`replace ${PAGE}${APP}`]);
+    // forward to the asset: the frame is asked to open it, and the entry is left as it is
+    await at.step(`${MARKER}123`);
+    assert.deepEqual(at.asked.slice(1), [{ type: OPEN, asset: '123' }]);
+    await at.send({ type: SHOWN, asset: null });
+    assert.equal(at.hash(), `${MARKER}123`);
+    assert.deepEqual(at.writes, [`replace ${PAGE}${APP}`]);
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.equal(at.hash(), `${MARKER}123`);
+    assert.deepEqual(at.pushes(), []);
+    // a step to a link of another business unit leads to the dialog
+    await at.step(link(OTHER, '9'));
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(at.buttons(), ['Switch and open', 'Stay here']);
+    at.click('Stay here');
+    assert.equal(at.asked.length, 2);
+    assert.deepEqual(at.pushes(), []);
+
+    // a change of the address that is no step is treated as ever: the address gets the asset back
+    const other = shell(APP, { hasNavigation: true });
+    await other.send({ type: SHOWN, asset: '123' });
+    other.navigate('push');
+    await other.route(APP);
+    assert.equal(other.hash(), `${MARKER}123`);
+    other.navigate('replace');
+    await other.route('#app/Content%20Builder');
+    assert.equal(other.hash(), `${MARKER}123`);
+    assert.deepEqual(other.asked, []);
+    // and a step is one change of the address only
+    await other.step(APP);
+    assert.equal(other.hash(), APP);
+    assert.equal(other.asked.length, 1);
+    await other.send({ type: SHOWN, asset: '123' });
+    await other.route(APP);
+    assert.equal(other.hash(), `${MARKER}123`);
+    assert.equal(other.asked.length, 1);
+
+    // a browser that does not tell its steps: as before
+    const old = shell(APP);
+    await old.send({ type: SHOWN, asset: '123' });
+    await old.route(APP);
+    assert.equal(old.hash(), `${MARKER}123`);
+    assert.deepEqual(old.asked, []);
+
+    // Contact Builder's frame is asked to show the route of the entry: nothing is written
+    const contact = shell(CONTACT, { hasNavigation: true });
+    await contact.send({ type: CONTACT_SHOWN, route: START });
+    contact.input('pointerdown');
+    await contact.send({ type: CONTACT_SHOWN, route: LISTED });
+    assert.equal(contact.pushes().length, 1);
+    contact.writes.length = 0;
+    contact.input('keydown');
+    await contact.step(contactLink(MID, START));
+    assert.equal(contact.hash(), contactLink(MID, START));
+    await contact.send({ type: CONTACT_SHOWN, route: START });
+    assert.equal(contact.hash(), contactLink(MID, START));
+    assert.deepEqual(contact.pushes(), []);
+    assert.equal(contact.dialog(), null);
+    // its plain address is left as it is too
+    contact.writes.length = 0;
+    await contact.step(CONTACT);
+    assert.equal(contact.hash(), CONTACT);
+    assert.deepEqual(contact.writes, []);
+    assert.deepEqual(contact.asked, [{ type: CONTACT_OPEN, route: START }]);
+});
+
+test('a step within Content Builder to its plain address or to a link of this business unit is shown by the script and kept from Marketing Cloud', async () => {
+    /**
+     * Loads the page in Content Builder, whose frame told what it shows, and counts the
+     * changes of the address that Marketing Cloud's own router gets to see.
+     *
+     * @returns {Promise.<object>} the page, with seen() for that count
+     */
+    const start = async () => {
+        const at = shell(APP, { hasNavigation: true });
+        let seen = 0;
+        // added after the script's own listener, as Marketing Cloud's is
+        at.window.addEventListener('hashchange', () => seen++);
+        await at.send({ type: SHOWN, asset: null });
+        at.writes.length = 0;
+        at.seen = () => seen;
+        return at;
+    };
+    const at = await start();
+    const reads = at.currentReads();
+    // to a link of this business unit: the frame is asked to open the asset, at once
+    at.input('keydown');
+    await at.step(`${MARKER}123`);
+    assert.deepEqual(at.asked, [{ type: OPEN, asset: '123' }]);
+    assert.equal(at.seen(), 0);
+    // the link is not decided again: the business unit is not read, nothing waits for the frame
+    assert.equal(at.currentReads(), reads);
+    assert.equal(at.waits(), 0);
+    assert.equal(at.dialog(), null);
+    // “nothing open”, told while the asset is being opened, is not written over the entry
+    await at.send({ type: SHOWN, asset: null });
+    assert.equal(at.hash(), `${MARKER}123`);
+    assert.deepEqual(at.writes, []);
+    // the asset is open: the same address over the same entry, and the key of the step adds none
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.deepEqual(at.writes, [`replace ${PAGE}${MARKER}123`]);
+    // to another asset while one is shown: asked again, whatever is shown
+    await at.step(`${MARKER}456`);
+    assert.deepEqual(at.asked.at(-1), { type: OPEN, asset: '456' });
+    // the frame closes the first one before it opens the other: not written either
+    await at.send({ type: SHOWN, asset: null });
+    assert.equal(at.hash(), `${MARKER}456`);
+    // to the asset that is shown, as far as the page knows: asked all the same
+    await at.send({ type: SHOWN, asset: '456' });
+    await at.step(`${MARKER}123`);
+    await at.step(`${MARKER}456`);
+    assert.deepEqual(at.asked.slice(-2), [
+        { type: OPEN, asset: '123' },
+        { type: OPEN, asset: '456' },
+    ]);
+    // to the plain address: asked to close, and “nothing open” is written from then on
+    await at.step(APP);
+    assert.deepEqual(at.asked.at(-1), { type: CLOSE });
+    await at.send({ type: SHOWN, asset: null });
+    assert.equal(at.hash(), APP);
+    // also when nothing is shown as far as the page knows: the frame knows what is open
+    await at.step(`${MARKER}123`);
+    const count = at.asked.length;
+    await at.step(APP);
+    assert.deepEqual(at.asked.slice(count), [{ type: CLOSE }]);
+    assert.equal(at.seen(), 0);
+    assert.deepEqual(at.pushes(), []);
+    // what the user opens afterwards gets an entry as ever
+    await at.send({ type: SHOWN, asset: '789', byUser: true });
+    assert.deepEqual(at.pushes(), [`${PAGE}${MARKER}789`]);
+    // a link that was waited for is done with by such a step: a frame that asks is given the
+    // asset of the entry
+    await at.route(`${MARKER}5`);
+    assert.equal(at.seen(), 1);
+    await at.step(`${MARKER}123`);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: '123' });
+
+    // a link of another business unit, and one while no business unit was read: left to
+    // Marketing Cloud, and decided as any link
+    const foreign = await start();
+    await foreign.step(link(OTHER, '9'));
+    assert.equal(foreign.seen(), 1);
+    assert.deepEqual(foreign.asked, []);
+    assert.deepEqual(foreign.buttons(), ['Switch and open', 'Stay here']);
+    const unread = await start();
+    unread.window.localStorage.removeItem(LAST_UNIT);
+    await unread.step(`${MARKER}123`);
+    assert.equal(unread.seen(), 1);
+    assert.deepEqual(unread.asked, []);
+    assert.deepEqual(await unread.send({ type: WANTED }), { asset: '123' });
+
+    // a frame that told nothing yet is not there to be asked
+    const silent = shell(APP, { hasNavigation: true });
+    let silentSeen = 0;
+    silent.window.addEventListener('hashchange', () => silentSeen++);
+    await settle();
+    assert.equal(silent.remembered(), MID);
+    await silent.step(`${MARKER}123`);
+    assert.equal(silentSeen, 1);
+    assert.deepEqual(silent.asked, []);
+    assert.deepEqual(await silent.send({ type: WANTED }), { asset: '123' });
+    // nor is it for the first address after another app
+    const back = await start();
+    await back.route('#app/Email/');
+    await back.step(`${MARKER}123`);
+    assert.equal(back.seen(), 2);
+    assert.deepEqual(back.asked, []);
+    assert.deepEqual(await back.send({ type: WANTED }), { asset: '123' });
+
+    // a change of the address that is no step, and a browser that does not tell its steps
+    const pasted = await start();
+    pasted.navigate('push', true);
+    await pasted.route(`${MARKER}123`);
+    assert.equal(pasted.seen(), 1);
+    assert.deepEqual(pasted.asked, []);
+    const old = shell(APP);
+    let oldSeen = 0;
+    old.window.addEventListener('hashchange', () => oldSeen++);
+    await old.send({ type: SHOWN, asset: null });
+    await old.route(`${MARKER}123`);
+    assert.equal(oldSeen, 1);
+    assert.deepEqual(old.asked, []);
+
+    // a frame that cannot be asked breaks nothing
+    const lost = await start();
+    lost.window.chrome.runtime.sendMessage = async () => {
+        throw new Error('Extension context invalidated.');
+    };
+    await lost.step(`${MARKER}123`);
+    await lost.step(APP);
+    assert.equal(lost.seen(), 0);
+    // the script listens before the page's own listeners can keep the step to themselves
+    assert.match(shellScript, /follow\(app, isStepped\);\n {8}\},\n.*\n {8}true,\n {4}\);/);
+});
+
+test('Content Builder’s frame that is loaded anew during a step to an asset is given that asset when it asks', async () => {
+    /**
+     * Loads the page in Content Builder, whose frame told what it shows, and steps to an asset.
+     *
+     * @returns {Promise.<object>} the page
+     */
+    const start = async () => {
+        const at = shell(APP, { hasNavigation: true });
+        await at.send({ type: SHOWN, asset: null });
+        await at.step(`${MARKER}123`);
+        assert.deepEqual(at.asked, [{ type: OPEN, asset: '123' }]);
+        at.writes.length = 0;
+        return at;
+    };
+    // the new frame never got the request: it tells “nothing open” and asks, as often as it is
+    // loaded, and the entry keeps its link
+    const at = await start();
+    const reads = at.currentReads();
+    for (const load of ['first', 'second']) {
+        await at.send({ type: SHOWN, asset: null });
+        assert.deepEqual(await at.send({ type: WANTED }), { asset: '123' }, load);
+        assert.equal(at.hash(), `${MARKER}123`, load);
+    }
+    assert.deepEqual(at.writes, []);
+    // the link is not decided again
+    assert.equal(at.currentReads(), reads);
+    assert.equal(at.dialog(), null);
+    // the asset is open: written over the same entry, and a frame that asks later is given nothing
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.deepEqual(at.writes, [`replace ${PAGE}${MARKER}123`]);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
+    assert.deepEqual(at.pushes(), []);
+
+    // another step takes its place
+    const replaced = await start();
+    await replaced.step(`${MARKER}456`);
+    assert.deepEqual(await replaced.send({ type: WANTED }), { asset: '456' });
+    // a step to the plain address ends it, and so does any address that does not name the link
+    const closed = await start();
+    await closed.step(APP);
+    assert.deepEqual(await closed.send({ type: WANTED }), { asset: null });
+    assert.equal(closed.hash(), APP);
+    const routed = await start();
+    await routed.route(APP);
+    assert.deepEqual(await routed.send({ type: WANTED }), { asset: null });
+    const renamed = await start();
+    renamed.window.history.replaceState(null, '', `${PAGE}${MARKER}456`);
+    assert.deepEqual(await renamed.send({ type: WANTED }), { asset: null });
+    // the user went on by hand, on the page or in the frame
+    const clicked = await start();
+    clicked.input('pointerdown');
+    assert.deepEqual(await clicked.send({ type: WANTED }), { asset: null });
+    const typed = await start();
+    await typed.send({ type: SHOWN, asset: null, byUser: true });
+    assert.deepEqual(await typed.send({ type: WANTED }), { asset: null });
+    // only Content Builder's frame is given it
+    const email = await start();
+    assert.deepEqual(await email.send({ type: EMAIL_WANTED }), { target: null });
+    assert.deepEqual(await email.send({ type: WANTED }), { asset: '123' });
+});
+
+test('a step within Contact Builder to a route of this business unit is shown by its frame and kept from Marketing Cloud', async () => {
+    const at = shell(CONTACT, { hasNavigation: true });
+    let seen = 0;
+    at.window.addEventListener('hashchange', () => seen++);
+    await at.send({ type: CONTACT_SHOWN, route: START });
+    at.input('pointerdown');
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    await at.send({ type: CONTACT_SHOWN, route: OPENED, byUser: true });
+    assert.equal(at.pushes().length, 2);
+    at.writes.length = 0;
+    // back twice and forward again: each entry is shown by the frame, and stays as it is
+    for (const route of [LISTED, START, LISTED, OPENED]) {
+        const reads = at.currentReads();
+        at.input('keydown');
+        await at.step(contactLink(MID, route));
+        assert.deepEqual(at.asked.at(-1), { type: CONTACT_OPEN, route });
+        assert.equal(at.hash(), contactLink(MID, route));
+        assert.deepEqual(at.writes, []);
+        // the link is not decided again
+        assert.equal(at.currentReads(), reads);
+        // the frame tells the route it was given: the same address over the same entry
+        await at.send({ type: CONTACT_SHOWN, route });
+        assert.deepEqual(at.writes, [`replace ${PAGE}${contactLink(MID, route)}`]);
+        at.writes.length = 0;
+    }
+    assert.equal(at.asked.length, 4);
+    assert.equal(seen, 0);
+    assert.equal(at.dialog(), null);
+    assert.deepEqual(at.pushes(), []);
+
+    // Contact Builder's plain address, a route without a business unit and a link of another
+    // one are left to Marketing Cloud
+    for (const [to, isAsked] of [
+        [CONTACT, false],
+        [contactBare(LISTED), false],
+        [contactLink(OTHER, LISTED), true],
+    ]) {
+        const other = shell(CONTACT, { hasNavigation: true });
+        let otherSeen = 0;
+        other.window.addEventListener('hashchange', () => otherSeen++);
+        await other.send({ type: CONTACT_SHOWN, route: START });
+        await other.send({ type: CONTACT_SHOWN, route: OPENED, byUser: true });
+        await other.step(to);
+        assert.equal(otherSeen, 1, to);
+        assert.deepEqual(other.asked, [], to);
+        assert.equal(other.dialog() !== null, isAsked, to);
+    }
+    // and so is a step while the frame told nothing yet, or no business unit was read
+    const silent = shell(CONTACT, { hasNavigation: true });
+    await settle();
+    await silent.step(contactLink(MID, LISTED));
+    assert.deepEqual(silent.asked, []);
+    const unread = shell(CONTACT, { hasNavigation: true });
+    await unread.send({ type: CONTACT_SHOWN, route: START });
+    unread.window.localStorage.removeItem(LAST_UNIT);
+    await unread.step(contactLink(MID, LISTED));
+    assert.deepEqual(unread.asked, []);
+});
+
+test('a step that changes no address is not taken for one when the address changes later', async () => {
+    // cancelled, to another document, or to an entry with the same address: no change of the
+    // route follows, so the next one is the page's own and the address gets the asset back
+    for (const hashChange of [false, undefined, 'true', 1]) {
+        const at = shell(APP, { hasNavigation: true });
+        await at.send({ type: SHOWN, asset: '123' });
+        at.navigate('traverse', hashChange);
+        await at.route(APP);
+        assert.equal(at.hash(), `${MARKER}123`, String(hashChange));
+        assert.deepEqual(at.asked, [], String(hashChange));
+    }
+});
+
+test('in Email Studio a step through the history is treated as any change of the address', async () => {
+    const INNER = 'Subscribers/customobject/1';
+    const at = shell(`${EMAIL}%23Subscribers`, { hasNavigation: true });
+    await at.send({ type: EMAIL_SHOWN, target: VIEW });
+    // the entry holds the address of Email Studio's frame without the field: it gets the view back
+    await at.step(`${EMAIL}%23${INNER}`);
+    assert.equal(at.hash(), emailLink(MID, VIEW, INNER));
+    assert.deepEqual(at.asked, []);
+    assert.deepEqual(at.pushes(), []);
+    // the step was used up by that: Content Builder's address is the page's own, not a step
+    await at.route(APP);
+    await at.send({ type: SHOWN, asset: '123' });
+    await at.route(APP);
+    assert.equal(at.hash(), `${MARKER}123`);
+    assert.deepEqual(at.asked, []);
+});
+
+test('a click on a button of the dialog adds no entry to the history, whatever link the dialog was about', async () => {
+    for (const [mid, button] of [
+        [OTHER, 'Stay here'],
+        [NOWHERE, 'Close'],
+    ]) {
+        const at = shell(APP);
+        await at.send({ type: SHOWN, asset: null });
+        await at.send({ type: SHOWN, asset: '123', byUser: true });
+        assert.equal(at.pushes().length, 1);
+        // a link of another business unit, pasted into the open page
+        await at.route(link(mid, '9'));
+        assert.equal(at.buttons().includes(button), true);
+        at.input('pointerdown');
+        at.click(button);
+        await settle();
+        // what Content Builder goes on to by itself afterwards is nobody's click
+        await at.send({ type: SHOWN, asset: '456' });
+        assert.equal(at.hash(), `${MARKER}456`, button);
+        assert.equal(at.pushes().length, 1, button);
+    }
+});
+
+test('Content Builder’s frame clicks the close button of the open asset only when the button itself is drawn', async () => {
+    // the button, or what holds it, is taken off the page while the asset's page is drawn
+    const hidden = frame({
+        html:
+            SEARCH_BOX +
+            CLOSABLE.replace('<button data-action', '<button style="display:none" data-action'),
+    });
+    const within = frame({
+        html:
+            SEARCH_BOX +
+            CLOSABLE.replace(
+                'class="contentproperties-close"',
+                'class="contentproperties-close" style="display:none"',
+            ),
+    });
+    for (const one of [hidden, within]) {
+        await one.pass();
+        assert.deepEqual(one.shown(), ['123']);
+        one.receive({ type: CLOSE });
+        await one.pass();
+        assert.deepEqual(one.clicked, []);
+    }
+});
+
+test('while a link into Content Builder is followed, “nothing open” does not take it out of the address', async () => {
+    // the frame asks and tells “nothing open” at once; it is answered after the business unit
+    // was read
+    const at = shell(`${MARKER}123`);
+    at.writes.length = 0;
+    await at.send({ type: SHOWN, asset: null });
+    assert.equal(at.hash(), `${MARKER}123`);
+    assert.deepEqual(await at.send({ type: WANTED }), { asset: '123' });
+    await at.send({ type: SHOWN, asset: null });
+    assert.equal(at.hash(), `${MARKER}123`);
+    assert.deepEqual(at.writes, []);
+    // the asset is open: from then on the address follows again
+    await at.send({ type: SHOWN, asset: '123' });
+    assert.deepEqual(at.writes, [`replace ${PAGE}${MARKER}123`]);
+    await at.send({ type: SHOWN, asset: null });
+    assert.equal(at.hash(), APP);
+    assert.deepEqual(at.pushes(), []);
+
+    // a link that is pasted into the open page: the same
+    const pasted = shell(APP);
+    await pasted.send({ type: SHOWN, asset: null });
+    await pasted.route(`${MARKER}456`);
+    await pasted.send({ type: SHOWN, asset: null });
+    assert.equal(pasted.hash(), `${MARKER}456`);
+
+    // a link that is not followed holds nothing: what was told meanwhile is written
+    const refused = shell(link(OTHER, '123'));
+    await refused.send({ type: SHOWN, asset: null });
+    assert.deepEqual(refused.buttons(), ['Switch and open', 'Stay here']);
+    assert.equal(refused.hash(), APP);
+    await refused.send({ type: SHOWN, asset: '5' });
+    assert.equal(refused.hash(), `${MARKER}5`);
+    // refused only when the frame asks, because the business unit was switched meanwhile
+    const late = shell(`${MARKER}123`);
+    await settle();
+    late.account.current = OTHER;
+    await late.send({ type: SHOWN, asset: null });
+    assert.equal(late.hash(), `${MARKER}123`);
+    assert.deepEqual(await late.send({ type: WANTED }), { asset: null });
+    assert.equal(late.hash(), APP);
+    // asked a second time, for a link that was handed out already
+    const again = shell(`${MARKER}123`);
+    await again.send({ type: WANTED });
+    await again.send({ type: SHOWN, asset: null });
+    assert.equal(again.hash(), `${MARKER}123`);
+    assert.deepEqual(await again.send({ type: WANTED }), { asset: null });
+    assert.equal(again.hash(), APP);
+
+    // the user went on by hand, on the page or in the frame: the link no longer holds
+    const clicked = shell(`${MARKER}123`);
+    await clicked.send({ type: SHOWN, asset: null });
+    clicked.input('pointerdown');
+    assert.equal(clicked.hash(), `${MARKER}123`);
+    await clicked.send({ type: SHOWN, asset: null });
+    assert.equal(clicked.hash(), APP);
+    const typed = shell(`${MARKER}123`);
+    await typed.send({ type: SHOWN, asset: null, byUser: true });
+    assert.equal(typed.hash(), APP);
+    // and so does leaving Content Builder
+    const left = shell(`${MARKER}123`);
+    await left.route('#app/Email/');
+    await left.route(APP);
+    await left.send({ type: SHOWN, asset: null });
+    assert.equal(left.hash(), APP);
+    for (const one of [pasted, refused, late, again, clicked, typed, left]) {
+        assert.deepEqual(one.pushes(), []);
+    }
+});
+
+test('Content Builder’s frame says with what it tells whether the user clicked or typed, and only then', async () => {
+    const at = frame({ html: SEARCH_BOX + list('1', '2') });
+    assert.deepEqual(at.told(), [{ type: SHOWN, asset: null }]);
+    for (const type of ['pointerdown', 'keydown']) {
+        at.input(type);
+        at.document.body.insertAdjacentHTML('beforeend', DETAILS);
+        await at.pass();
+        assert.deepEqual(at.told().at(-1), { type: SHOWN, asset: '123', byUser: true }, type);
+        // said once: what changes afterwards is not the user's doing
+        at.document.querySelector('.contentproperties-detailsview').remove();
+        await at.pass();
+        assert.deepEqual(at.told().at(-1), { type: SHOWN, asset: null }, type);
+    }
+    // what a script of the page makes up is nobody's click or key
+    for (const type of ['pointerdown', 'keydown']) {
+        at.document.body.dispatchEvent(new at.document.defaultView.Event(type, { bubbles: true }));
+    }
+    at.document.body.insertAdjacentHTML('beforeend', DETAILS);
+    await at.pass();
+    assert.deepEqual(at.told().at(-1), { type: SHOWN, asset: '123' });
+
+    // the row of a link is clicked by the script, whatever the user clicked or typed before
+    const linked = frame({
+        html: SEARCH_BOX + list('1'),
+        wanted: '123',
+        assets: { 123: { body: { id: 123, name: 'Welcome' } } },
+    });
+    await linked.pass();
+    linked.input('pointerdown');
+    linked.input('keydown');
+    linked.document.querySelector('tbody').innerHTML = row('123');
+    await linked.pass();
+    assert.deepEqual(linked.clicked, ['cb:repeater:list:123']);
+    linked.document.body.insertAdjacentHTML('beforeend', DETAILS);
+    await linked.pass();
+    assert.deepEqual(linked.told(), [
+        { type: SHOWN, asset: null },
+        { type: SHOWN, asset: '123' },
+    ]);
+});
+
+test('Content Builder’s frame closes the open asset when the page asks, by its own close button and nothing else', async () => {
+    const at = frame({ html: SEARCH_BOX + list('1') + CLOSABLE });
+    assert.deepEqual(at.shown(), ['123']);
+    // from anyone but the background script, and for any other message, nothing is clicked
+    at.receive({ type: CLOSE }, { id: 'another-extension' });
+    at.receive({ type: CLOSE }, { id: EXTENSION, tab: { id: 7 } });
+    at.receive({ type: SHOWN, asset: null });
+    at.receive(null);
+    assert.deepEqual(at.clicked, []);
+    at.input('pointerdown');
+    assert.deepEqual(at.receive({ type: CLOSE }), [false]);
+    assert.deepEqual(at.clicked, ['BUTTON']);
+    // once per request, and what follows is not the user's doing
+    await at.pass(ROW_WAIT);
+    assert.deepEqual(at.clicked, ['BUTTON']);
+    at.document.querySelector('.contentproperties-detailsview').remove();
+    await at.pass();
+    assert.deepEqual(at.told().at(-1), { type: SHOWN, asset: null });
+
+    // an asset's page that is not drawn, one without the button, and the button without it
+    const hidden = frame({ html: `${SEARCH_BOX}<div style="display:none">${CLOSABLE}</div>` });
+    const bare = frame({ html: SEARCH_BOX + DETAILS });
+    const lone = frame({
+        html: `${SEARCH_BOX}<div class="contentproperties-close"><button data-action="close">x</button></div>`,
+    });
+    // a button of the asset's page that does something else
+    const wrong = frame({
+        html: SEARCH_BOX + CLOSABLE.replace('data-action="close"', 'data-action="save"'),
+    });
+    // a document that was not seen to hold the list, Content Builder by itself, a frame in it
+    const other = frame({ html: CLOSABLE });
+    const alone = frame({ html: SEARCH_BOX + CLOSABLE, depth: 'top' });
+    const nested = frame({ html: SEARCH_BOX + CLOSABLE, depth: 'nested' });
+    for (const one of [hidden, bare, lone, wrong, other, alone, nested]) {
+        await one.pass();
+        one.receive({ type: CLOSE });
+        await one.pass();
+        assert.deepEqual(one.clicked, []);
+    }
+    // the two things the script ever clicks go through one place
+    assert.equal(frameScript.match(/\bpress\(/g).length, 3);
+});
+
+test('Content Builder’s frame opens the asset that the page asks for as it follows a link, after closing another one', async () => {
+    const assets = {
+        123: { body: { id: 123, name: 'Welcome' } },
+        456: { body: { id: 456, name: 'Goodbye' } },
+    };
+    const at = frame({ html: SEARCH_BOX + list('1'), assets });
+    // from anyone but the background script, and for what is no id, nothing is read
+    at.receive({ type: OPEN, asset: '123' }, { id: 'another-extension' });
+    at.receive({ type: OPEN, asset: '123' }, { id: EXTENSION, tab: { id: 7 } });
+    for (const asset of [null, undefined, '', '12a', '1234567890123456', 123, '../x', {}]) {
+        at.receive({ type: OPEN, asset });
+    }
+    await at.pass();
+    assert.deepEqual(at.calls, []);
+    // whatever the user clicked before, on the browser's Back for one
+    at.input('pointerdown');
+    assert.deepEqual(at.receive({ type: OPEN, asset: '123' }), [false]);
+    await at.pass();
+    assert.deepEqual(at.calls, ['GET /fuelapi/asset/v1/content/assets/123?$fields=id,name']);
+    assert.equal(at.searched.length, 5);
+    assert.equal(at.searched[0], 'input Welcome');
+    assert.deepEqual(at.clicked, []);
+    at.document.querySelector('tbody').innerHTML = row('12') + row('123');
+    await at.pass();
+    assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+    at.document.body.insertAdjacentHTML('beforeend', CLOSABLE);
+    await at.pass();
+    // told as nobody's click, and the search is emptied as after a link
+    assert.deepEqual(at.told().at(-1), { type: SHOWN, asset: '123' });
+    assert.equal(at.document.querySelector('input[placeholder="Search"]').value, '');
+    assert.equal(at.searched.length, 10);
+
+    // the asset that is open already is left as it is
+    at.receive({ type: OPEN, asset: '123' });
+    await at.pass();
+    assert.equal(at.calls.length, 1);
+    assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+    // another one is open: that one is closed first, by its own button, then the search
+    at.receive({ type: OPEN, asset: '456' });
+    assert.deepEqual(at.clicked.slice(1), ['BUTTON']);
+    at.document.querySelector('.contentproperties-detailsview').remove();
+    at.document.querySelector('tbody').innerHTML = row('123') + row('456');
+    await at.pass();
+    assert.equal(at.calls.length, 2);
+    assert.equal(at.searched[10], 'input Goodbye');
+    assert.deepEqual(at.clicked.slice(2), ['cb:repeater:list:456']);
+    assert.deepEqual(at.told().at(-1), { type: SHOWN, asset: null });
+    assert.equal(at.notice(), null);
+
+    // an asset that cannot be read, or that the search does not list, ends in the notice
+    const unread = frame({ html: SEARCH_BOX + list('1') });
+    unread.receive({ type: OPEN, asset: '123' });
+    await unread.pass();
+    assert.match(unread.notice().textContent, /could not open asset 123/);
+    const unlisted = frame({ html: SEARCH_BOX + list('1'), assets });
+    unlisted.receive({ type: OPEN, asset: '123' });
+    await unlisted.pass();
+    await unlisted.pass(ROW_WAIT);
+    assert.match(unlisted.notice().textContent, /search did not list it/);
+
+    // a document that was not seen to hold the list, Content Builder by itself, a frame in it
+    const other = frame({ html: list('123'), assets });
+    const alone = frame({ html: SEARCH_BOX + list('123'), assets, depth: 'top' });
+    const nested = frame({ html: SEARCH_BOX + list('123'), assets, depth: 'nested' });
+    for (const one of [other, alone, nested]) {
+        await one.pass();
+        one.receive({ type: OPEN, asset: '123' });
+        await one.pass();
+        assert.deepEqual(one.calls, []);
+        assert.deepEqual(one.clicked, []);
+    }
+});
+
+/**
+ * Runs the frame script in Content Builder's list, in an account with the assets 123 and 456.
+ *
+ * @param {object} [first] what else the API's answer for the asset 123 holds
+ * @returns {object} what frame() returns
+ */
+const twoAssets = (first = {}) =>
+    frame({
+        html: SEARCH_BOX + list('1'),
+        assets: {
+            123: { body: { id: 123, name: 'Welcome' }, ...first },
+            456: { body: { id: 456, name: 'Goodbye' } },
+        },
+    });
+
+test('an asset that the page asks Content Builder’s frame to open takes the place of the one that was being opened', async () => {
+    // the row of the first one was waited for: its wait ends with the second request
+    const waited = twoAssets();
+    waited.receive({ type: OPEN, asset: '123' });
+    await waited.pass();
+    waited.receive({ type: OPEN, asset: '456' });
+    await waited.pass(0);
+    assert.equal(waited.searched.at(-5), 'input Goodbye');
+    // the row of the first one comes late: only the second one's is clicked
+    waited.document.querySelector('tbody').innerHTML = row('123') + row('456');
+    await waited.pass();
+    assert.deepEqual(waited.clicked, ['cb:repeater:list:456']);
+    // and when the time the first one had is up, no notice says that it was not listed
+    await waited.pass(ROW_WAIT);
+    assert.equal(waited.notice(), null);
+
+    // the name of the first one was still being read: it is dropped when it comes
+    const { promise, resolve } = Promise.withResolvers();
+    const slow = twoAssets({ until: promise });
+    slow.receive({ type: OPEN, asset: '123' });
+    await slow.pass();
+    slow.receive({ type: OPEN, asset: '456' });
+    await slow.pass();
+    assert.equal(slow.searched.length, 5);
+    resolve();
+    await slow.pass();
+    assert.equal(slow.calls.length, 2);
+    assert.equal(slow.searched.length, 5);
+    assert.equal(slow.document.querySelector('input').value, 'Goodbye');
+    slow.document.querySelector('tbody').innerHTML = row('123') + row('456');
+    await slow.pass();
+    assert.deepEqual(slow.clicked, ['cb:repeater:list:456']);
+    // and so is a name that cannot be read: no notice about an asset nobody waits for
+    const failing = Promise.withResolvers();
+    const failed = twoAssets({ until: failing.promise, status: 404 });
+    failed.receive({ type: OPEN, asset: '123' });
+    failed.receive({ type: OPEN, asset: '456' });
+    failing.resolve();
+    await failed.pass();
+    assert.equal(failed.notice(), null);
+});
+
+test('Content Builder’s frame clicks the row of the asset that the page asks for only once the other asset is closed', async () => {
+    const at = frame({
+        html: SEARCH_BOX + list('1', '456') + CLOSABLE,
+        assets: { 456: { body: { id: 456, name: 'Goodbye' } } },
+    });
+    assert.deepEqual(at.shown(), ['123']);
+    at.receive({ type: OPEN, asset: '456' });
+    assert.deepEqual(at.clicked, ['BUTTON']);
+    // the row is listed already, but the page of the other asset is still drawn
+    await at.pass();
+    assert.equal(at.searched[0], 'input Goodbye');
+    assert.deepEqual(at.clicked, ['BUTTON']);
+    // the list is drawn again meanwhile: still nothing
+    at.document.querySelector('tbody').innerHTML = row('456');
+    await at.pass();
+    assert.deepEqual(at.clicked, ['BUTTON']);
+    // the page of the other asset is gone: the row is clicked, once
+    at.document.querySelector('.contentproperties-detailsview').remove();
+    await at.pass();
+    assert.deepEqual(at.clicked, ['BUTTON', 'cb:repeater:list:456']);
+    at.document.querySelector('tbody').innerHTML = row('456');
+    await at.pass();
+    assert.equal(at.clicked.length, 2);
+    assert.equal(at.notice(), null);
+
+    // the other asset never closes: when the wait is up, the notice names that, not the search,
+    // and the row that was listed all along was never clicked
+    const stuck = frame({
+        html: SEARCH_BOX + list('1', '456') + CLOSABLE,
+        assets: { 456: { body: { id: 456, name: 'Goodbye' } } },
+    });
+    stuck.receive({ type: OPEN, asset: '456' });
+    await stuck.pass();
+    await stuck.pass(ROW_WAIT);
+    assert.equal(
+        stuck.notice().querySelector('span').textContent,
+        'SFMC UX Tools: could not open asset 456 from the link (another asset is still open).',
+    );
+    assert.deepEqual(stuck.clicked, ['BUTTON']);
+
+    // a page of the other asset that is only taken off the page counts as closed
+    const hidden = frame({
+        html: `${SEARCH_BOX}${list('456')}<div id="holder">${CLOSABLE}</div>`,
+        assets: { 456: { body: { id: 456, name: 'Goodbye' } } },
+    });
+    hidden.receive({ type: OPEN, asset: '456' });
+    await hidden.pass();
+    assert.deepEqual(hidden.clicked, ['BUTTON']);
+    hidden.document.querySelector('#holder').style.display = 'none';
+    await hidden.pass();
+    assert.deepEqual(hidden.clicked, ['BUTTON', 'cb:repeater:list:456']);
+});
+
+test('a second request to open the asset that Content Builder’s frame is opening already starts nothing anew', async () => {
+    const { promise, resolve } = Promise.withResolvers();
+    const at = twoAssets({ until: promise });
+    // while the name is read
+    at.receive({ type: OPEN, asset: '123' });
+    await at.pass();
+    at.receive({ type: OPEN, asset: '123' });
+    resolve();
+    await at.pass();
+    assert.equal(at.calls.length, 1);
+    assert.equal(at.searched.length, 5);
+    // while the row is waited for
+    at.receive({ type: OPEN, asset: '123' });
+    await at.pass();
+    assert.equal(at.calls.length, 1);
+    assert.equal(at.searched.length, 5);
+    at.document.querySelector('tbody').innerHTML = row('123');
+    await at.pass();
+    assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+    // after the click on the row, until the asset is open
+    at.receive({ type: OPEN, asset: '123' });
+    at.document.querySelector('tbody').innerHTML = row('123');
+    await at.pass();
+    assert.equal(at.calls.length, 1);
+    assert.equal(at.searched.length, 5);
+    assert.deepEqual(at.clicked, ['cb:repeater:list:123']);
+    // the search is still emptied once the asset is open, as for the first request
+    at.document.body.insertAdjacentHTML('beforeend', CLOSABLE);
+    await at.pass();
+    assert.equal(at.document.querySelector('input').value, '');
+    assert.equal(at.notice(), null);
+
+    // the first request's wait for the row goes on: its time is not started anew
+    const late = twoAssets();
+    late.receive({ type: OPEN, asset: '123' });
+    await late.pass(ROW_WAIT - LOOK_DELAY);
+    late.receive({ type: OPEN, asset: '123' });
+    await late.pass();
+    assert.match(late.notice().textContent, /search did not list it/);
+    assert.equal(late.calls.length, 1);
+
+    // another asset in between is a new request each time
+    const other = twoAssets();
+    other.receive({ type: OPEN, asset: '123' });
+    await other.pass();
+    other.receive({ type: OPEN, asset: '456' });
+    await other.pass();
+    other.receive({ type: OPEN, asset: '123' });
+    await other.pass();
+    assert.equal(other.calls.length, 3);
+    other.document.querySelector('tbody').innerHTML = row('123') + row('456');
+    await other.pass();
+    assert.deepEqual(other.clicked, ['cb:repeater:list:123']);
+
+    // an asset that is open already ends the opening of another one
+    const open = frame({
+        html: SEARCH_BOX + list('1') + CLOSABLE,
+        assets: { 456: { body: { id: 456, name: 'Goodbye' } } },
+    });
+    open.receive({ type: OPEN, asset: '456' });
+    open.receive({ type: OPEN, asset: '123' });
+    await open.pass();
+    open.document.querySelector('.contentproperties-detailsview').remove();
+    open.document.querySelector('tbody').innerHTML = row('456');
+    await open.pass();
+    assert.deepEqual(open.searched, []);
+    assert.deepEqual(open.clicked, ['BUTTON']);
+});
+
+test('an asset whose page is drawn late, during the opening of another one, is closed by Content Builder’s frame, and one that the user opened stays', async () => {
+    // the row of the first one was clicked for an earlier request, and its page is not drawn yet
+    const late = twoAssets();
+    late.receive({ type: OPEN, asset: '123' });
+    await late.pass();
+    late.document.querySelector('tbody').innerHTML = row('123');
+    await late.pass();
+    assert.deepEqual(late.clicked, ['cb:repeater:list:123']);
+    late.receive({ type: OPEN, asset: '456' });
+    await late.pass();
+    assert.equal(late.searched.at(-5), 'input Goodbye');
+    assert.deepEqual(late.clicked, ['cb:repeater:list:123']);
+    // now it is drawn: it is asked to close, by nobody's click
+    late.document.body.insertAdjacentHTML('beforeend', CLOSABLE);
+    await late.pass();
+    assert.deepEqual(late.clicked.slice(1), ['BUTTON']);
+    assert.deepEqual(late.told().at(-1), { type: SHOWN, asset: '123' });
+    // asked once, however many times the page changes while it is still drawn
+    late.document.querySelector('tbody').innerHTML = row('456');
+    await late.pass();
+    assert.deepEqual(late.clicked.slice(1), ['BUTTON']);
+    // its page is gone: the row of the second one is clicked, once
+    late.document.querySelector('.contentproperties-detailsview').remove();
+    await late.pass();
+    assert.deepEqual(late.clicked.slice(2), ['cb:repeater:list:456']);
+    late.document.querySelector('tbody').innerHTML = row('456');
+    await late.pass(ROW_WAIT);
+    assert.equal(late.clicked.length, 3);
+    assert.equal(late.notice(), null);
+
+    // the user opened another asset by hand while the row was waited for: it stays open
+    const byHand = twoAssets();
+    byHand.receive({ type: OPEN, asset: '456' });
+    await byHand.pass();
+    assert.equal(byHand.searched[0], 'input Goodbye');
+    byHand.input('pointerdown');
+    byHand.document.body.insertAdjacentHTML('beforeend', CLOSABLE);
+    await byHand.pass();
+    assert.deepEqual(byHand.told().at(-1), { type: SHOWN, asset: '123', byUser: true });
+    assert.deepEqual(byHand.clicked, []);
+    // and the asset that was asked for is given up: its row is not clicked, and no notice follows
+    byHand.document.querySelector('tbody').innerHTML = row('456');
+    await byHand.pass();
+    byHand.document.querySelector('.contentproperties-detailsview').remove();
+    byHand.document.querySelector('tbody').innerHTML = row('456');
+    await byHand.pass();
+    await byHand.pass(ROW_WAIT);
+    assert.deepEqual(byHand.clicked, []);
+    assert.equal(byHand.notice(), null);
+
+    // what the user clicked before the request, on the browser's Back for one, is no opening by
+    // hand: the asset that is drawn late is closed, and the one that was asked for is opened
+    const before = twoAssets();
+    before.input('pointerdown');
+    before.receive({ type: OPEN, asset: '456' });
+    await before.pass();
+    assert.equal(before.searched[0], 'input Goodbye');
+    before.document.body.insertAdjacentHTML('beforeend', CLOSABLE);
+    await before.pass();
+    assert.deepEqual(before.told().at(-1), { type: SHOWN, asset: '123' });
+    assert.deepEqual(before.clicked, ['BUTTON']);
+    before.document.querySelector('.contentproperties-detailsview').remove();
+    before.document.querySelector('tbody').innerHTML = row('456');
+    await before.pass();
+    assert.deepEqual(before.clicked, ['BUTTON', 'cb:repeater:list:456']);
+    await before.pass(ROW_WAIT);
+    assert.equal(before.notice(), null);
+
+    // the same while the name of the asset was still being read: nothing is searched afterwards
+    const { promise, resolve } = Promise.withResolvers();
+    const slow = frame({
+        html: SEARCH_BOX + list('1'),
+        assets: { 456: { body: { id: 456, name: 'Goodbye' }, until: promise } },
+    });
+    slow.receive({ type: OPEN, asset: '456' });
+    await slow.pass();
+    slow.input('keydown');
+    slow.document.body.insertAdjacentHTML('beforeend', CLOSABLE);
+    await slow.pass();
+    resolve();
+    await slow.pass();
+    assert.deepEqual(slow.searched, []);
+    assert.deepEqual(slow.clicked, []);
+});
+
+test('a request to close ends the opening of an asset in Content Builder’s frame', async () => {
+    const assets = { 123: { body: { id: 123, name: 'Welcome' } } };
+    // the row was waited for: it is not clicked when it comes, and no notice follows
+    const waited = frame({ html: SEARCH_BOX + list('1'), assets });
+    waited.receive({ type: OPEN, asset: '123' });
+    await waited.pass();
+    assert.equal(waited.searched.length, 5);
+    waited.receive({ type: CLOSE });
+    waited.document.querySelector('tbody').innerHTML = row('123');
+    await waited.pass();
+    await waited.pass(ROW_WAIT);
+    assert.deepEqual(waited.clicked, []);
+    assert.equal(waited.notice(), null);
+
+    // the name was still being read: nothing is searched when it comes
+    const { promise, resolve } = Promise.withResolvers();
+    const slow = frame({
+        html: SEARCH_BOX + list('123'),
+        assets: { 123: { ...assets[123], until: promise } },
+    });
+    slow.receive({ type: OPEN, asset: '123' });
+    await slow.pass();
+    slow.receive({ type: CLOSE });
+    resolve();
+    await slow.pass();
+    await slow.pass(ROW_WAIT);
+    assert.deepEqual(slow.searched, []);
+    assert.deepEqual(slow.clicked, []);
+    assert.equal(slow.notice(), null);
+
+    // the same for the asset of a link that the frame asked for itself
+    const linked = frame({ html: SEARCH_BOX + list('1'), wanted: '123', assets });
+    await linked.pass();
+    assert.equal(linked.searched.length, 5);
+    linked.receive({ type: CLOSE });
+    linked.document.querySelector('tbody').innerHTML = row('123');
+    await linked.pass();
+    assert.deepEqual(linked.clicked, []);
+});
+
+test('the background script passes the requests to close and to open on from the Marketing Cloud page only, and what the user caused as one value', async () => {
+    const PAGE_SENDER = { id: EXTENSION, tab: { id: 7 }, frameId: 0, documentId: 'A0', url: SHELL };
+    const { send, passed } = background();
+    // nobody waits for an answer
+    assert.equal(send({ type: CLOSE, more: 1 }, PAGE_SENDER), false);
+    assert.equal(send({ type: CLOSE }, { ...PAGE_SENDER, url: `${SHELL}?x=1${MARKER}123` }), false);
+    // to the frames of the tab, with nothing but the type
+    assert.deepEqual(passed, [
+        { tabId: 7, message: { type: CLOSE }, options: undefined },
+        { tabId: 7, message: { type: CLOSE }, options: undefined },
+    ]);
+    for (const other of [
+        { id: 'another-extension' },
+        { tab: undefined },
+        { tab: {} },
+        // a frame of the page, and a sender without a frame
+        { frameId: 3 },
+        { frameId: undefined },
+        { url: undefined },
+        { url: 'not an address' },
+        // another page under the same path, and other hosts
+        { url: `${ORIGIN}/cloud/context-switch.html` },
+        { url: `${ORIGIN}/` },
+        { url: SHELL.replace('https:', 'http:') },
+        { url: 'https://members.s7.exacttarget.com/cloud/' },
+        { url: 'https://mc.s7.exacttarget.com.example.org/cloud/' },
+        { url: 'https://example.org/cloud/?x=mc.s7.exacttarget.com' },
+        { url: 'https://content-builder.s7.marketingcloudapps.com/' },
+        { url: 'https://mc.s7.marketingcloudapps.com/cloud/' },
+    ]) {
+        assert.equal(send({ type: CLOSE }, { ...PAGE_SENDER, ...other }), false);
+    }
+    assert.equal(passed.length, 2);
+    // a tab in which nothing listens breaks nothing
+    const deaf = background(() => {
+        throw new Error('Could not establish connection');
+    });
+    assert.equal(deaf.send({ type: CLOSE }, PAGE_SENDER), false);
+    assert.equal(deaf.send({ type: OPEN, asset: '123' }, PAGE_SENDER), false);
+    assert.equal(deaf.send({ type: CONTACT_OPEN, route: LISTED }, PAGE_SENDER), false);
+    await settle();
+
+    // the two requests to open are passed on the same way, with one id or one route of the form
+    const down = background();
+    assert.equal(
+        down.send({ type: OPEN, asset: '123', route: LISTED, more: 1 }, PAGE_SENDER),
+        false,
+    );
+    assert.equal(
+        down.send({ type: CONTACT_OPEN, route: OPENED, asset: '1', more: 1 }, PAGE_SENDER),
+        false,
+    );
+    assert.deepEqual(down.passed, [
+        { tabId: 7, message: { type: OPEN, asset: '123' }, options: undefined },
+        { tabId: 7, message: { type: CONTACT_OPEN, route: OPENED }, options: undefined },
+    ]);
+    // whatever is no id or no route of the form is not passed on at all
+    for (const asset of [null, undefined, '', '12a', '1234567890123456', 123, '../x', {}, ['1']]) {
+        assert.equal(down.send({ type: OPEN, asset }, PAGE_SENDER), false, String(asset));
+    }
+    for (const route of [...NO_ROUTES, undefined, null, 7, {}, ['admin']]) {
+        assert.equal(down.send({ type: CONTACT_OPEN, route }, PAGE_SENDER), false, String(route));
+    }
+    // and from anyone but the Marketing Cloud page nothing is
+    for (const other of [
+        { id: 'another-extension' },
+        { tab: undefined },
+        { frameId: 3 },
+        { frameId: undefined },
+        { url: undefined },
+        { url: `${ORIGIN}/cloud/context-switch.html` },
+        { url: 'https://mc.s7.exacttarget.com.example.org/cloud/' },
+        { url: 'https://content-builder.s7.marketingcloudapps.com/' },
+        { url: 'https://mc.s7.marketingcloudapps.com/contactsmeta/admin.html' },
+    ]) {
+        const sender = { ...PAGE_SENDER, ...other };
+        assert.equal(down.send({ type: OPEN, asset: '123' }, sender), false);
+        assert.equal(down.send({ type: CONTACT_OPEN, route: LISTED }, sender), false);
+    }
+    assert.equal(down.passed.length, 2);
+
+    // what the user caused is passed on for the two apps that get entries, as true or not at all
+    const CONTENT = {
+        id: EXTENSION,
+        tab: { id: 7 },
+        frameId: 3,
+        url: 'https://content-builder.s7.marketingcloudapps.com/',
+    };
+    const CONTACTS = {
+        ...CONTENT,
+        url: 'https://mc.s7.marketingcloudapps.com/contactsmeta/admin.html',
+    };
+    const EMAILS = { ...CONTENT, url: 'https://members.s7.exacttarget.com/C12/Default.aspx' };
+    const relay = background();
+    await relay.send({ type: SHOWN, asset: '1', byUser: true }, CONTENT);
+    await relay.send({ type: CONTACT_SHOWN, route: LISTED, byUser: true }, CONTACTS);
+    assert.deepEqual(
+        relay.passed.map((item) => item.message),
+        [
+            { type: SHOWN, asset: '1', byUser: true },
+            { type: CONTACT_SHOWN, route: LISTED, byUser: true },
+        ],
+    );
+    for (const byUser of [false, 'true', 1, {}, [true], null, undefined]) {
+        await relay.send({ type: SHOWN, asset: '1', byUser }, CONTENT);
+        assert.deepEqual(relay.passed.at(-1).message, { type: SHOWN, asset: '1' });
+        await relay.send({ type: CONTACT_SHOWN, route: LISTED, byUser }, CONTACTS);
+        assert.deepEqual(relay.passed.at(-1).message, { type: CONTACT_SHOWN, route: LISTED });
+    }
+    // not for a question, and not for Email Studio
+    await relay.send({ type: WANTED, byUser: true }, CONTENT);
+    assert.deepEqual(relay.passed.at(-1).message, { type: WANTED });
+    await relay.send({ type: EMAIL_SHOWN, target: VIEW, byUser: true }, EMAILS);
+    assert.deepEqual(relay.passed.at(-1).message, { type: EMAIL_SHOWN, target: VIEW });
+    // a frame cannot ask to close or to open
+    const count = relay.passed.length;
+    for (const sender of [CONTENT, CONTACTS, EMAILS]) {
+        assert.equal(relay.send({ type: CLOSE }, sender), false);
+        assert.equal(relay.send({ type: OPEN, asset: '123' }, sender), false);
+        assert.equal(relay.send({ type: CONTACT_OPEN, route: LISTED }, sender), false);
+    }
+    assert.equal(relay.passed.length, count);
 });

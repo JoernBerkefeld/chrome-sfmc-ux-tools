@@ -41,7 +41,8 @@
                 "editor-codemirror.js",
                 "language-data.js",
                 "editor-highlight.js",
-                "editor-language.js"
+                "editor-language.js",
+                "editor-format.js"
             ],
             "matches": ["https://*.exacttarget.com/*"]
         }
@@ -144,7 +145,12 @@
         {
             "matches": ["https://*.exacttarget.com/cloud/*"],
             "include_globs": ["https://mc.*"],
-            "js": ["key-rule.js", "editor-theme.js", "transactional-messages.js"],
+            "js": [
+                "key-rule.js",
+                "editor-theme.js",
+                "editor-format-setting.js",
+                "transactional-messages.js"
+            ],
             "css": ["editor-codemirror.css", "editor-highlight.css", "transactional-messages.css"],
             "run_at": "document_idle"
         },
@@ -184,6 +190,8 @@
         {
             "matches": [
                 "https://*.marketingcloudapps.com/MobileConnectFuel3/*",
+                "https://*.marketingcloudapps.com/Mobile/*",
+                "https://*.marketingcloudapps.com/mobile/*",
                 "https://*.marketingcloudapps.com/mobilepush/*"
             ],
             "js": ["mobile-delete.js"],

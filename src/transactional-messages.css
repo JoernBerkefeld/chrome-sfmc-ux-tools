@@ -227,6 +227,10 @@
 .sfmc-ux-tools-transactional-code {
     margin: 0 0 12px;
 }
+/* the link to the content of a push message, below the field that holds it */
+.sfmc-ux-tools-transactional-content-tools {
+    margin: -8px 0 12px;
+}
 .sfmc-ux-tools-transactional-code .CodeMirror {
     border: 1px solid #c9c9c9;
     border-radius: 4px;

@@ -14,6 +14,8 @@ const EDITOR_FILES = [
     'editor-highlight.js',
     'editor-language.js',
 ];
+// what formats the message in the editor of a form; asked for once a form has its editor
+const FORMAT_FILE = 'editor-format.js';
 const EXTENSION = 'chrome-extension://id/';
 /**
  * Leaves the scripts of the code editor on their way for good, so the field of a message stays
@@ -4158,7 +4160,7 @@ test('the entry and the panel carry the icon of the extension, which names it', 
             ],
         },
         {
-            resources: EDITOR_FILES,
+            resources: [...EDITOR_FILES, FORMAT_FILE],
             matches: ['https://*.exacttarget.com/*'],
         },
     ]);
@@ -4736,8 +4738,13 @@ test('the manifest runs the script on the Marketing Cloud page only, in its top 
         'transactional-messages.css',
     ]);
     // the rule that makes a key from a name comes first, for the form of a new message; the
-    // theme of the code editor is the one chosen in the options
-    assert.deepEqual(entry.js, ['key-rule.js', 'editor-theme.js', 'transactional-messages.js']);
+    // theme of the code editor is the one chosen in the options, and so is "format on save"
+    assert.deepEqual(entry.js, [
+        'key-rule.js',
+        'editor-theme.js',
+        'editor-format-setting.js',
+        'transactional-messages.js',
+    ]);
     // the menu is in the page itself, not in the frames of the apps
     assert.equal(entry.all_frames, undefined);
     // the script uses the page's session through its own requests; it needs no place in the page's world
@@ -4769,6 +4776,7 @@ after(() => {
  *
  * @param {Window} window the page
  * @param {string} url address of the file of the extension
+ * @returns {Promise.<void>} settles when the script ran; never for the formatter
  */
 async function loadEditorFile(window, url) {
     withEditors.add(window);
@@ -4776,8 +4784,27 @@ async function loadEditorFile(window, url) {
     window.Range.prototype.getBoundingClientRect = () => ({ left: 0, right: 0, top: 0, bottom: 0 });
     window.Range.prototype.getClientRects = () => [];
     const file = url.slice(EXTENSION.length);
+    if (url === EXTENSION + FORMAT_FILE) {
+        // the formatter stays on its way: the editor is one without it, as in a page that
+        // could not load it. The tests of the formatting load it, see loadFormattingFile
+        return neverLoaded();
+    }
     assert.ok(url.startsWith(EXTENSION) && EDITOR_FILES.includes(file), url);
     window.eval(read(`../dist/extension/${file}`));
+}
+
+/**
+ * Loads a script of the code editor into a page, and the formatter too.
+ *
+ * @param {Window} window the page
+ * @param {string} url address of the file of the extension
+ */
+async function loadFormattingFile(window, url) {
+    if (url === EXTENSION + FORMAT_FILE) {
+        window.eval(read(`../dist/extension/${FORMAT_FILE}`));
+        return;
+    }
+    await loadEditorFile(window, url);
 }
 
 /**
@@ -4825,9 +4852,10 @@ const pause = () => new Promise((resolve) => setTimeout(resolve, 300));
 
 test('the form of an SMS message gets a code editor for the message, and keeps its field', async () => {
     const at = await withEditor(() => form('sms'));
+    // the formatter last, once the editor is there
     assert.deepEqual(
         at.imported,
-        EDITOR_FILES.map((file) => EXTENSION + file),
+        [...EDITOR_FILES, FORMAT_FILE].map((file) => EXTENSION + file),
     );
     const editor = at.editor();
     assert.ok(editor, 'the editor is there');
@@ -5096,7 +5124,7 @@ test('the manifest lets the page of the panel load the code editor, and styles i
     const loadable = manifest.web_accessible_resources
         .filter((item) => item.matches.includes('https://*.exacttarget.com/*'))
         .flatMap((item) => item.resources);
-    for (const file of EDITOR_FILES) {
+    for (const file of [...EDITOR_FILES, FORMAT_FILE]) {
         assert.ok(loadable.includes(file), `${file} can be loaded`);
         assert.ok(read(`../dist/extension/${file}`).length > 0);
     }
@@ -5112,6 +5140,240 @@ test('the manifest lets the page of the panel load the code editor, and styles i
     assert.match(read('../dist/extension/editor-codemirror.js'), /ampScriptHtmlMixed/);
 });
 
+const FORMAT_BUTTON = '.sfmc-format-button';
+const ON_SAVE = 'data-sfmc-ux-tools-format-on-save';
+const SUBMIT = 'button[type="submit"]';
+// a message as nobody would want to keep it, and what the formatter makes of it
+const MESSY = 'Hi %%=Uppercase( @name )=%%\n%%[ set @a=1 ]%%\nBye';
+const TIDY = 'Hi %%= Uppercase(@name) =%%\n%%[\n    set @a = 1\n]%%\nBye';
+const SHIFT_ALT_F = { key: 'F', keyCode: 70, shiftKey: true, altKey: true };
+// how long a test waits for the formatter, or for a save that was held back for it
+const FORMAT_WAIT = 5000;
+const LOOK_EVERY = 20;
+
+/**
+ * Waits until something has happened, or for as long as the formatter may take.
+ *
+ * @param {() => boolean} isDone tells whether it has happened
+ */
+async function until(isDone) {
+    const end = Date.now() + FORMAT_WAIT;
+    while (!isDone() && Date.now() < end) {
+        await new Promise((resolve) => setTimeout(resolve, LOOK_EVERY));
+    }
+}
+
+/**
+ * Opens the form that changes the SMS definition "welcome" in a page that has the formatter.
+ *
+ * @param {object} [has] what the page has
+ * @param {string} [has.onSave] the user's choice for "format on save", as the page notes it
+ * @param {string} [has.message] the message of the definition
+ * @returns {Promise.<object>} the page with the form, and what clicks its Save button
+ */
+async function formatting({ onSave = 'off', message = DEFINITION.content.message } = {}) {
+    const definition = { ...DEFINITION, content: { message } };
+    const at = await withEditor(
+        () =>
+            editing(definition, (path, method, reads) => {
+                if (method !== 'GET') {
+                    return { status: 200, body: {} };
+                }
+                // the check before the save sees the message as the form was filled from it
+                return {
+                    body: reads === 1 ? definition : { ...definition, content: { message: TIDY } },
+                };
+            }),
+        loadFormattingFile,
+    );
+    // what editor-format-setting.js writes from the user's option
+    at.document.documentElement.setAttribute(ON_SAVE, onSave);
+    at.save = () => at.form().querySelector(SUBMIT).click();
+    return at;
+}
+
+test('the code editor of a form gets the button that formats, and Shift+Alt+F', async () => {
+    const at = await formatting();
+    assert.deepEqual(
+        at.imported,
+        [...EDITOR_FILES, FORMAT_FILE].map((file) => EXTENSION + file),
+    );
+    const editor = at.editor();
+    const wrapper = editor.getWrapperElement();
+    const buttons = at.panel().querySelectorAll(FORMAT_BUTTON);
+    assert.equal(buttons.length, 1);
+    const [button] = buttons;
+    assert.equal(wrapper.contains(button), true);
+    assert.equal(button.textContent, '{ }');
+    // a button of the form that does not send it
+    assert.equal(button.type, 'button');
+    editor.setValue(MESSY);
+    button.click();
+    await until(() => editor.getValue() === TIDY);
+    assert.equal(editor.getValue(), TIDY);
+    // the field of the form holds what the editor holds
+    assert.equal(at.field(MESSAGE).value, TIDY);
+    // one step to undo
+    editor.undo();
+    assert.equal(editor.getValue(), MESSY);
+    const pressed = press(at, SHIFT_ALT_F);
+    assert.equal(pressed.defaultPrevented, true);
+    await until(() => editor.getValue() === TIDY);
+    assert.equal(editor.getValue(), TIDY);
+    assert.equal(at.field(MESSAGE).value, TIDY);
+    // plain text stays as it is
+    editor.setValue('line 1\nline 2');
+    press(at, SHIFT_ALT_F);
+    await pause();
+    assert.equal(editor.getValue(), 'line 1\nline 2');
+    // nothing was sent by any of this
+    assert.deepEqual(at.written, []);
+});
+
+test('the formatter leaves Ctrl+S and Cmd+S of the form as they were: nothing is sent', async () => {
+    const at = await formatting({ onSave: 'on' });
+    const editor = at.editor();
+    editor.setValue(MESSY);
+    for (const held of [{ ctrlKey: true }, { metaKey: true }]) {
+        assert.equal(press(at, { key: 's', keyCode: 83, ...held }).defaultPrevented, true);
+    }
+    assert.equal(typeof editor.getOption('extraKeys')['Ctrl-S'], 'function');
+    assert.equal(typeof editor.getOption('extraKeys')['Cmd-S'], 'function');
+    await pause();
+    await pause();
+    assert.equal(editor.getValue(), MESSY);
+    assert.deepEqual(at.written, []);
+});
+
+test('the message of the details gets no button and is never formatted', async () => {
+    const at = await formatting({ onSave: 'on', message: MESSY });
+    assert.equal(at.panel().querySelectorAll(FORMAT_BUTTON).length, 1);
+    // back to the details, in a page that has the formatter by now
+    await at.press('Cancel');
+    await pause();
+    const editor = at.editor();
+    assert.equal(editor.getOption('readOnly'), true);
+    assert.equal(editor.getWrapperElement().parentNode.matches(CODE_VIEW), true);
+    assert.equal(at.document.querySelector(FORMAT_BUTTON), null);
+    press(at, SHIFT_ALT_F);
+    await pause();
+    await pause();
+    assert.equal(editor.getValue(), MESSY);
+    assert.equal(at.document.querySelector(FORMAT_BUTTON), null);
+    assert.deepEqual(at.written, []);
+});
+
+test('with "format on save" the Save button waits for the formatter, and then saves once', async () => {
+    const at = await formatting({ onSave: 'on' });
+    const editor = at.editor();
+    editor.setValue(MESSY);
+    const before = at.calls.length;
+    at.save();
+    // a second click while the first one waits is no second save
+    at.save();
+    await settle();
+    // held back: not even the check before the save has gone out
+    assert.equal(at.calls.length, before);
+    await until(() => at.written.length > 0);
+    assert.equal(editor.getValue(), TIDY);
+    assert.deepEqual(at.changes(), [{ content: { message: TIDY } }]);
+    await until(() => at.text().startsWith('Saved '));
+    assert.match(at.text(), /^Saved “name of welcome” \(key welcome\)\./);
+    await pause();
+    await pause();
+    assert.deepEqual(at.written, ['POST sms/definitions/welcome']);
+});
+
+test('an editor that left the page and came back is formatted on save like a new one', async () => {
+    const at = await formatting({ onSave: 'on' });
+    const editor = at.editor();
+    const mount = editor.getWrapperElement().closest('[data-sfmc-ux-tools-format]');
+    const before = mount.previousSibling;
+    // away for long enough that the formatter has seen it gone, then back in its place
+    mount.remove();
+    await pause();
+    before.after(mount);
+    await pause();
+    assert.equal(at.editor(), editor);
+    // it was not set up a second time
+    assert.equal(at.panel().querySelectorAll(FORMAT_BUTTON).length, 1);
+    editor.setValue(MESSY);
+    const sent = at.calls.length;
+    at.save();
+    await settle();
+    // held back for the formatter, as for an editor that never left
+    assert.equal(at.calls.length, sent);
+    await until(() => at.written.length > 0);
+    assert.equal(editor.getValue(), TIDY);
+    assert.deepEqual(at.changes(), [{ content: { message: TIDY } }]);
+});
+
+test('without "format on save" the Save button saves the message as it is, at once', async () => {
+    const at = await formatting();
+    at.editor().setValue(MESSY);
+    at.save();
+    await settle();
+    assert.deepEqual(at.changes(), [{ content: { message: MESSY } }]);
+});
+
+test('a message that cannot be formatted is saved all the same, and the editor says why not', async () => {
+    const at = await formatting({ onSave: 'on' });
+    const editor = at.editor();
+    editor.setValue(MESSY);
+    // the formatter fails at its last step
+    editor.posFromIndex = () => {
+        throw new Error('no place for it');
+    };
+    at.save();
+    await until(() => at.written.length > 0);
+    assert.deepEqual(at.changes(), [{ content: { message: MESSY } }]);
+    // said inside the panel, which covers everything else
+    const notice = at.panel().querySelector('.sfmc-notice');
+    assert.equal(notice.textContent, 'Not formatted: no place for it');
+    await pause();
+    await pause();
+    assert.equal(at.written.length, 1);
+});
+
+test('a form that was left while its save waited for the formatter is not saved', async () => {
+    const at = await formatting({ onSave: 'on' });
+    at.editor().setValue(MESSY);
+    at.save();
+    await at.press('Cancel');
+    await pause();
+    await pause();
+    await pause();
+    assert.deepEqual(at.written, []);
+    assert.equal(at.panel().querySelector('form'), null);
+});
+
+test('a message that cannot be changed gets no editor, and so nothing that formats', async () => {
+    const odd = { ...DEFINITION, content: { message: { not: 'text' } } };
+    const at = await withEditor(() => editing(odd, () => ({ body: odd })), loadFormattingFile);
+    at.document.documentElement.setAttribute(ON_SAVE, 'on');
+    await pause();
+    assert.equal(at.field(MESSAGE).disabled, true);
+    assert.equal(at.editor(), undefined);
+    assert.equal(at.panel().querySelector(FORMAT_BUTTON), null);
+    assert.equal(at.imported.includes(EXTENSION + FORMAT_FILE), false);
+    // the Save button is not held back for anything
+    at.type('description', 'new words');
+    at.form().querySelector(SUBMIT).click();
+    await settle();
+    assert.deepEqual(at.changes(), [{ description: 'new words' }]);
+});
+
+test('the formatter marks nothing of Marketing Cloud as its own', () => {
+    const format = read('../src/editor-format.js');
+    const panel = read('../src/transactional-messages.js');
+    // the two scripts agree on how the panel tells about its editors and its Save button
+    for (const name of ['data-sfmc-ux-tools-format', 'data-sfmc-ux-tools-format-save']) {
+        assert.equal(format.includes(`'${name}'`) || format.includes(`[${name}]`), true, name);
+        assert.equal(panel.includes(`'${name}'`), true, name);
+    }
+    assert.doesNotMatch(panel, /data-action/);
+});
+
 // apps as the API lists them: in no order, and with their custom keys when they have any
 const KEYED_APPS = [
     { id: 'app-2', name: 'staff app' },
@@ -5122,6 +5384,9 @@ const INTERNAL_APPS = 'push-internal/v1/application';
 const CUSTOM_KEYS = '.sfmc-ux-tools-transactional-custom-keys';
 const MORE = '.sfmc-ux-tools-transactional-combo-more';
 const CONTENT_TEXT = 'sfmc-ux-tools-transactional-content-text';
+// where the business unit the user is in is read, and a made-up id of one
+const UNIT = 'platform-internal/v1/accounts/@current';
+const MID = 1234567;
 
 /**
  * Waits for what a click or a sent form sets off: up to three requests in a row.
@@ -5144,6 +5409,7 @@ async function settle() {
  * @param {object[]} [has.apps] the apps as the public API lists them
  * @param {object[]} [has.internal] the apps as MobilePush's own list has them
  * @param {string[]} [has.down] the starts of the paths that cannot be read
+ * @param {object} [has.unit] the answer to the question for the business unit the user is in
  * @returns {Promise.<object>} the page, with ways to open the details and a form, to reach and fill the fields, to send the form and to read what was sent
  */
 async function pushing({
@@ -5155,11 +5421,15 @@ async function pushing({
     apps = KEYED_APPS,
     internal = [],
     down = [],
+    unit = { accountId: MID },
 } = {}) {
     let isSent = false;
     const at = page(MENU, (path, method) => {
         if (down.some((start) => path.startsWith(start))) {
             return { status: 500, body: { message: 'No' } };
+        }
+        if (path === UNIT) {
+            return { body: unit };
         }
         if (path === APPS) {
             return { body: apps };
@@ -7405,7 +7675,11 @@ test('the details show the message of an SMS in the code editor of the form, to 
     assert.notEqual(typing, editor);
     assert.equal(at.panel().querySelector('form').contains(typing.getWrapperElement()), true);
     assert.equal(typing.getOption('readOnly'), false);
-    assert.equal(at.imported.length, EDITOR_FILES.length);
+    // nothing of the editor is loaded again; only the form asks for the formatter
+    assert.deepEqual(
+        at.imported,
+        [...EDITOR_FILES, FORMAT_FILE].map((file) => EXTENSION + file),
+    );
     assert.deepEqual(at.written, []);
     // as tall as the text, up to a limit
     const { rule } = stylesheet();
@@ -7455,4 +7729,128 @@ test('without the code editor the details show the message as the text it is, an
     const push = await withEditor(() => pushDetails());
     assert.equal(push.editor(), undefined);
     assert.deepEqual(push.imported, []);
+});
+
+const CONTENT_TOOLS = '.sfmc-ux-tools-transactional-content-tools';
+const CONTENT_FIELD = 'content.customerKey';
+const IN_CONTENT_BUILDER = 'Open in Content Builder';
+// mobile messages as Content Builder lists them, each with its id
+const WITH_IDS = [
+    { id: 4711, customerKey: 'receipt_push', name: 'Receipt', availableViews: ['push'] },
+    { id: 4712, customerKey: 'other_push', name: 'Other', availableViews: ['push'] },
+    { customerKey: 'no_id_push', name: 'No id', availableViews: ['push'] },
+];
+const assetAddress = (asset) =>
+    `https://mc.s7.exacttarget.com/cloud/#app/Content%20Builder/ux-tools/${MID}/asset/${asset}`;
+
+/**
+ * Finds the links to Content Builder that the panel shows.
+ *
+ * @param {{panel: () => Element}} at the page
+ * @returns {HTMLAnchorElement[]} the links on show
+ */
+function contentLinks(at) {
+    return [...at.panel().querySelectorAll('a')].filter(
+        (item) => item.textContent === IN_CONTENT_BUILDER && !item.closest('[hidden]'),
+    );
+}
+
+test('the details and the form of a push message link to its content in Content Builder', async () => {
+    const at = await pushing({ contents: WITH_IDS });
+    await at.details();
+    await settle();
+    let links = contentLinks(at);
+    assert.equal(links.length, 1);
+    let [link] = links;
+    assert.equal(link.href, assetAddress(4711));
+    // in another tab, so that nothing of the panel is lost
+    assert.equal(link.target, '_blank');
+    assert.equal(link.rel, 'noopener');
+    assert.equal(link.matches(LINK), true);
+    // where the details show the content
+    assert.equal(link.closest('dd').previousElementSibling.title, CONTENT_FIELD);
+    await at.press('Edit');
+    await settle();
+    links = contentLinks(at);
+    assert.equal(links.length, 1);
+    [link] = links;
+    assert.equal(link.href, assetAddress(4711));
+    assert.equal(link.target, '_blank');
+    assert.equal(link.rel, 'noopener');
+    assert.equal(link.matches(LINK), true);
+    // below the field of the content
+    const tools = link.closest(CONTENT_TOOLS);
+    assert.equal(at.form().contains(tools), true);
+    assert.equal(at.field(CONTENT_FIELD).closest(FIELD).nextElementSibling, tools);
+    // another content, another link; one without an id, or one that is not in the list, none
+    at.type(CONTENT_FIELD, 'other_push');
+    await settle();
+    assert.deepEqual(
+        contentLinks(at).map((item) => item.href),
+        [assetAddress(4712)],
+    );
+    for (const key of ['no_id_push', 'typed_by_hand', '']) {
+        at.type(CONTENT_FIELD, key);
+        await settle();
+        assert.deepEqual(contentLinks(at), [], key);
+        assert.equal(at.form().querySelector(CONTENT_TOOLS).hidden, true);
+    }
+    at.type(CONTENT_FIELD, 'receipt_push');
+    await settle();
+    assert.deepEqual(
+        contentLinks(at).map((item) => item.href),
+        [assetAddress(4711)],
+    );
+    // the business unit was read once for all of this, and nothing was changed
+    assert.equal(at.looked.filter((path) => path === UNIT).length, 1);
+    assert.deepEqual(at.written, []);
+});
+
+test('without the id of the content or of the business unit there is no link to Content Builder', async () => {
+    const lacking = [
+        // the list does not say the id of the content, or says one that is none
+        { contents: OFFERED[CONTENTS].items },
+        { contents: [{ ...WITH_IDS[0], id: 'abc' }] },
+        { contents: [{ ...WITH_IDS[0], id: '47/11' }] },
+        { contents: [{ ...WITH_IDS[0], id: 0.5 }] },
+        // the content of the message is not in the list
+        { contents: [WITH_IDS[1]] },
+        // the business unit is not told, is told as something else, or cannot be read
+        { contents: WITH_IDS, unit: {} },
+        { contents: WITH_IDS, unit: { accountId: '12a' } },
+        { contents: WITH_IDS, unit: { accountId: { id: 1 } } },
+        { contents: WITH_IDS, down: [UNIT] },
+        { contents: WITH_IDS, down: [CONTENTS] },
+    ];
+    for (const has of lacking) {
+        const at = await pushing(has);
+        await at.details();
+        await settle();
+        assert.deepEqual(contentLinks(at), [], JSON.stringify(has));
+        await at.press('Edit');
+        await settle();
+        assert.deepEqual(contentLinks(at), [], JSON.stringify(has));
+        assert.equal(at.form().querySelector(CONTENT_TOOLS).hidden, true);
+    }
+    // nobody asks for the business unit before the id of a content is known
+    const unasked = await pushing();
+    await unasked.details();
+    await settle();
+    await unasked.press('Edit');
+    await settle();
+    assert.equal(unasked.looked.includes(UNIT), false);
+});
+
+test('an SMS message has no link to Content Builder, and asks for no business unit', async () => {
+    const at = await editing(DEFINITION, (path) => ({
+        body: path === UNIT ? { accountId: MID } : DEFINITION,
+    }));
+    await settle();
+    assert.deepEqual(contentLinks(at), []);
+    assert.equal(at.form().querySelector(CONTENT_TOOLS), null);
+    await at.press('Cancel');
+    await settle();
+    assert.equal(at.panel().querySelector('form'), null);
+    assert.deepEqual(contentLinks(at), []);
+    assert.equal(at.looked.includes(UNIT), false);
 });

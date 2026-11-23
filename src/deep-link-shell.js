@@ -35,6 +35,12 @@
  * read last. Any other step is left to Marketing Cloud, and its link is decided as ever. Email
  * Studio is left out of this: it adds entries of its own.
  *
+ * Seen live: Contact Builder's tabs are links of this page, and the one that is chosen is marked
+ * by a class. A step that is kept from Marketing Cloud's router would leave the tab of the route
+ * before marked. So the script remembers, for each route that Contact Builder's frame tells,
+ * which tab is marked then, and marks that tab itself on such a step. A route it has not seen
+ * leaves the tabs as they are. Nothing of this is kept beyond the visit of the page.
+ *
  * Seen live: Contact Builder goes back in the browser's history when it is given a route to a
  * data extension that the business unit the user is in does not have, and the page with the
  * dialog is gone. So a link into Contact Builder whose business unit is not known to be the one
@@ -138,6 +144,10 @@
     // such a route: letters, digits, and the four signs seen in Contact Builder's routes
     const ROUTE = String.raw`[A-Za-z\d/_.-]{1,${MOST_ROUTE}}`;
     const CONTACT_ROUTE = new RegExp(`^${ROUTE}$`);
+    // Contact Builder's tabs on this page, one of these each, and the class that the chosen one
+    // and elements inside it have
+    const TAB = 'div.top-level-nav-item-wrapper';
+    const SELECTED = 'selected';
     const CONTACT_ANY_ROUTE = new RegExp(`^${CONTACT_APP}(?:/|$)`);
     const CONTACT_PLAIN_ROUTE = new RegExp(`^${CONTACT_APP}/?$`);
     // a link into Contact Builder: the business unit as a field of the frame's address, seen live
@@ -764,6 +774,68 @@
     // to open, until Content Builder tells that asset open; null for none. Seen live: a frame
     // that is loaded anew meanwhile never got that request, and asks for what to open instead
     let steppedTo = null;
+    // which of Contact Builder's tabs was chosen when its frame told a route, by that route, for
+    // this visit of the page
+    const tabs = new Map();
+    // whether the route that Contact Builder's frame tells next is the answer to a step that this
+    // script showed itself, until the user clicks or types on this page: the tab that is chosen
+    // then is the one this script chose, or the one of the route before
+    let isStepAnswer = false;
+
+    /**
+     * Finds the one tab of Contact Builder that is chosen.
+     *
+     * @returns {{all: Element[], chosen: number}|undefined} the tabs and the place of the chosen one among them; nothing unless exactly one is chosen
+     */
+    function readTabs() {
+        const all = [...document.querySelectorAll(TAB)];
+        const chosen = all.filter(
+            (tab) => tab.classList.contains(SELECTED) || tab.querySelector(`.${SELECTED}`),
+        );
+        return chosen.length === 1 ? { all, chosen: all.indexOf(chosen[0]) } : undefined;
+    }
+
+    /**
+     * Remembers which tab is chosen for a route that Contact Builder's frame told. A route that
+     * answers a step this script showed itself is left out: its tab may be the one of the route
+     * before.
+     *
+     * @param {unknown} route what the frame told
+     */
+    function noteTab(route) {
+        if (isStepAnswer || !isRoute(route) || appOf(location.hash) !== CONTACT_BUILDER) {
+            return;
+        }
+        const found = readTabs();
+        if (found) {
+            tabs.set(route, found.chosen);
+        }
+    }
+
+    /**
+     * Chooses the tab that was chosen when Contact Builder's frame told a route: the class moves
+     * from the tab that has it, and from each element inside that has it, to the same places of
+     * the other tab. A route that was never told leaves the tabs as they are.
+     *
+     * @param {string} route the route of the entry that was stepped to
+     */
+    function chooseTab(route) {
+        const found = readTabs();
+        const to = found?.all[tabs.get(route)];
+        const from = found?.all[found.chosen];
+        if (!to || to === from) {
+            return;
+        }
+        const twins = [to, ...to.querySelectorAll('*')];
+        for (const [place, element] of [from, ...from.querySelectorAll('*')].entries()) {
+            if (!element.classList.contains(SELECTED)) {
+                continue;
+            }
+
+            element.classList.remove(SELECTED);
+            twins[place]?.classList.add(SELECTED);
+        }
+    }
 
     /**
      * Asks Marketing Cloud's API about the business units, through this page. It never throws.
@@ -1471,6 +1543,7 @@
             sendResponse({});
         }
         if (message?.type === CONTACT_SHOWN_MESSAGE) {
+            noteTab(message.route);
             show(CONTACT_BUILDER, message.route, message.byUser === true);
             sendResponse({});
         }
@@ -1487,6 +1560,8 @@
             return;
         }
         isByUser = true;
+        // what Contact Builder's frame tells from here on answers no step
+        isStepAnswer = false;
         // the user went on by hand: a link that was being followed no longer holds the address
         isFollowing = false;
         isHeldBack = false;
@@ -1558,6 +1633,9 @@
             steppedTo = linked;
             request({ type: OPEN_MESSAGE, asset: linked.what });
         } else {
+            // Marketing Cloud's router, which chooses the tab, does not see the step
+            isStepAnswer = true;
+            chooseTab(linked.what);
             request({ type: CONTACT_OPEN_MESSAGE, route: linked.what });
         }
         return true;

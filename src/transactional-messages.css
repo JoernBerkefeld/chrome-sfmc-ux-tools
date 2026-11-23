@@ -231,6 +231,10 @@
 .sfmc-ux-tools-transactional-content-tools {
     margin: -8px 0 12px;
 }
+/* its words stay in one line */
+.sfmc-ux-tools-transactional-content-tools .sfmc-ux-tools-transactional-setup {
+    white-space: nowrap;
+}
 .sfmc-ux-tools-transactional-code .CodeMirror {
     border: 1px solid #c9c9c9;
     border-radius: 4px;

@@ -94,6 +94,21 @@ export function characterAt(editor, point) {
 }
 
 /**
+ * Finds the line whose part of the gutter is under the mouse.
+ *
+ * @param {object} editor Ace editor
+ * @param {{clientX: number, clientY: number}} point where the mouse is, in the gutter
+ * @returns {number | null} the line, or null above the first line and below the last one
+ */
+export function lineAt(editor, point) {
+    const { renderer } = editor;
+    const { row } = renderer.screenToTextCoordinates(point.clientX, point.clientY);
+    // the note of a line is next to where the line starts
+    const top = renderer.textToScreenCoordinates(row, 0).pageY;
+    return point.clientY < top || point.clientY >= top + renderer.lineHeight ? null : row;
+}
+
+/**
  * Tells where a box for a place in the text belongs.
  *
  * @param {object} editor Ace editor

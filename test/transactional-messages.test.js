@@ -4626,8 +4626,12 @@ test('an entry of a list is shown whole, and the list scrolls by itself', () => 
     const option = rule('.sfmc-ux-tools-transactional-combo-option');
     assert.match(option, /overflow-wrap:\s*anywhere/);
     assert.match(option, /white-space:\s*normal/);
-    // nothing of the panel is cut short with dots or kept on one line
-    assert.doesNotMatch(css, /text-overflow|nowrap/);
+    // nothing of the panel is cut short with dots or kept on one line, but for the short link to
+    // the content of a push message below its field
+    const link = '.sfmc-ux-tools-transactional-content-tools .sfmc-ux-tools-transactional-setup';
+    assert.match(rule(link), /^\s*white-space: nowrap;\s*$/);
+    assert.doesNotMatch(css, /text-overflow/);
+    assert.equal(css.match(/nowrap/g).length, 1);
     const list = rule('.sfmc-ux-tools-transactional-combo-list');
     assert.match(list, /max-height:/);
     assert.match(list, /overflow-y:\s*auto/);

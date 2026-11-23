@@ -588,6 +588,15 @@ html .sfmc-tooltip a:hover {
 .sfmc-ux-tools-ace .ace_marker-layer .sfmc-diagnostic-info {
     color: var(--sfmc-info-underline);
 }
+/*
+ * Ace has a tooltip of its own for the note in the gutter. It is an element of the editor that
+ * Ace places by the window; the dialog around the editor moves it far below the note. In the
+ * editors the extension took, its own box says what the note stands for instead
+ * (src/editor-language/ace/hover.js). Ace shows its tooltip by an inline style.
+ */
+.ace_editor.sfmc-ux-tools-ace > .ace_tooltip {
+    display: none !important;
+}
 .sfmc-tooltip .sfmc-problem {
     padding-left: 8px;
     border-left: 3px solid var(--sfmc-link);

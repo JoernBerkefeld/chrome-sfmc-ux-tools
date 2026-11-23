@@ -1,7 +1,8 @@
 /*
  * SFMC UX Tools — errors and warnings in the Ace editor of Automation Studio's script activity:
  * what the language service objects to is underlined and noted in the gutter, as in the
- * CodeMirror editor of Content Builder (../diagnostics.js).
+ * CodeMirror editor of Content Builder (../diagnostics.js). The part that draws is shared with
+ * the SQL check of the query activity (./query-activity.js).
  */
 import { report } from '../editors.js';
 import { check, checkTypes } from '../core/diagnostics.js';
@@ -23,19 +24,29 @@ function isBefore(a, b) {
 }
 
 /**
- * Sets up errors and warnings for one editor: checked now and whenever typing pauses.
+ * Says what to tell about an underline.
  *
- * @param {object} editor Ace editor
- * @param {() => boolean} isOurs tells whether the editor is, at this moment, one the extension took over
- * @returns {{checkNow: () => void, at: (position: {row: number, column: number}) => object[], clear: () => void, schedule: () => void}} checks the content at once; lists what was found at a character; takes the underlines away; checks again shortly
+ * @param {{diagnostic: object, severity: string}} entry an underline with its diagnostic
+ * @returns {{severity: string, message: string, code: string, address: string, diagnostic: object}} what to tell, with the diagnostic it comes from
  */
-export function registerAceDiagnostics(editor, isOurs) {
-    // counts the changes of the content, to know content that was checked already
-    let generation = 0;
-    let timer;
-    // what the content was when it was last checked, and what TypeScript found in which content
-    let checked = null;
-    let typed = null;
+function problemOf({ diagnostic, severity }) {
+    return {
+        severity,
+        message: String(diagnostic.message),
+        code: String(diagnostic.code ?? ''),
+        address: String(diagnostic.codeDescription?.href ?? ''),
+        diagnostic,
+    };
+}
+
+/**
+ * Creates what draws errors and warnings into an Ace editor: underlines in the text and notes in
+ * the gutter. The script activity's check and the SQL check of the query activity both draw with
+ * it, each with its own.
+ *
+ * @returns {{mark: (session: object, list: object[]) => void, unmark: () => void, at: (position: {row: number, column: number}) => object[], onLine: (row: number) => {position: object | null, problems: object[]}, redraw: (editor: object) => void}} underlines what was found, in place of what was underlined before; takes the underlines and the notes away; lists what was found at a character; lists what the note of a line stands for; draws the underlines again after the text changed
+ */
+export function createAceMarks() {
     // the session that has the underlines, and each of them with its diagnostic
     let marked = null;
     let entries = [];
@@ -57,7 +68,7 @@ export function registerAceDiagnostics(editor, isOurs) {
      * Underlines what was found, in place of what was underlined before.
      *
      * @param {object} session Ace session of the content that was checked
-     * @param {object[]} list diagnostics of the language service
+     * @param {object[]} list diagnostics in the shape of the language service
      */
     const mark = (session, list) => {
         unmark();
@@ -100,6 +111,68 @@ export function registerAceDiagnostics(editor, isOurs) {
             })),
         );
     };
+
+    return {
+        mark,
+        unmark,
+        /**
+         * Lists what was found at a character.
+         *
+         * @param {{row: number, column: number}} position line and column of the character
+         * @returns {{severity: string, message: string, code: string, address: string, diagnostic: object}[]} what to tell about that place, each with the diagnostic it comes from
+         */
+        at: (position) =>
+            entries
+                .filter(
+                    ({ range }) =>
+                        !isBefore(position, range.start) && isBefore(position, range.end),
+                )
+                .map((entry) => problemOf(entry)),
+        /**
+         * Lists what the note in the gutter of a line stands for: what was found that starts in
+         * that line.
+         *
+         * @param {number} row the line
+         * @returns {{position: {row: number, column: number} | null, problems: object[]}} where the first of them starts, null if there is none; and what to tell about them, as from `at`
+         */
+        onLine: (row) => {
+            const found = entries
+                .filter(({ range }) => range.start.row === row)
+                .toSorted((a, b) => a.range.start.column - b.range.start.column);
+            return {
+                position: found[0] ? { row, column: found[0].range.start.column } : null,
+                problems: found.map((entry) => problemOf(entry)),
+            };
+        },
+        /**
+         * Draws the underlines again: their anchors have moved or are about to, and Ace draws
+         * its markers again when told.
+         *
+         * @param {object} editor Ace editor that shows the session
+         */
+        redraw: (editor) => {
+            if (entries.length > 0) {
+                editor.renderer.updateBackMarkers();
+            }
+        },
+    };
+}
+
+/**
+ * Sets up errors and warnings for one editor: checked now and whenever typing pauses.
+ *
+ * @param {object} editor Ace editor
+ * @param {() => boolean} isOurs tells whether the editor is, at this moment, one the extension took over
+ * @returns {{checkNow: () => void, at: (position: {row: number, column: number}) => object[], onLine: (row: number) => {position: object | null, problems: object[]}, clear: () => void, schedule: () => void}} checks the content at once; lists what was found at a character; lists what the note in the gutter of a line stands for; takes the underlines away; checks again shortly
+ */
+export function registerAceDiagnostics(editor, isOurs) {
+    // counts the changes of the content, to know content that was checked already
+    let generation = 0;
+    let timer;
+    // what the content was when it was last checked, and what TypeScript found in which content
+    let checked = null;
+    let typed = null;
+    const { mark, unmark, at, onLine, redraw } = createAceMarks();
 
     /**
      * Checks the editor's content and underlines what was found. TypeScript's check takes long
@@ -155,10 +228,7 @@ export function registerAceDiagnostics(editor, isOurs) {
         generation++;
         schedule();
         try {
-            // the anchors have moved or are about to; Ace draws its markers again when told
-            if (entries.length > 0) {
-                editor.renderer.updateBackMarkers();
-            }
+            redraw(editor);
         } catch (ex) {
             report(ex);
         }
@@ -192,19 +262,9 @@ export function registerAceDiagnostics(editor, isOurs) {
          * @param {{row: number, column: number}} position line and column of the character
          * @returns {{severity: string, message: string, code: string, address: string, diagnostic: object}[]} what to tell about that place, each with the diagnostic of the language service it comes from
          */
-        at: (position) =>
-            entries
-                .filter(
-                    ({ range }) =>
-                        !isBefore(position, range.start) && isBefore(position, range.end),
-                )
-                .map(({ diagnostic, severity }) => ({
-                    severity,
-                    message: String(diagnostic.message),
-                    code: String(diagnostic.code ?? ''),
-                    address: String(diagnostic.codeDescription?.href ?? ''),
-                    diagnostic,
-                })),
+        at,
+        // what the note in the gutter of a line stands for
+        onLine,
         /**
          * Takes the underlines and the notes in the gutter away, until the content is checked
          * again.

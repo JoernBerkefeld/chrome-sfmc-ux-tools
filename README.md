@@ -40,7 +40,7 @@ Every section below starts with the platforms it works on: [![Engagement](images
 - **Email Studio and CloudPages**: both open Content Builder's code view, so everything said about Content Builder applies there too.
 - **CloudPages code resources**: files of one kind, such as JavaScript, CSS, JSON, XML, RSS or text.
 - **Automation Studio, script activity**: its code editor gets everything Content Builder's editor gets, unless a section says otherwise.
-- **Automation Studio, SQL query activity**: theme and tidying up only. There are no suggestions, explanations or checks for SQL.
+- **Automation Studio, SQL query activity**: theme, tidying up and [mistakes underlined](#mistakes-are-underlined) while you type. There are no suggestions or explanations for SQL.
 - **Automation Studio**: new automations and the dialogs that create an activity, for [readable keys](#readable-keys).
 - **Contact Builder and Email Studio**: the dialogs that create a data extension, for readable keys.
 - **Email Studio**: the dialog that saves a data filter, for readable keys.
@@ -156,8 +156,16 @@ The extension checks your AMPscript and SSJS while you type.
 - **AMPscript**: unknown functions, too few or too many inputs, blocks and `IF` statements that are never closed, and more.
 - **SSJS**: modern JavaScript that Marketing Cloud does not understand (`let`, arrow functions, …), functions Marketing Cloud does not have, a missing `Platform.Load`, and more.
 - **SSJS, deeper checks**: mistakes in how you use Marketing Cloud's objects or your own code, such as a misspelt function name (`de.Rowz`).
-- **Script activity**: a mark next to the line number shows where a problem is.
+- **Script activity**: a mark next to the line number shows where a problem is. Rest the mouse on the mark to read all problems of that line in the same box.
 - **Fixed in the script activity:** Marketing Cloud's own check marked the `<script runat="server">` tag as an error although it is correct. That false error is gone. **Validate Syntax** still asks Marketing Cloud as before.
+- **SQL query activity**: your query is checked while you type, without a click on **Validate Syntax**.
+    - **What is found:** mistakes in the SQL itself, a data extension or data view that does not exist, and a field that does not exist in it.
+    - **Who checks:** Marketing Cloud itself. The extension sends the query to the same check that the **Validate Syntax** button uses, a moment after you stop typing, and nowhere else.
+    - **Where you see it:** a mark next to the line number, and an underline on a wrong name wherever it stands in the query.
+    - **How you read the message:** rest the mouse on the underline or on the mark. The message opens in the extension's box, right at that place, like the box for a mistake in the script activity.
+    - **Hints too:** Marketing Cloud's hints, such as a missing `WHERE`, are shown in yellow at the place they name.
+    - **One wrong field at a time:** Marketing Cloud names only one unknown field per check. Fix it and the next one shows up.
+    - **When Marketing Cloud does not say where:** the mark is at the start of the query.
 - **Not covered**: browser scripts are not checked, and there is no list of all problems yet.
 - **In Marketing Cloud Next**: AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why.
 
@@ -680,6 +688,7 @@ In Contact Builder, the address in the browser stays the same whatever you open.
     - They step through the places you opened in Contact Builder, one by one, back and forward as often as you like.
     - Before, Back left Contact Builder at once and went to the page you were on before it.
     - Only a place you open yourself, with a click or a key, gets a step. The place Contact Builder shows first, and a place it moves on to by itself, do not add one.
+    - The tab that is highlighted at the top follows along: it is the one that was highlighted when you opened that place.
     - Email Studio is not part of this yet.
 - **Sending a link:**
     - Copy the address from the browser and send it.

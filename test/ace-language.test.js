@@ -536,6 +536,56 @@ test('ace language: a document with Windows line endings is checked, explained a
     assert.doesNotMatch(fixed, /[^\r]\n/, 'every line still ends the Windows way');
 });
 
+test('ace language: resting the mouse on a note in the gutter shows everything that is wrong in its line', async (t) => {
+    const { window, document, editor, reports } = setup(
+        t,
+        'Hello\n<script runat="server">\n  var a = [1].map(String);\n</script>\n%%[ set @a = Lookupx("x") set @b = Lookupy("y") ]%%',
+    );
+    // the gutter next to a line
+    const restOnNote = (row) => {
+        editor.renderer.$gutter.dispatchEvent(
+            new window.MouseEvent('mousemove', {
+                bubbles: true,
+                clientX: 0,
+                clientY: (row + 0.5) * LINE_HEIGHT,
+            }),
+        );
+    };
+    await checkPause();
+    assert.deepEqual(notes(editor), ['error 2:14', 'error 4:13', 'error 4:35']);
+    restOnNote(4);
+    assert.equal(document.querySelector(HOVER), null, 'waits until the mouse rests');
+    await hoverPause();
+    let box = document.querySelector(HOVER);
+    const problems = [...box.querySelectorAll('.sfmc-problem')].map((item) => item.textContent);
+    assert.equal(problems.length, 2);
+    assert.match(problems[0], /Lookupx/);
+    assert.match(problems[1], /Lookupy/);
+    // at the first of them
+    assert.equal(box.style.left, `${13 * CHARACTER_WIDTH}px`);
+    assert.equal(box.style.top, `${4 * LINE_HEIGHT - 4}px`);
+    assert.equal(box.querySelector('pre'), null, 'what is wrong, no documentation');
+    // Ace's own tooltip for the note is an element of the editor, where the stylesheet hides it
+    assert.equal(editor.container.querySelector('.ace_tooltip').parentNode, editor.container);
+
+    restOnNote(0);
+    await hoverPause();
+    assert.equal(document.querySelector(HOVER), null, 'a line without a note');
+    // below the last line
+    restOnNote(7);
+    await hoverPause();
+    assert.equal(document.querySelector(HOVER), null);
+
+    // the fixes are on offer as on the underline
+    restOnNote(2);
+    await hoverPause();
+    box = document.querySelector(HOVER);
+    assert.equal(box.style.left, `${14 * CHARACTER_WIDTH}px`);
+    box.querySelector(FIX).click();
+    assert.match(editor.getValue(), /Array\.prototype\.map = Array\.prototype\.map \|\|/);
+    assert.deepEqual(reports, []);
+});
+
 test('ace language: a fix button applies the fix in one step that can be undone, and a stale fix does nothing', async (t) => {
     const page = setup(
         t,

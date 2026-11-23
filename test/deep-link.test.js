@@ -4063,6 +4063,102 @@ test('a step within Contact Builder to a route of this business unit is shown by
     assert.deepEqual(unread.asked, []);
 });
 
+test('a step within Contact Builder that the script shows chooses the tab that was chosen when the frame told that route', async () => {
+    // Contact Builder's tabs on the Marketing Cloud page, the first one chosen
+    const TABS = ['Data Designer', 'All Contacts', 'Data Extensions']
+        .map(
+            (name) =>
+                `<div class="top-level-nav-item-wrapper"><ul class="top-level-nav js-app-menu-link"><li><a class="title">${name}</a></li></ul></div>`,
+        )
+        .join('');
+    const MARKED = ':scope > ul, :scope > ul > li > a';
+    // a route that the frame tells only as the answer to a step, at first
+    const LATE = 'admin/all-contacts';
+    const at = shell(CONTACT, { hasNavigation: true, header: TABS });
+    const wrappers = () => [...at.window.document.querySelectorAll('.top-level-nav-item-wrapper')];
+    /**
+     * Chooses a tab as Marketing Cloud does: the class on the tab, its list and its link.
+     *
+     * @param {number} [place] which tab; none for no tab at all
+     */
+    const choose = (place) => {
+        for (const item of at.window.document.querySelectorAll('.selected')) {
+            item.classList.remove('selected');
+        }
+        const tab = wrappers()[place];
+        const marked = tab ? [tab, ...tab.querySelectorAll(MARKED)] : [];
+        for (const item of marked) {
+            item.classList.add('selected');
+        }
+    };
+    // per tab, which of its elements have the class
+    const chosen = () =>
+        wrappers().map((tab) =>
+            [tab, ...tab.querySelectorAll('*')]
+                .filter((item) => item.classList.contains('selected'))
+                .map((item) => item.tagName)
+                .join(' '),
+        );
+    const FIRST = ['DIV UL A', '', ''];
+    const SECOND = ['', 'DIV UL A', ''];
+    const THIRD = ['', '', 'DIV UL A'];
+    choose(0);
+    await at.send({ type: CONTACT_SHOWN, route: START });
+    // the user clicked the second tab, and went on inside the frame
+    choose(1);
+    at.input('pointerdown');
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    await at.send({ type: CONTACT_SHOWN, route: OPENED, byUser: true });
+    assert.equal(at.pushes().length, 2);
+    // back to a route of the same tab: nothing moves
+    at.input('keydown');
+    await at.step(contactLink(MID, LISTED));
+    assert.deepEqual(chosen(), SECOND);
+    await at.send({ type: CONTACT_SHOWN, route: LISTED });
+    // back to the route of the first tab: the class moves, on each element that had it
+    await at.step(contactLink(MID, START));
+    assert.deepEqual(chosen(), FIRST);
+    await at.send({ type: CONTACT_SHOWN, route: START });
+    // and forward again
+    await at.step(contactLink(MID, OPENED));
+    assert.deepEqual(chosen(), SECOND);
+
+    // the route that answers such a step is not remembered with the tab that is chosen then,
+    // which may be a stale one: a step to it later leaves the tabs as they are
+    choose(2);
+    await at.send({ type: CONTACT_SHOWN, route: LATE });
+    assert.equal(at.hash(), contactLink(MID, LATE));
+    await at.step(contactLink(MID, START));
+    assert.deepEqual(chosen(), FIRST);
+    await at.step(contactLink(MID, LATE));
+    assert.deepEqual(chosen(), FIRST);
+    // once the user clicked or typed on the page, what the frame tells is remembered again
+    choose(2);
+    at.input('pointerdown');
+    await at.send({ type: CONTACT_SHOWN, route: LATE });
+    await at.step(contactLink(MID, START));
+    assert.deepEqual(chosen(), FIRST);
+    await at.step(contactLink(MID, LATE));
+    assert.deepEqual(chosen(), THIRD);
+
+    // no tab chosen, or two: nothing is known to move, and nothing is remembered
+    choose();
+    await at.step(contactLink(MID, START));
+    assert.deepEqual(chosen(), ['', '', '']);
+    choose(0);
+    wrappers()[1].classList.add('selected');
+    at.input('pointerdown');
+    await at.send({ type: CONTACT_SHOWN, route: OPENED });
+    choose(0);
+    await at.step(contactLink(MID, LATE));
+    assert.deepEqual(chosen(), THIRD);
+    await at.step(contactLink(MID, OPENED));
+    assert.deepEqual(chosen(), SECOND);
+    // the frame is asked for each of these steps all the same
+    assert.equal(at.asked.length, 10);
+    assert.equal(at.dialog(), null);
+});
+
 test('a step that changes no address is not taken for one when the address changes later', async () => {
     // cancelled, to another document, or to an entry with the same address: no change of the
     // route follows, so the next one is the page's own and the address gets the asset back

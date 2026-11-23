@@ -39,21 +39,26 @@
 .sfmc-ux-tools-mobile-delete-gutter-cell {
     position: relative;
 }
-/* the room itself: over the left of the cell at its full height, the box in its middle */
+/*
+ * The room itself: over the left of the cell at its full height, so that a click next to the box
+ * opens nothing. It starts as far down as the text of the cell does, with the cell's own padding
+ * and line height, and the box stands in the middle of that first line.
+ */
 .sfmc-ux-tools-mobile-delete-gutter {
-    align-items: center;
     bottom: 0;
     cursor: default;
-    display: flex;
-    justify-content: center;
     left: 0;
+    line-height: inherit;
+    padding-top: inherit;
     position: absolute;
+    text-align: center;
     top: 0;
     width: var(--sfmc-ux-tools-mobile-delete-gutter);
 }
 .sfmc-ux-tools-mobile-delete-check {
     cursor: pointer;
     margin: 0;
+    vertical-align: middle;
 }
 .sfmc-ux-tools-mobile-delete-dialog {
     background: #fff;
@@ -77,6 +82,21 @@
     align-items: center;
     display: flex;
     gap: 6px;
+}
+/*
+ * The headings of the dialog name every part of their look themselves: the older MobileConnect
+ * page has rules for its own headings that would restyle them otherwise.
+ */
+.sfmc-ux-tools-mobile-delete-head h2,
+.sfmc-ux-tools-mobile-delete-body h3 {
+    background: none;
+    border: 0;
+    color: #181818;
+    font-family: system-ui, sans-serif;
+    letter-spacing: normal;
+    line-height: 1.5;
+    padding: 0;
+    text-transform: none;
 }
 .sfmc-ux-tools-mobile-delete-head h2 {
     font-size: 18px;

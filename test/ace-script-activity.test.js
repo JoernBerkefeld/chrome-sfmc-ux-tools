@@ -431,8 +431,14 @@ test('every token type of the sample has a colour of the theme', (t) => {
         .matchAll(/([^{}]+)\{/g)
         .flatMap((match) => match[1].split(','))
         .map((selector) => selector.trim().replaceAll(/\s+/g, ' '))
-        // the underlines of errors and warnings are no colours of a theme
-        .filter((selector) => selector.includes('.ace_') && !selector.includes('.sfmc-diagnostic'))
+        // the underlines of errors and warnings are no colours of a theme, and neither is the
+        // rule that hides Ace's own tooltip for a note in the gutter
+        .filter(
+            (selector) =>
+                selector.includes('.ace_') &&
+                !selector.includes('.sfmc-diagnostic') &&
+                !selector.includes('.ace_tooltip'),
+        )
         .toArray();
     const scope = 'html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace';
     for (const type of types) {

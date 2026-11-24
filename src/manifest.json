@@ -188,6 +188,14 @@
             "run_at": "document_idle"
         },
         {
+            "matches": ["https://*.marketingcloudapps.com/contactsmeta/*"],
+            "js": ["record-search-rule.js", "record-search.js"],
+            "css": ["record-search.css"],
+            "world": "MAIN",
+            "all_frames": true,
+            "run_at": "document_start"
+        },
+        {
             "matches": [
                 "https://*.marketingcloudapps.com/MobileConnectFuel3/*",
                 "https://*.marketingcloudapps.com/Mobile/*",

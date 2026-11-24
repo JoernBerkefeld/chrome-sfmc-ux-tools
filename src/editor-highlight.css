@@ -418,8 +418,10 @@ html:not([data-sfmc-ux-tools-next]) li.CodeMirror-hint-active {
 }
 /*
  * The extension's icon in the top right corner of its list in Marketing Cloud Next, to tell the
- * list from the page's own. It floats, so the entries keep their places and their full width, and
- * only a long entry of the first lines ends before it.
+ * list from the page's own. Its room floats, so the entries keep their places and their full
+ * width, and only a long entry of the first lines ends before it. The icon itself is an element
+ * of its own, which says under the mouse what the extension added; it stands after the entries,
+ * which the list finds by their place, and is put over that room.
  */
 html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints::before {
     content: '';
@@ -427,6 +429,13 @@ html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints::before {
     width: 16px;
     height: 16px;
     margin: 1px 2px 0 8px;
+}
+html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints > .sfmc-hints-icon {
+    position: absolute;
+    top: 3px;
+    right: 4px;
+    width: 16px;
+    height: 16px;
     background: url('chrome-extension://__MSG_@@extension_id__/icons/icon16.png') center / contain
         no-repeat;
 }
@@ -474,10 +483,11 @@ es_block_builder-codeview-tooltip[data-sfmc-ux-tools-muted] {
 }
 /*
  * The extension's icon in the top right corner of every box, to tell the box from one of
- * Marketing Cloud's own. The page may load this one file (see the manifest).
+ * Marketing Cloud's own. The page may load this one file (see the manifest). It is the first
+ * element of the box (src/editor-language/tooltip.js) and says under the mouse what the extension
+ * added.
  */
-html .sfmc-tooltip::before {
-    content: '';
+html .sfmc-tooltip > .sfmc-tooltip-icon {
     float: right;
     width: 16px;
     height: 16px;
@@ -494,7 +504,8 @@ html .sfmc-tooltip blockquote {
     font-size: inherit;
     line-height: inherit;
 }
-html .sfmc-tooltip > :first-child {
+html .sfmc-tooltip > :first-child,
+html .sfmc-tooltip > .sfmc-tooltip-icon + * {
     margin-top: 4px;
 }
 html .sfmc-tooltip > :last-child {
@@ -661,7 +672,8 @@ html[data-sfmc-ux-tools-file-kind='text'] .sfmc-format-button {
 /*
  * The state of the check in Automation Studio's SQL query activity, in words, where the dialog's
  * button "Validate Syntax" is (src/editor-language/ace/query-activity.js). It carries the
- * extension's icon, to tell it from the page's own controls. The button itself is hidden while
+ * extension's icon, to tell it from the page's own controls; the icon is an element of its own
+ * and says under the mouse what the extension changed. The button itself is hidden while
  * the extension marks it: the status says what a click on it would. It is plain text of the
  * dialog, as high as the buttons next to it; the colour alone tells its state. The dialog is
  * light in both editor themes, so the colours are not those of the theme.
@@ -676,8 +688,7 @@ html[data-sfmc-ux-tools-file-kind='text'] .sfmc-format-button {
 .sfmc-check-status[hidden] {
     display: none;
 }
-.sfmc-check-status::before {
-    content: '';
+.sfmc-check-status > .sfmc-check-status-icon {
     display: inline-block;
     width: 16px;
     height: 16px;

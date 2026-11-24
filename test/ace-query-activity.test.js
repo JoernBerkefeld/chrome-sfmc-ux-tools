@@ -587,7 +587,13 @@ test('ace query: the status says in words what the check found, in the place of 
 
     // marked as the extension's, read out when it changes, and themed by what was found
     const status = document.querySelector(STATUS);
-    assert.equal(status.title, 'Added by SFMC UX Tools');
+    // the mouse on its icon, and not on its words, says what the extension changed
+    assert.equal(status.title, '');
+    const icon = status.firstChild;
+    assert.equal(icon.className, 'sfmc-check-status-icon');
+    assert.equal(icon.getAttribute('role'), 'img');
+    assert.match(icon.title, /^SFMC UX Tools: checks the query while you type .*Validate Syntax/);
+    assert.equal(icon.getAttribute('aria-label'), icon.title);
     assert.equal(status.getAttribute('aria-live'), 'polite');
     assert.equal(status.className, 'pull-right sfmc-check-status');
     editor.setValue(query('right'), -1);
@@ -612,7 +618,9 @@ test('ace query: the status says in words what the check found, in the place of 
         css,
         /\n#queryValidateBtn\[data-sfmc-ux-tools-replaced\] \{\r?\n {4}display: none !important;/,
     );
-    assert.ok(css.includes('.sfmc-check-status::before {'));
+    assert.ok(css.includes('.sfmc-check-status > .sfmc-check-status-icon {'));
+    // the icon stays while the words change
+    assert.equal(status.firstChild, icon);
     // plain text of the dialog, which is light in both themes: no box, and no colour of the theme
     const rules = css.slice(
         css.indexOf('\n.sfmc-check-status {'),

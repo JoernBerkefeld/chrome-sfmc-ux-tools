@@ -33,7 +33,7 @@ body {
 
 /* Chrome fills the id of the extension into the address of the icon of the boxes; here it is the
    icon of the build */
-html .sfmc-tooltip::before {
+html .sfmc-tooltip > .sfmc-tooltip-icon {
     background-image: url('/dist/extension/icons/icon16.png');
 }
 

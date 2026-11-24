@@ -369,7 +369,16 @@ test('ace language: resting the mouse on an underline says what is wrong, before
     await hoverPause();
     const box = document.querySelector(HOVER);
     const problem = box.querySelector('.sfmc-problem');
-    assert.equal(box.firstChild, problem);
+    // after the extension's icon, which says under the mouse what the extension added
+    const icon = box.firstChild;
+    assert.equal(icon.className, 'sfmc-tooltip-icon');
+    assert.equal(icon.getAttribute('role'), 'img');
+    assert.equal(
+        icon.title,
+        'SFMC UX Tools: added this box, which explains the code under the mouse.',
+    );
+    assert.equal(icon.getAttribute('aria-label'), icon.title);
+    assert.equal(icon.nextSibling, problem);
     assert.ok(problem.classList.contains('sfmc-problem-error'));
     assert.match(problem.textContent, /Lookup/);
     assert.match(problem.querySelector('a.sfmc-problem-rule').href, /^https:\/\//);

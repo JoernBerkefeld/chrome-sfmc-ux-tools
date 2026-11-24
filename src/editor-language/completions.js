@@ -5,12 +5,15 @@
  */
 import { AMPSCRIPT, IS_NEXT, isInMode, languageAt, nearbyElement, report } from './shared.js';
 import { completionsAt, isTypingName } from './core/completions.js';
-import { coveringDialog } from './tooltip.js';
+import { coveringDialog, createIcon } from './tooltip.js';
 
 const TRIGGER_DELAY = 100;
 const TRIGGER_CHARACTER = /[\w@.$]$/;
 // marks the list as the extension's; Marketing Cloud Next shows lists of its own
 const LIST_CLASS = 'sfmc-hints';
+// the extension's icon in the corner of that list, and what it says under the mouse
+const ICON_CLASS = 'sfmc-hints-icon';
+const ICON_SAYS = 'SFMC UX Tools: added this list of AMPscript suggestions.';
 // Marketing Cloud Next's own suggestions for AMPscript; its `isOpen` tells whether they are on show
 const PAGE_PICKER = 'es_block_builder-content-resource-picker';
 const timers = new WeakMap();
@@ -48,7 +51,16 @@ function isLeftToPage(cm, cursor) {
  */
 function render(element, label, detail) {
     try {
-        element.parentNode?.classList.add(LIST_CLASS);
+        const list = element.parentNode;
+        list?.classList.add(LIST_CLASS);
+        if (IS_NEXT && list) {
+            // after the entry that was added last: the hint addon finds its entries by their
+            // place in the list, counted from the first
+            list.append(
+                list.querySelector(`:scope > .${ICON_CLASS}`) ??
+                    createIcon(element.ownerDocument, ICON_CLASS, ICON_SAYS),
+            );
+        }
         element.textContent = label;
         if (detail) {
             const note = element.ownerDocument.createElement('span');

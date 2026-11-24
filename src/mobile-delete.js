@@ -275,15 +275,17 @@
     }
 
     /**
-     * Creates the icon of the extension, which names the extension when the mouse rests on it.
+     * Creates the icon of the extension, which says what the extension added at that place when
+     * the mouse rests on it.
      *
+     * @param {string} says what the extension added there, in one sentence
      * @returns {HTMLImageElement} the icon
      */
-    function icon() {
+    function icon(says) {
         const image = make('img', 'icon');
         image.src = ICON;
         image.alt = MADE_BY;
-        image.title = MADE_BY;
+        image.title = `${MADE_BY}: ${says}`;
         image.width = 16;
         image.height = 16;
         return image;
@@ -294,15 +296,16 @@
      *
      * @param {string} mark what it is, by which it is found again
      * @param {string} text what it says
+     * @param {string} says what its icon says under the mouse: what the extension added, in one sentence
      * @returns {{button: HTMLButtonElement, label: HTMLElement}} the button, and the part of it that holds its text
      */
-    function marked(mark, text) {
+    function marked(mark, text, says) {
         const button = make('button', 'button');
         button.type = 'button';
         button.setAttribute(MARK, mark);
         button.title = `Added by ${MADE_BY}`;
         const label = make('span', undefined, text);
-        button.append(icon(), label);
+        button.append(icon(says), label);
         return { button, label };
     }
 
@@ -555,7 +558,11 @@
         dialog = box;
         run.dialog = box;
         const head = make('div', 'head');
-        head.append(make('h2', undefined, 'Delete messages'), icon(), make('span', 'by', MADE_BY));
+        head.append(
+            make('h2', undefined, 'Delete messages'),
+            icon('added this dialog, which asks before messages are deleted.'),
+            make('span', 'by', MADE_BY),
+        );
         const body = make('div', 'body');
         const buttons = make('div', 'buttons');
         box.append(head, body, buttons);
@@ -706,7 +713,11 @@
         if (!header || header.querySelector(DETAILS_BUTTON)) {
             return;
         }
-        const { button } = marked('details', 'Delete');
+        const { button } = marked(
+            'details',
+            'Delete',
+            'added this button, which deletes this message.',
+        );
         button.value = id;
         button.addEventListener('click', () => {
             // only the message whose page is still the one on show
@@ -807,7 +818,11 @@
         }
         let button = header.querySelector(SELECTED_BUTTON);
         if (!button) {
-            ({ button } = marked('selected', ''));
+            ({ button } = marked(
+                'selected',
+                '',
+                'added this button, which deletes the messages you ticked in the list.',
+            ));
             button.addEventListener('click', () => {
                 const list = document.querySelector(app.repeater);
                 if (list) {

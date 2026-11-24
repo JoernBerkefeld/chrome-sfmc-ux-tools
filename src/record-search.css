@@ -1,0 +1,48 @@
+/*
+ * SFMC UX Tools — search the records of a data extension on every field, in Contact Builder.
+ * Everything here applies inside the bar that record-search.js marked.
+ */
+
+/* a data extension can have many fields: the menu scrolls instead of leaving the page */
+.sfmc-ux-tools-record-search .de-search-dropdown .dropdown-menu {
+    max-height: 60vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* Contact Builder sizes the menu to its button, which is narrower than most field names */
+    width: max-content !important;
+    min-width: 100%;
+}
+.sfmc-ux-tools-record-search .de-search-dropdown .dropdown-menu > li > a {
+    white-space: nowrap;
+}
+/* the entries of the extension have no address, so the browser shows no hand by itself */
+.sfmc-ux-tools-record-search .sfmc-ux-tools-record-search-field > a {
+    cursor: pointer;
+}
+/*
+ * Primary key fields are marked after their name. The mark is part of the link, so that a click
+ * on it is a click on the link, which is what Contact Builder reads the field from.
+ */
+.sfmc-ux-tools-record-search .sfmc-ux-tools-record-search-key > a::after {
+    content: ' (primary key)';
+    opacity: 0.6;
+}
+/* the line between the primary key fields and the other fields, also part of the link */
+.sfmc-ux-tools-record-search .sfmc-ux-tools-record-search-first > a {
+    border-top: 1px solid #c9c9c9;
+}
+/* Contact Builder's help that says the search is switched off, which it no longer is */
+.sfmc-ux-tools-record-search .sfmc-ux-tools-record-search-hidden {
+    display: none !important;
+}
+/* the extension's icon next to the search: it says that the extension changed the search */
+.sfmc-ux-tools-record-search-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin: 0 6px;
+    vertical-align: middle;
+    cursor: help;
+    background: url('chrome-extension://__MSG_@@extension_id__/icons/icon16.png') center / contain
+        no-repeat;
+}

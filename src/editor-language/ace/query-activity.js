@@ -35,6 +35,7 @@ import {
     textOf,
 } from './shared.js';
 import { askMarketingCloud, readAnswer } from './sql-check.js';
+import { createIcon } from '../tooltip.js';
 
 const EDITOR_SELECTOR = '.ace_editor';
 const marker = Symbol.for('sfmcUxTools.aceQuery');
@@ -49,7 +50,10 @@ const REPLACED_ATTRIBUTE = 'data-sfmc-ux-tools-replaced';
 const FORMAT_BUTTON_CLASS = 'sfmc-format-beside';
 // the status: the looks of the dialog's row of buttons, and what tells ours apart
 const STATUS_CLASSES = 'pull-right sfmc-check-status';
-const STATUS_TITLE = 'Added by SFMC UX Tools';
+// the extension's icon in front of the status, and what it says under the mouse
+const STATUS_ICON_CLASS = 'sfmc-check-status-icon';
+const STATUS_ICON_SAYS =
+    'SFMC UX Tools: checks the query while you type and shows the result here, in place of the “Validate Syntax” button.';
 // what the status says
 const NOTHING = { words: '', kind: '' };
 const CHECKING = { words: 'Checking…', kind: '' };
@@ -102,6 +106,8 @@ function wordsOf({ errors, warnings }) {
 function createStatus(editor) {
     const { ownerDocument } = editor.container;
     let element = null;
+    // the text of the status, after its icon
+    let words = null;
     // what the status says; null while the editor is not checked
     let state = null;
     // the button that was marked as hidden last; the page may have taken it out of the document
@@ -130,9 +136,10 @@ function createStatus(editor) {
         }
         if (!element) {
             element = ownerDocument.createElement('span');
-            element.title = STATUS_TITLE;
             element.setAttribute('role', 'status');
             element.setAttribute('aria-live', 'polite');
+            words = ownerDocument.createTextNode('');
+            element.append(createIcon(ownerDocument, STATUS_ICON_CLASS, STATUS_ICON_SAYS), words);
         }
         // nothing is written that is there already: the page is looked at again after every change
         const className = state.kind
@@ -141,8 +148,8 @@ function createStatus(editor) {
         if (element.className !== className) {
             element.className = className;
         }
-        if (element.textContent !== state.words) {
-            element.textContent = state.words;
+        if (words.data !== state.words) {
+            words.data = state.words;
         }
         if (element.hidden !== isSilent) {
             element.hidden = isSilent;

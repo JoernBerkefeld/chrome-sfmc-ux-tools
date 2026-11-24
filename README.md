@@ -20,6 +20,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Links to a Content Builder asset:** the address shows which asset is open, and in which business unit, so you can send it to a coworker who also has the extension. In another business unit, the link offers to switch first.
 - **Links into Email Studio:** the same for data extensions and lists, and for folders of data extensions, lists, groups and data filters.
 - **Links into Contact Builder:** the address in the browser now follows what you open in Contact Builder, so you can copy it and send it. Such a link also works for a coworker without the extension.
+- **Search data extension records on every field:** in Contact Builder, the search above the records of a data extension works on any field, also when the data extension has no primary key.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
 
@@ -43,6 +44,7 @@ Every section below starts with the platforms it works on: [![Engagement](images
 - **Automation Studio, SQL query activity**: theme, tidying up and [mistakes underlined](#mistakes-are-underlined) while you type. There are no suggestions or explanations for SQL.
 - **Automation Studio**: new automations and the dialogs that create an activity, for [readable keys](#readable-keys).
 - **Contact Builder and Email Studio**: the dialogs that create a data extension, for readable keys.
+- **Contact Builder**: the **Records** tab of a data extension, for the [search on every field](#search-the-records-of-a-data-extension-on-every-field).
 - **Email Studio**: the dialog that saves a data filter, for readable keys.
 - **Email Studio**: the page that creates a triggered send, for readable keys.
 - **Journey Builder**: new journeys and their API events, for readable keys and for [a real name before saving](#journey-builder-a-real-name-before-saving).
@@ -130,6 +132,7 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 - Every box of the extension, such as an explanation or the help for a function's inputs, has its small icon in the top right corner.
 - Marketing Cloud's own boxes have none, so you always know who is speaking.
 - In Marketing Cloud Next, the extension's list of suggestions has the icon in its corner too.
+- Rest the mouse on the icon, here and wherever else the extension shows it in Marketing Cloud, to read in one sentence what the extension added or changed at that place.
 
 ### Help with a function's inputs
 
@@ -730,6 +733,51 @@ In Contact Builder, the address in the browser stays the same whatever you open.
     - A link from another business unit brings up the dialog, with Contact Builder's start page behind it.
     - **Switch and open** switches the business unit and then opens the data extension.
     - Marketing Cloud throws the browser back when a link names a data extension that the business unit does not have. That is why the extension holds the place back.
+
+### Search the records of a data extension on every field
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
+In Contact Builder, the **Records** tab of a data extension only searches its primary key fields. A data extension without a primary key cannot be searched at all. The extension lets you search on any field.
+
+- **Where:**
+    - Contact Builder → **Data Extensions** → open a data extension → **Records**.
+    - The same tab when Email Studio shows it.
+- **What you see:**
+    - The menu next to the search box lists every field of the data extension.
+    - Primary key fields are on top and are marked with **(primary key)**.
+    - All other fields follow below a line, sorted from A to Z.
+    - The extension's icon next to the search box shows that the search was extended. Rest the mouse on it to read how the search works.
+    - The search box itself says it in short: **Starts with… (% = any text)**.
+- **Without a primary key:**
+    - Marketing Cloud greys the search box out and shows no menu.
+    - The extension adds the menu and switches the search box on.
+    - The first field of the menu is chosen to begin with.
+- **How to search:**
+    - Pick a field in the menu, type into the search box and press Enter.
+    - The search finds values that **start with** your text. Upper and lower case do not matter.
+    - `%` stands for any text. `%shop` finds every value with `shop` anywhere in it, and `a%z` values that start with `a` and have a `z` later on.
+    - `_` stands for exactly one character.
+    - An apostrophe in your text is treated like `_`, so `O'Brien` is still found.
+    - Empty the search box and press Enter to see all rows again.
+- **Number fields:**
+    - They are searched like text, by their first digits. `42` finds 42, 420 and 4200.
+- **Date fields:**
+    - Type a year (`2026`), a month (`2026-01`) or a day (`2026-01-15`) to get all rows of that year, month or day.
+    - Any other text is compared with the date the way Marketing Cloud writes it as text, for example `Jan 15 2026`. So `Jan` finds the dates in January of every year.
+- **Boolean fields:**
+    - Type `true` or `1`, or `false` or `0`.
+    - Any other text finds no rows.
+- **The rows are shown by Marketing Cloud's own table**, with its own paging, as after its own search.
+- **Nothing is changed in Marketing Cloud:** the search only reads rows.
+- **How it works:**
+    - A search on a primary key field is Marketing Cloud's own search, unchanged.
+    - Marketing Cloud's own search ignores every other field. For those, the extension sends the search to another address of Marketing Cloud that reads the rows of a data extension, through the page you are logged in to, and hands the answer to the table.
+    - If Marketing Cloud refuses such a search, the table shows the failure the way it shows its own.
+- **Limits:**
+    - One field at a time.
+    - A search on a field that is not a primary key comes back in the order Marketing Cloud gives, not in the order of a column you sorted by.
+- **Always on:** there is no option for it.
 
 ### Options
 

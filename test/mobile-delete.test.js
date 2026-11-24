@@ -461,6 +461,10 @@ test('the Delete button of a MobileConnect message comes and goes with the route
     assert.equal(button.textContent, 'Delete');
     assert.equal(button.value, 'MTo3');
     assert.equal(button.querySelector('img').src, 'chrome-extension://id/icons/icon16.png');
+    assert.equal(
+        button.querySelector('img').title,
+        'SFMC UX Tools: added this button, which deletes this message.',
+    );
     // other changes of the page do not add a second one
     at.document.body.append(at.document.createElement('div'));
     await tick();
@@ -569,6 +573,10 @@ test('each row of MobileConnect’s list gets a checkbox that does not open the 
     assert.equal(button.textContent, 'Delete selected (0)');
     assert.equal(button.disabled, true);
     assert.equal(button.querySelector('img').alt, 'SFMC UX Tools');
+    assert.equal(
+        button.querySelector('img').title,
+        'SFMC UX Tools: added this button, which deletes the messages you ticked in the list.',
+    );
     let opened = 0;
     for (const row of at.document.querySelector('tbody').rows) {
         row.addEventListener('click', () => opened++);
@@ -854,6 +862,10 @@ test('nothing is sent before the click in the dialog, and Cancel sends nothing',
         'Delete 2 messages',
     );
     assert.match(at.text(), /SFMC UX Tools/);
+    assert.equal(
+        at.dialog().querySelector('img.sfmc-ux-tools-mobile-delete-icon').title,
+        'SFMC UX Tools: added this dialog, which asks before messages are deleted.',
+    );
     await at.press('cancel');
     assert.equal(at.dialog(), null);
     assert.deepEqual(at.written, []);

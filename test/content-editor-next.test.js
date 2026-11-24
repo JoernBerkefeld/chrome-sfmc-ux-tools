@@ -365,6 +365,14 @@ test('Next: Ctrl-Space and typing suggest the AMPscript that Marketing Cloud Nex
     assert.equal(list.parentNode, document.body);
     assert.ok(list.classList.contains('sfmc-hints'), 'marked as the list of the extension');
     assert.ok(list.querySelector(':scope > .CodeMirror-hint .sfmc-hint-detail'));
+    // its icon says under the mouse what the extension added; it stands after the entries,
+    // which the list finds by their place
+    const icons = list.querySelectorAll('.sfmc-hints-icon');
+    assert.equal(icons.length, 1);
+    assert.equal(icons[0], list.lastChild);
+    assert.equal(icons[0].getAttribute('role'), 'img');
+    assert.equal(icons[0].title, 'SFMC UX Tools: added this list of AMPscript suggestions.');
+    assert.equal(icons[0].getAttribute('aria-label'), icons[0].title);
     // the keyboard moves through the list, and a pick inserts the function
     const { widget } = editor.state.completionActive;
     widget.changeActive(offered(editor).indexOf('MD5'));
@@ -465,12 +473,15 @@ test('Next: the lists of suggestions of the page itself keep their look, and onl
         '.CodeMirror-hints.sfmc-hints li.CodeMirror-hint-active',
         'html:not([data-sfmc-ux-tools-next]) li.CodeMirror-hint-active',
         'html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints::before',
+        'html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints > .sfmc-hints-icon',
         '.CodeMirror-hint .sfmc-hint-detail',
     ]);
-    // the list of the extension has its icon, which the page may load
+    // the list of the extension has its icon, which the page may load: room for it that floats,
+    // and the icon itself over that room
+    assert.match(css, /\.sfmc-hints::before \{[^}]*float: right;[^}]*margin: 1px 2px 0 8px;/);
     assert.match(
         css,
-        /\.sfmc-hints::before \{[^}]*float: right;[^}]*url\('chrome-extension:\/\/__MSG_@@extension_id__\/icons\/icon16\.png'\)/,
+        /\.sfmc-hints > \.sfmc-hints-icon \{[^}]*position: absolute;\s+top: 3px;\s+right: 4px;[^}]*url\('chrome-extension:\/\/__MSG_@@extension_id__\/icons\/icon16\.png'\)/,
     );
 });
 

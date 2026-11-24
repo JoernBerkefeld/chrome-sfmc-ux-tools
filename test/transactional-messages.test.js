@@ -4136,8 +4136,16 @@ test('the entry and the panel carry the icon of the extension, which names it', 
     for (const image of [inMenu, inPanel]) {
         assert.equal(image.src, 'chrome-extension://id/icons/icon16.png');
         assert.equal(image.alt, 'SFMC UX Tools');
-        assert.equal(image.title, 'SFMC UX Tools');
     }
+    // under the mouse, each says what the extension added there
+    assert.equal(
+        inMenu.title,
+        'SFMC UX Tools: added this menu entry, which opens the extension’s panel of transactional messages.',
+    );
+    assert.equal(
+        inPanel.title,
+        'SFMC UX Tools: added this panel, which lists the transactional messages.',
+    );
     // after the name of the entry
     assert.equal(inMenu.previousElementSibling.textContent, 'Transactional Messages');
     assert.equal(
@@ -4166,7 +4174,7 @@ test('the entry and the panel carry the icon of the extension, which names it', 
     ]);
     // every box of the language features carries it in its corner, at its 16 pixels
     const css = read('../src/editor-highlight.css');
-    const rule = /html \.sfmc-tooltip::before \{([^}]*)\}/.exec(css)[1];
+    const rule = /html \.sfmc-tooltip > \.sfmc-tooltip-icon \{([^}]*)\}/.exec(css)[1];
     assert.match(rule, /float: right;/);
     assert.match(rule, /width: 16px;\s+height: 16px;/);
     assert.match(rule, /chrome-extension:\/\/__MSG_@@extension_id__\/icons\/icon16\.png/);

@@ -619,15 +619,17 @@
     }
 
     /**
-     * Creates the icon of the extension, which names the extension when the mouse rests on it.
+     * Creates the icon of the extension, which says what the extension added at that place when
+     * the mouse rests on it.
      *
+     * @param {string} says what the extension added there, in one sentence
      * @returns {HTMLImageElement} the icon
      */
-    function icon() {
+    function icon(says) {
         const image = make('img', 'icon');
         image.src = ICON;
         image.alt = MADE_BY;
-        image.title = MADE_BY;
+        image.title = `${MADE_BY}: ${says}`;
         image.width = 16;
         image.height = 16;
         return image;
@@ -3958,7 +3960,7 @@
         close.addEventListener('click', () => dialog.close());
         // on every screen of the panel: who added it
         const madeBy = make('span', 'made-by');
-        madeBy.append(icon(), MADE_BY);
+        madeBy.append(icon('added this panel, which lists the transactional messages.'), MADE_BY);
         head.append(make('h2', undefined, TITLE), madeBy, close);
         tabs = make('div', 'tabs');
         tabs.setAttribute('role', 'tablist');
@@ -4025,7 +4027,14 @@
         group.className = 'sr-only';
         const name = make('span', undefined, TITLE);
         name.className = 'mc-app-name';
-        link.append(group, name, ' ', icon());
+        link.append(
+            group,
+            name,
+            ' ',
+            icon(
+                'added this menu entry, which opens the extension’s panel of transactional messages.',
+            ),
+        );
         link.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();

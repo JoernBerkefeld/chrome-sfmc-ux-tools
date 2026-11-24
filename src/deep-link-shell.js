@@ -1087,7 +1087,7 @@
         const image = make('img');
         image.src = chrome.runtime.getURL('icons/icon16.png');
         image.alt = MADE_BY;
-        image.title = MADE_BY;
+        image.title = `${MADE_BY}: added this dialog, which asks before a link to another business unit is opened.`;
         image.width = 16;
         image.height = 16;
         head.append(

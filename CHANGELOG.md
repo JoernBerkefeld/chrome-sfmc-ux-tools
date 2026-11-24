@@ -4,6 +4,15 @@
 
 ### Added
 
+- **Search the records of a data extension on every field**: in Contact Builder, the **Records** tab of a data extension searched its primary key fields only, and not at all without a primary key. Now it searches any field.
+    - **The menu lists every field:** primary key fields on top, marked with **(primary key)**, then all other fields from A to Z below a line.
+    - **Without a primary key** the extension adds the menu that Marketing Cloud leaves out and switches the greyed-out search box on.
+    - **How it searches:** values that start with your text, whatever their case. `%` stands for any text and `_` for one character. An apostrophe is treated like `_`.
+    - **By type:** a date field takes a year, a month or a day (`2026`, `2026-01`, `2026-01-15`); a boolean field takes `true`, `false`, `1` or `0`; numbers are searched by their first digits.
+    - **A hint where you type:** the search box says **Starts with… (% = any text)**, and the extension's icon next to it explains the rest when you rest the mouse on it.
+    - **How:** a search on a primary key field stays Marketing Cloud's own request. Its search ignores other fields, so for those the extension sends the request to another address of Marketing Cloud that reads the rows of a data extension, through the page you are logged in to, and hands the answer to Marketing Cloud's own table. Nothing is written.
+    - **Limits:** one field at a time, and such a search does not follow the column you sorted by.
+    - The feature is always on and has no switch, and needs no new permission.
 - **SQL query activity, mistakes underlined while you type**: the query editor of Automation Studio's SQL query activity shows what Marketing Cloud's own check finds, without a click on **Validate Syntax**.
     - **What is found:** mistakes in the SQL, a data extension or system data view that does not exist, and a field that does not exist in it, also for names written with `ENT.` or in brackets.
     - **How:** a moment after you stop typing, the extension sends the query to the request that the **Validate Syntax** button uses, through the page you are logged in to. Nothing is written by it. An answer for text that is no longer in the editor is dropped; an empty query and an unchanged one are not sent.
@@ -63,6 +72,7 @@
 
 - **Automation Studio's script activity, mark next to the line number:** resting the mouse on the mark of an error or warning opens the extension's box with everything that is wrong on that line, the same box as on an underline. The editor's own small tooltip, which appeared far from the mark in that dialog, is no longer shown in the editors the extension takes over.
 - **Links into Email Studio**: the extension stops listening for clicks and key presses in Email Studio once a link was followed or given up, and for loaded scripts once it found Email Studio's state. Nothing else about these links changes.
+- **The extension's icon says what it marks:** wherever the extension shows its icon in Marketing Cloud (its boxes and its list of suggestions in the code editors, the status of the SQL check, its buttons, dialogs, menu entry and panel), resting the mouse on the icon now shows one sentence that starts with **SFMC UX Tools:** and says what the extension added or changed at that place. Before, it only named the extension, or said nothing.
 
 ### Fixed
 

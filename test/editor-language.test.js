@@ -834,7 +834,16 @@ test('resting the mouse on an underline says what is wrong, before the documenta
     await hoverPause();
     const box = document.querySelector(HOVER);
     const problem = box.querySelector('.sfmc-problem');
-    assert.equal(box.firstChild, problem);
+    // after the extension's icon, which says under the mouse what the extension added
+    const icon = box.firstChild;
+    assert.equal(icon.className, 'sfmc-tooltip-icon');
+    assert.equal(icon.getAttribute('role'), 'img');
+    assert.equal(
+        icon.title,
+        'SFMC UX Tools: added this box, which explains the code under the mouse.',
+    );
+    assert.equal(icon.getAttribute('aria-label'), icon.title);
+    assert.equal(icon.nextSibling, problem);
     assert.ok(problem.classList.contains('sfmc-problem-error'));
     assert.match(problem.textContent, /Lookup/);
     assert.match(problem.querySelector('a.sfmc-problem-rule').href, /^https:\/\//);
@@ -924,6 +933,12 @@ test('formatting leaves read-only editors, later edits and broken content alone'
     assert.equal(getValue(), '%%[ set @a=1 ]%%');
     const notice = context.window.document.querySelector(NOTICE);
     assert.match(notice.textContent, /^Not formatted: /);
+    // its icon says under the mouse what the extension added
+    assert.equal(notice.firstChild.className, 'sfmc-tooltip-icon');
+    assert.equal(
+        notice.firstChild.title,
+        'SFMC UX Tools: added this note, which says why the code was not formatted.',
+    );
 });
 
 const FORMAT_BUTTON = '.sfmc-format-button';

@@ -791,7 +791,10 @@ test('a link of another business unit is not followed: a dialog names both and o
     assert.equal(at.dialog().hasAttribute('open'), true);
     assert.deepEqual(await at.send({ type: WANTED }), { asset: null });
     assert.equal(at.window.document.querySelectorAll('dialog').length, 1);
-    assert.equal(at.dialog().querySelector('img').title, 'SFMC UX Tools');
+    assert.equal(
+        at.dialog().querySelector('img').title,
+        'SFMC UX Tools: added this dialog, which asks before a link to another business unit is opened.',
+    );
     assert.deepEqual(at.said(), [
         'This link belongs to the business unit Northwind France (600). You are in Northwind Germany (500).',
     ]);

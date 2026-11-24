@@ -20,7 +20,7 @@ import {
     watchEditors,
 } from './editor-language/editors.js';
 import { watchAceFormat } from './editor-language/ace/format.js';
-import { coveringDialog } from './editor-language/tooltip.js';
+import { coveringDialog, createTooltipIcon } from './editor-language/tooltip.js';
 
 // the settings the SFMC Language Service extension for VS Code formats with
 const OPTIONS = {
@@ -91,7 +91,10 @@ function notify(wrapper, ex) {
     const notice = wrapper.ownerDocument.createElement('div');
     notice.className = 'sfmc-tooltip sfmc-notice';
     // the first line says what is wrong and where; the rest repeats the code
-    notice.textContent = `Not formatted: ${String(ex?.message ?? ex).split('\n', 1)[0]}`;
+    notice.append(
+        createTooltipIcon(wrapper.ownerDocument, 'sfmc-notice'),
+        `Not formatted: ${String(ex?.message ?? ex).split('\n', 1)[0]}`,
+    );
     const { top, right } = wrapper.getBoundingClientRect();
     notice.style.top = `${Math.round(top) + 4}px`;
     notice.style.right = `${Math.round(wrapper.ownerDocument.defaultView.innerWidth - right) + 20}px`;

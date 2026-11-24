@@ -812,7 +812,7 @@ If you write Marketing Cloud code in files, for example with [mcdev](https://git
 
 ### Chrome Web Store
 
-Not listed yet.
+Install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/icngdchkbniamebbmhebciohjimfmjej).
 
 ### From source (unpacked)
 

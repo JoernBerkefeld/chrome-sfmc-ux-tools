@@ -77,6 +77,8 @@
 ### Fixed
 
 - **Formatting:** a short AMPscript expression inside text, such as `%%=v(@code)=%%` in an SMS, stays on one line instead of being spread over three. The bundled `prettier-plugin-sfmc` is now 2.3.1.
+- **Suggestions in Marketing Cloud Next:** the extension's icon in the list of suggestions has a column of its own at the right edge. Before, it lay on top of the first suggestion.
+- **Delete in MobileConnect:** the checkboxes and the **Delete selected** button were missing when Marketing Cloud opened MobileConnect under an address in small letters (seen on one account). They are there now.
 - **Options:** when the options are higher than the popup, only the vertical scroll bar appears. The page now leaves room for it; before, that scroll bar made the page too wide and brought a horizontal one as well.
 
 ## [1.0.0] - 2026-11-20

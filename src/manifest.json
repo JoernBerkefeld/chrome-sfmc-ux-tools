@@ -198,6 +198,7 @@
         {
             "matches": [
                 "https://*.marketingcloudapps.com/MobileConnectFuel3/*",
+                "https://*.marketingcloudapps.com/mobileconnectfuel3/*",
                 "https://*.marketingcloudapps.com/Mobile/*",
                 "https://*.marketingcloudapps.com/mobile/*",
                 "https://*.marketingcloudapps.com/mobilepush/*"

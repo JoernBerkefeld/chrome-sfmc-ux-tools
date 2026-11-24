@@ -472,13 +472,17 @@ test('Next: the lists of suggestions of the page itself keep their look, and onl
         'html:not([data-sfmc-ux-tools-next]) .CodeMirror-hint',
         '.CodeMirror-hints.sfmc-hints li.CodeMirror-hint-active',
         'html:not([data-sfmc-ux-tools-next]) li.CodeMirror-hint-active',
-        'html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints::before',
+        'html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints',
         'html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints > .sfmc-hints-icon',
         '.CodeMirror-hint .sfmc-hint-detail',
     ]);
-    // the list of the extension has its icon, which the page may load: room for it that floats,
-    // and the icon itself over that room
-    assert.match(css, /\.sfmc-hints::before \{[^}]*float: right;[^}]*margin: 1px 2px 0 8px;/);
+    // the list of the extension has its icon, which the page may load: the list is wider by a
+    // column for it, so that it never lies on an entry, and the icon itself is in that column
+    assert.match(
+        css,
+        /html\[data-sfmc-ux-tools-next\] \.CodeMirror-hints\.sfmc-hints \{[^}]*padding-right: calc\(16px \+ 4px \+ 6px\);/,
+    );
+    assert.doesNotMatch(css, /\.sfmc-hints::before/);
     assert.match(
         css,
         /\.sfmc-hints > \.sfmc-hints-icon \{[^}]*position: absolute;\s+top: 3px;\s+right: 4px;[^}]*url\('chrome-extension:\/\/__MSG_@@extension_id__\/icons\/icon16\.png'\)/,

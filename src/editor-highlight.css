@@ -418,17 +418,14 @@ html:not([data-sfmc-ux-tools-next]) li.CodeMirror-hint-active {
 }
 /*
  * The extension's icon in the top right corner of its list in Marketing Cloud Next, to tell the
- * list from the page's own. Its room floats, so the entries keep their places and their full
- * width, and only a long entry of the first lines ends before it. The icon itself is an element
- * of its own, which says under the mouse what the extension added; it stands after the entries,
- * which the list finds by their place, and is put over that room.
+ * list from the page's own. The list is that much wider on the right, so the icon has a column
+ * of its own and never lies on an entry. The icon itself is an element of its own, which says
+ * under the mouse what the extension added; it stands after the entries, which the list finds
+ * by their place, and is put into that column.
  */
-html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints::before {
-    content: '';
-    float: right;
-    width: 16px;
-    height: 16px;
-    margin: 1px 2px 0 8px;
+html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints {
+    /* the icon's width, its distance to the edge and a gap to the entries */
+    padding-right: calc(16px + 4px + 6px);
 }
 html[data-sfmc-ux-tools-next] .CodeMirror-hints.sfmc-hints > .sfmc-hints-icon {
     position: absolute;

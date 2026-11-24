@@ -1328,6 +1328,8 @@ test('the manifest runs the script in the frames of both apps, in the extensionâ
     assert.deepEqual(entries[0], {
         matches: [
             'https://*.marketingcloudapps.com/MobileConnectFuel3/*',
+            // seen live: Marketing Cloud also writes this path in small letters
+            'https://*.marketingcloudapps.com/mobileconnectfuel3/*',
             'https://*.marketingcloudapps.com/Mobile/*',
             'https://*.marketingcloudapps.com/mobile/*',
             'https://*.marketingcloudapps.com/mobilepush/*',

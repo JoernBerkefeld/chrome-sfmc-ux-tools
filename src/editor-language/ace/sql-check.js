@@ -5,8 +5,9 @@
  * Marketing Cloud has all of that: the dialog's button "Validate Syntax" asks its server, which
  * answers with what is wrong with the query. This file asks the same question and turns the
  * answer into errors and warnings with a place in the text, in the shape that the editor's
- * drawing takes from the language service (./diagnostics.js). The question changes nothing in
- * Marketing Cloud.
+ * drawing takes from the language service (./diagnostics.js), with how many of each there are.
+ * An answer that says neither what is wrong nor that the query is right is told apart: it is no
+ * answer. The question changes nothing in Marketing Cloud.
  */
 
 // where the dialog's own button asks
@@ -177,17 +178,22 @@ function linesOf(items, prefix) {
  * other one, and one whose name the query does not have, is put on the first character, so that
  * none is lost.
  *
- * @param {unknown} body the answer: `{errors: [{message}], warnings: [{message}]}`
+ * @param {unknown} body the answer: `{queryValid, errors: [{message}], warnings: [{message}]}`
  * @param {string} text the query that was asked about, its lines joined by line feeds
- * @returns {{range: {start: {line: number, character: number}, end: {line: number, character: number}}, severity: number, message: string}[]} what to underline; nothing for an answer of another shape
+ * @returns {{diagnostics: {range: {start: {line: number, character: number}, end: {line: number, character: number}}, severity: number, message: string}[], errors: number, warnings: number} | null} what to underline, and how many errors and warnings Marketing Cloud named; null for no answer and for one of another shape, which names nothing and does not say that the query is right either
  */
 export function readAnswer(body, text) {
-    if (typeof body !== 'object' || body === null) {
-        return [];
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+        return null;
+    }
+    const errors = linesOf(body.errors, ERROR_PREFIX);
+    const warnings = linesOf(body.warnings, WARNING_PREFIX);
+    if (errors.length === 0 && warnings.length === 0 && body.queryValid !== true) {
+        return null;
     }
     const query = reader(text);
     const list = [];
-    for (const message of linesOf(body.errors, ERROR_PREFIX)) {
+    for (const message of errors) {
         const name = COLUMN.exec(message)?.[1] ?? SOURCE.exec(message)?.[1];
         const near = NEAR.exec(message)?.[1];
         let ranges = [];
@@ -201,12 +207,12 @@ export function readAnswer(body, text) {
         }
         list.push(...ranges.map((range) => ({ range, severity: ERROR, message })));
     }
-    for (const line of linesOf(body.warnings, WARNING_PREFIX)) {
+    for (const line of warnings) {
         const [, row, column, message] = PLACE.exec(line) ?? [];
         const range = (message ? query.placed(Number(row), Number(column)) : null) ?? query.first();
         list.push({ range, severity: WARNING, message: message || line });
     }
-    return list;
+    return { diagnostics: list, errors: errors.length, warnings: warnings.length };
 }
 
 /**

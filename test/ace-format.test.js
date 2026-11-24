@@ -125,6 +125,10 @@ test('ace format: the button stands next to "Validate Syntax" and formats in one
     assert.equal(editor.getValue(), MESSY, 'formatting takes a moment');
     await formatPause();
     assert.equal(editor.getValue(), TIDY.join('\n'));
+    // the script activity keeps Marketing Cloud's button, and has no status of a check
+    const validate = document.querySelector('#scriptValidateBtn');
+    assert.equal(Object.hasOwn(validate.dataset, 'sfmcUxToolsReplaced'), false);
+    assert.equal(document.querySelector('.sfmc-check-status'), null);
     assert.deepEqual({ ...editor.getCursorPosition() }, { row: 0, column: 3 });
     assert.equal(editor.selection.isEmpty(), true);
     editor.undo();

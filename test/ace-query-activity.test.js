@@ -508,3 +508,289 @@ test('ace query: an error without a place is read at the first character of the 
     assert.equal(document.querySelector(HOVER), null);
     assert.deepEqual(reports, []);
 });
+
+const STATUS = '.sfmc-check-status';
+const REPLACED = 'data-sfmc-ux-tools-replaced';
+const RIGHT_ANSWER = { queryValid: true, errors: [], warnings: [] };
+const hint = (...lines) => ({
+    message: `Just a heads-up... \r\n${lines.map((line) => `${line}\r\n`).join('')}`,
+});
+const errors = (...lines) => ({
+    message: `An error occurred while checking the query syntax. Errors: ${lines.join('\r\n')}\r\n`,
+});
+// a query whose comment names the answer that the test wants for it
+const query = (name) => `SELECT nofield, nofield FROM x -- ${name}`;
+
+/**
+ * Reads the status of the check and tells whether Marketing Cloud's button is hidden.
+ *
+ * @param {object} document the page's document
+ * @returns {string} what the status says, or "(none)" where there is no status, then "button" or "no button"
+ */
+function state(document) {
+    const statuses = [...document.querySelectorAll(STATUS)];
+    assert.ok(statuses.length <= 1);
+    const [status] = statuses;
+    let words = '(none)';
+    if (status) {
+        assert.equal(status.hidden, status.textContent === '', 'nothing is said by no element');
+        words = status.textContent;
+    }
+    const isHidden = document.querySelector('#queryValidateBtn').hasAttribute(REPLACED);
+    return `${words} | ${isHidden ? 'no button' : 'button'}`;
+}
+
+test('ace query: the status says in words what the check found, in the place of "Validate Syntax"', async (t) => {
+    const column = "Invalid column name 'nofield'.";
+    const open = 'An unmatched parenthesis occurs in the query.';
+
+    const answers = {
+        right: RIGHT_ANSWER,
+        'one error': { queryValid: false, errors: [errors(column)], warnings: [] },
+        'two errors': {
+            queryValid: false,
+            errors: [errors(column, open)],
+            warnings: [hint('(Line 1, Col 1) Name it.')],
+        },
+        'one hint': { queryValid: true, errors: [], warnings: [hint('(Line 1, Col 1) Name it.')] },
+        'two hints': { queryValid: true, errors: [], warnings: [hint('One.', 'Two.')] },
+        // neither right nor anything wrong
+        shapeless: { message: 'Something went wrong' },
+        unsaid: { queryValid: false, errors: [], warnings: [] },
+    };
+    const { asked, fetch } = checker((text) => answers[text.split('-- ', 2)[1]]);
+
+    const { document, editor, reports } = setup(t, { content: query('right'), fetch });
+    const said = {};
+    for (const name of Object.keys(answers)) {
+        editor.setValue(query(name), -1);
+        await checkPause();
+        said[name] = state(document);
+    }
+    assert.deepEqual(said, {
+        right: 'No problems found | no button',
+        'one error': '1 error | no button',
+        'two errors': '2 errors, 1 hint | no button',
+        'one hint': '1 hint | no button',
+        'two hints': '2 hints | no button',
+        shapeless: 'Could not check | button',
+        unsaid: 'Could not check | button',
+    });
+    assert.equal(asked.length, Object.keys(answers).length);
+
+    // an empty query: nothing is said, nothing is asked, and Marketing Cloud's button stays
+    editor.setValue(' \n', -1);
+    assert.equal(state(document), ' | button');
+    await checkPause();
+    assert.equal(state(document), ' | button');
+    assert.equal(asked.length, Object.keys(answers).length);
+
+    // marked as the extension's, read out when it changes, and themed by what was found
+    const status = document.querySelector(STATUS);
+    assert.equal(status.title, 'Added by SFMC UX Tools');
+    assert.equal(status.getAttribute('aria-live'), 'polite');
+    assert.equal(status.className, 'pull-right sfmc-check-status');
+    editor.setValue(query('right'), -1);
+    await checkPause();
+    assert.equal(status.className, 'pull-right sfmc-check-status sfmc-check-status-ok');
+    editor.setValue(query('one error'), -1);
+    await checkPause();
+    assert.equal(status.className, 'pull-right sfmc-check-status sfmc-check-status-error');
+    editor.setValue(query('one hint'), -1);
+    await checkPause();
+    assert.equal(status.className, 'pull-right sfmc-check-status sfmc-check-status-warning');
+    // after the "format code" button, which stays next to the hidden button
+    const validate = document.querySelector('#queryValidateBtn');
+    assert.equal(
+        validate.nextElementSibling.className,
+        'btn btn-default pull-right sfmc-format-beside',
+    );
+    assert.equal(validate.nextElementSibling.nextElementSibling, status);
+    assert.equal(validate.isConnected, true);
+    const css = read('../dist/extension/editor-highlight.css');
+    assert.match(
+        css,
+        /\n#queryValidateBtn\[data-sfmc-ux-tools-replaced\] \{\r?\n {4}display: none !important;/,
+    );
+    assert.ok(css.includes('.sfmc-check-status::before {'));
+    // plain text of the dialog, which is light in both themes: no box, and no colour of the theme
+    const rules = css.slice(
+        css.indexOf('\n.sfmc-check-status {'),
+        css.indexOf('\n#queryValidateBtn['),
+    );
+    assert.doesNotMatch(rules, /background(?!: url)|border|var\(/);
+    for (const kind of ['error', 'warning', 'ok']) {
+        assert.ok(rules.includes(`\n.sfmc-check-status-${kind} {`), kind);
+    }
+    // the colour of the gutter's active line leaves the icon of an error or a warning, which Ace
+    // draws as the background image of the same cell
+    const active = css
+        .slice(css.indexOf('.sfmc-ux-tools-ace .ace_gutter-active-line {'))
+        .split('}', 1)[0];
+    assert.match(active, /background-color: var\(--sfmc-background\);/);
+    assert.doesNotMatch(active, /background:/);
+    assert.deepEqual(reports, []);
+});
+
+test('ace query: the status says "Checking…" from a change of the text until its answer is drawn', async (t) => {
+    const answers = [];
+    const { asked, fetch } = checker(
+        () =>
+            new Promise((resolve) => {
+                answers.push(resolve);
+            }),
+    );
+    const { document, editor, reports } = setup(t, { content: 'SELECT a FROM x', fetch });
+    assert.equal(state(document), 'Checking… | no button', 'before anything was asked');
+    await checkPause();
+    assert.equal(state(document), 'Checking… | no button', 'while Marketing Cloud is asked');
+    answers[0](NO_FIELD_ANSWER);
+    await pause();
+    assert.equal(state(document), '1 error | no button');
+
+    // at once when the text changes, and the answer again when the text is back
+    editor.setValue('SELECT b FROM x', -1);
+    assert.equal(state(document), 'Checking… | no button');
+    editor.setValue('SELECT a FROM x', -1);
+    assert.equal(state(document), '1 error | no button');
+    editor.setValue('SELECT b FROM x', -1);
+    await checkPause();
+    assert.equal(state(document), 'Checking… | no button');
+    // an answer about text that is gone says nothing about the text that is there
+    editor.setValue('SELECT c FROM x', -1);
+    answers[1](RIGHT_ANSWER);
+    await checkPause();
+    assert.equal(state(document), 'Checking… | no button');
+    answers[2](RIGHT_ANSWER);
+    await pause();
+    assert.equal(state(document), 'No problems found | no button');
+    assert.equal(asked.length, 3);
+    assert.deepEqual(reports, []);
+});
+
+test('ace query: "Validate Syntax" is back after a check without an answer, which is asked for again', async (t) => {
+    let status = 500;
+    const asked = [];
+    const fetch = async (address, options) => {
+        asked.push(JSON.parse(options.body).text);
+        if (status === 0) {
+            throw new TypeError('Failed to fetch');
+        }
+        return {
+            status,
+            json: async () => {
+                if (status === 204) {
+                    throw new SyntaxError('not JSON');
+                }
+                return RIGHT_ANSWER;
+            },
+        };
+    };
+    const text = 'SELECT a FROM x';
+    const { document, editor, reports } = setup(t, { content: text, fetch });
+    assert.equal(state(document), 'Checking… | no button');
+    await checkPause();
+    assert.equal(state(document), 'Could not check | button');
+    assert.deepEqual(found(editor), []);
+    // the same text is asked about again when typing next pauses
+    for (const next of [0, 204]) {
+        status = next;
+        editor.setValue(text, -1);
+        assert.equal(state(document), 'Checking… | no button');
+        await checkPause();
+        assert.equal(state(document), 'Could not check | button', String(next));
+    }
+    status = 200;
+    editor.setValue(text, -1);
+    await checkPause();
+    assert.equal(state(document), 'No problems found | no button');
+    assert.deepEqual(asked, [text, text, text, text]);
+    // an answer that cannot be read: reported, and the same as no answer
+    const broken = {
+        /**
+         *
+         */
+        get errors() {
+            throw new Error('unreadable');
+        },
+    };
+    let body = broken;
+    const odd = checker(() => body);
+    const thrown = setup(t, { content: text, fetch: odd.fetch });
+    assert.equal(state(thrown.document), 'Checking… | no button');
+    await checkPause();
+    assert.equal(state(thrown.document), 'Could not check | button');
+    assert.equal(thrown.reports.length, 1);
+    assert.deepEqual(found(thrown.editor), []);
+    body = RIGHT_ANSWER;
+    thrown.editor.setValue(text, -1);
+    await checkPause();
+    assert.equal(state(thrown.document), 'No problems found | no button');
+    assert.deepEqual(odd.asked, [text, text]);
+    // a page without a way to ask
+    const none = setup(t, { content: text });
+    await checkPause();
+    assert.equal(state(none.document), 'Could not check | button');
+    assert.deepEqual(reports, []);
+    assert.deepEqual(none.reports, []);
+});
+
+test('ace query: the status goes and "Validate Syntax" is back when the editor is no longer checked', async (t) => {
+    const { fetch } = checker(() => RIGHT_ANSWER);
+    const { window, document, editor, reports } = setup(t, { fetch });
+    await checkPause();
+    assert.equal(state(document), 'No problems found | no button');
+    // the dialog shows another activity
+    window.location.hash = OTHER_ROUTE;
+    await pause();
+    assert.equal(state(document), '(none) | button');
+    window.location.hash = QUERY_ROUTE;
+    await pause();
+    assert.equal(state(document), 'Checking… | no button');
+    await checkPause();
+    assert.equal(state(document), 'No problems found | no button');
+    // the page draws its button again: the new one is hidden too, and the status is next to it
+    const old = document.querySelector('#queryValidateBtn');
+    const drawn = old.cloneNode(true);
+    drawn.removeAttribute(REPLACED);
+    old.parentNode.replaceChildren(drawn);
+    await pause();
+    assert.equal(state(document), 'No problems found | no button');
+    assert.equal(document.querySelector(STATUS).parentNode, drawn.parentNode);
+    // the page gives the editor another mode, and makes it one that cannot be typed in
+    editor.getSession().setMode('ace/mode/text');
+    assert.equal(state(document), '(none) | button');
+    editor.getSession().setMode(SQL_MODE);
+    assert.equal(state(document), 'Checking… | no button');
+    editor.setReadOnly(true);
+    document.body.append(document.createElement('i'));
+    await pause();
+    assert.equal(state(document), '(none) | button');
+    // a dialog that the page took out of the document keeps no hidden button
+    editor.setReadOnly(false);
+    document.body.append(document.createElement('i'));
+    await checkPause();
+    assert.equal(state(document), 'No problems found | no button');
+    const dialog = document.querySelector('.modal');
+    const hidden = dialog.querySelector('#queryValidateBtn');
+    dialog.remove();
+    await pause();
+    assert.equal(hidden.hasAttribute(REPLACED), false);
+    assert.deepEqual(reports, []);
+});
+
+test('ace query: editors that are not checked get no status, and their dialog keeps its button', async (t) => {
+    const { asked, fetch } = checker(() => RIGHT_ANSWER);
+    const pages = {
+        summary: setup(t, { isReadOnly: true, fetch }),
+        text: setup(t, { mode: 'ace/mode/text', fetch }),
+        other: setup(t, { route: OTHER_ROUTE, fetch }),
+        script: setup(t, { route: SCRIPT_ROUTE, fetch }),
+    };
+    await checkPause();
+    for (const [name, page] of Object.entries(pages)) {
+        assert.equal(state(page.document), '(none) | button', name);
+        assert.deepEqual(page.reports, [], name);
+    }
+    assert.deepEqual(asked, []);
+});

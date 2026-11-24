@@ -159,6 +159,9 @@ The extension checks your AMPscript and SSJS while you type.
 - **Script activity**: a mark next to the line number shows where a problem is. Rest the mouse on the mark to read all problems of that line in the same box.
 - **Fixed in the script activity:** Marketing Cloud's own check marked the `<script runat="server">` tag as an error although it is correct. That false error is gone. **Validate Syntax** still asks Marketing Cloud as before.
 - **SQL query activity**: your query is checked while you type, without a click on **Validate Syntax**.
+    - **A status tells you the result:** next to the **{ }** button, marked with the extension's icon, you read **Checking…**, **No problems found**, or how many errors and hints there are, such as **2 errors, 1 hint**. It is always about the text that is in the editor right now, and it is empty while the query is empty.
+    - **The Validate Syntax button is hidden while there is a query:** the status says what a click on it would say, so the button is not needed. While the query is empty, nothing is checked and the button stays.
+    - **When the button comes back:** if Marketing Cloud gives no answer, the status says **Could not check** and **Validate Syntax** is shown again, so you can always check by hand. The extension tries again the next time you type.
     - **What is found:** mistakes in the SQL itself, a data extension or data view that does not exist, and a field that does not exist in it.
     - **Who checks:** Marketing Cloud itself. The extension sends the query to the same check that the **Validate Syntax** button uses, a moment after you stop typing, and nowhere else.
     - **Where you see it:** a mark next to the line number, and an underline on a wrong name wherever it stands in the query.
@@ -200,7 +203,7 @@ The extension checks your AMPscript and SSJS while you type.
 - **Only the text in the editor changes.** Nothing is saved until you save.
 - AMPscript that contains a mistake is left exactly as written; the rest is tidied.
 - It always tidies the whole content, not just a selection.
-- **Script activity and SQL query activity**: the **{ }** button sits next to **Validate Syntax**. A query is tidied as SQL.
+- **Script activity and SQL query activity**: the **{ }** button sits next to **Validate Syntax**; in the SQL query activity, where that button is hidden, it sits next to the [status of the check](#mistakes-are-underlined). A query is tidied as SQL.
 - **CloudPages code resources**: JavaScript, CSS and JSON resources are tidied. A resource that mixes its own code with AMPscript or SSJS is left as it is, so nothing gets rearranged by mistake. XML, RSS and text resources have no **{ }** button.
 - **Format on save** (an option, off by default): your code is tidied automatically each time you save. In the script activity and the SQL query activity this happens when you click **Next**. It does not apply to CloudPages code resources, because their Save and Publish buttons sit outside the editor.
 - **In Marketing Cloud Next**: **Shift+Alt+F** tidies the code; there is no **{ }** button and no format on save. One **Ctrl+Z** takes it back.

@@ -264,8 +264,9 @@ html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_gutter {
     border-right: 1px solid var(--sfmc-gutter-border);
     color: var(--sfmc-line-number);
 }
+/* Only the colour: the icon of an error or a warning on that line is the cell's background image. */
 html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_gutter-active-line {
-    background: var(--sfmc-background);
+    background-color: var(--sfmc-background);
     color: var(--sfmc-line-number-active);
 }
 html[data-sfmc-ux-tools-theme] .ace_editor.sfmc-ux-tools-ace .ace_scroller,
@@ -655,6 +656,47 @@ html[data-sfmc-ux-tools-file-kind='text'] .sfmc-format-button {
 .sfmc-format-beside {
     margin-right: 8px;
     font-family: monospace;
+}
+
+/*
+ * The state of the check in Automation Studio's SQL query activity, in words, where the dialog's
+ * button "Validate Syntax" is (src/editor-language/ace/query-activity.js). It carries the
+ * extension's icon, to tell it from the page's own controls. The button itself is hidden while
+ * the extension marks it: the status says what a click on it would. It is plain text of the
+ * dialog, as high as the buttons next to it; the colour alone tells its state. The dialog is
+ * light in both editor themes, so the colours are not those of the theme.
+ */
+.sfmc-check-status {
+    margin-right: 8px;
+    padding: 7px 0;
+    color: #706e6b;
+    line-height: 20px;
+    white-space: nowrap;
+}
+.sfmc-check-status[hidden] {
+    display: none;
+}
+.sfmc-check-status::before {
+    content: '';
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    background: url('chrome-extension://__MSG_@@extension_id__/icons/icon16.png') center / contain
+        no-repeat;
+    vertical-align: text-bottom;
+}
+.sfmc-check-status-error {
+    color: #c23934;
+}
+.sfmc-check-status-warning {
+    color: #a86403;
+}
+.sfmc-check-status-ok {
+    color: #2e844a;
+}
+#queryValidateBtn[data-sfmc-ux-tools-replaced] {
+    display: none !important;
 }
 
 /* Quick fixes in the box of a problem. */

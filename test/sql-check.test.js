@@ -29,7 +29,7 @@ function failed(...lines) {
  */
 function marked(body, text) {
     const lines = text.split('\n');
-    return readAnswer(body, text).map(({ range, severity, message }) => {
+    return readAnswer(body, text).diagnostics.map(({ range, severity, message }) => {
         const { start, end } = range;
         assert.equal(start.line, end.line);
         const piece = lines[start.line].slice(start.character, end.character);
@@ -120,7 +120,7 @@ test('sql check: a warning is marked at the place Marketing Cloud names', () => 
     ]);
 });
 
-test('sql check: an answer of another shape marks nothing', () => {
+test('sql check: an answer of another shape is no answer', () => {
     const text = 'SELECT a FROM x';
     for (const body of [
         null,
@@ -128,12 +128,37 @@ test('sql check: an answer of another shape marks nothing', () => {
         'An error occurred',
         [],
         {},
-        { queryValid: true, errors: [], warnings: [] },
+        { errors: [], warnings: [] },
+        // wrong, but nothing says what
+        { queryValid: false, errors: [], warnings: [] },
+        { queryValid: 'true' },
         { errors: 'Invalid column name', warnings: { message: 'x' } },
         { errors: [null, 1, {}, { message: 7 }, { message: ' \r\n' }, { message: ERRORS }] },
     ]) {
-        assert.deepEqual(readAnswer(body, text), [], JSON.stringify(body));
+        assert.equal(readAnswer(body, text), null, JSON.stringify(body));
     }
+});
+
+test('sql check: an answer tells how many errors and warnings Marketing Cloud named', () => {
+    const right = { diagnostics: [], errors: 0, warnings: 0 };
+    assert.deepEqual(readAnswer({ queryValid: true }, 'SELECT a FROM x'), right);
+    assert.deepEqual(
+        readAnswer({ queryValid: true, errors: [], warnings: [] }, 'SELECT a FROM x'),
+        right,
+    );
+    // one error that is marked at three places, and two warnings in one message
+    const answer = readAnswer(
+        {
+            ...failed("Invalid column name 'a'.", 'An unmatched parenthesis occurs in the query.'),
+            warnings: [{ message: 'Just a heads-up... \r\n(Line 1, Col 1) One.\r\nTwo.\r\n' }],
+        },
+        'SELECT a, a, a FROM x',
+    );
+    assert.equal(answer.errors, 2);
+    assert.equal(answer.warnings, 2);
+    assert.equal(answer.diagnostics.length, 6);
+    // an answer that names something is one, whatever it says about the query as a whole
+    assert.equal(readAnswer({ errors: [{ message: 'Wrong.' }] }, 'SELECT 1').errors, 1);
 });
 
 test('sql check: Marketing Cloud is asked as its own button asks, and no answer is nothing', async (t) => {

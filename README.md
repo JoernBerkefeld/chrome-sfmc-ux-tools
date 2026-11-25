@@ -6,6 +6,8 @@ Brought to you by Jörn Berkefeld, the developer behind [SFMC DevTools (mcdev)](
 
 > Not affiliated with, endorsed by or supported by Salesforce.
 
+<a href="https://chromewebstore.google.com/detail/icngdchkbniamebbmhebciohjimfmjej"><img src="images/chrome-web-store-badge.png" alt="Available in the Chrome Web Store" width="206" height="58"></a>
+
 ## TL;DR
 
 Install it and Marketing Cloud gets easier to work in. Nothing to set up.
@@ -822,7 +824,7 @@ If you write Marketing Cloud code in files, for example with [mcdev](https://git
 
 ### Chrome Web Store
 
-Install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/icngdchkbniamebbmhebciohjimfmjej).
+<a href="https://chromewebstore.google.com/detail/icngdchkbniamebbmhebciohjimfmjej"><img src="images/chrome-web-store-badge.png" alt="Available in the Chrome Web Store" width="206" height="58"></a>
 
 ### From source (unpacked)
 

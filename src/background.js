@@ -1,7 +1,8 @@
 /*
  * SFMC UX Tools — background script: loads the TypeScript script into a document that asks for it,
  * and passes messages about links from the frames of Content Builder, Email Studio and Contact
- * Builder to the page around them, and three from that page to the frames below it.
+ * Builder to the page around them, and three from that page to the frames below it. It also asks
+ * that page, for Email Studio's frame, for the data extensions of the folder of an open one.
  *
  * The TypeScript script is too large to run in every frame of Content Builder and Automation
  * Studio. A document with a code editor asks for it through editor-typescript-loader.js; it then
@@ -68,6 +69,14 @@
     const EMAIL_TARGET = new RegExp(
         String.raw`^r\.${WORD}\.${WORD}\.[\dA-Fa-f][\dA-Fa-f-]{0,${MOST_ROUTE_ID - 1}}$`,
     );
+    // what Email Studio's frame asks the Marketing Cloud page for: the data extensions of the
+    // folder of an open data extension, see email-studio-de-switcher.js and
+    // email-studio-de-switcher-shell.js; the id of a data extension, and how many of them, with
+    // how long a name, are passed back at most
+    const SWITCHER_LIST = 'sfmc-ux-tools:de-switcher:list';
+    const DE_ID = /^[\dA-Fa-f]{8}-[\dA-Fa-f]{4}-[\dA-Fa-f]{4}-[\dA-Fa-f]{4}-[\dA-Fa-f]{12}$/;
+    const MOST_ENTRIES = 1000;
+    const MOST_NAME = 200;
     // the id Chrome gives the page of a tab, as opposed to the frames in it
     const TOP_FRAME = 0;
     // by document: whether the script could be loaded into it. Forgotten when the browser stops
@@ -338,7 +347,69 @@
         }
     }
 
+    /**
+     * Reads what of the page's answer about the data extensions of a folder is passed back: the
+     * id and the name of each, and whether the folder has more than were listed.
+     *
+     * @param {unknown} answer what the page answered
+     * @returns {{items: {id: string, name: string}[], isCut: boolean}|{isFailed: true}} what the frame gets
+     */
+    function listed(answer) {
+        if (typeof answer !== 'object' || answer === null || !Array.isArray(answer.items)) {
+            return { isFailed: true };
+        }
+        const items = answer.items
+            .filter(
+                (item) =>
+                    typeof item === 'object' &&
+                    item !== null &&
+                    typeof item.id === 'string' &&
+                    DE_ID.test(item.id) &&
+                    typeof item.name === 'string' &&
+                    item.name.length > 0 &&
+                    item.name.length <= MOST_NAME,
+            )
+            .slice(0, MOST_ENTRIES)
+            .map(({ id, name }) => ({ id, name }));
+        return { items, isCut: answer.isCut === true };
+    }
+
+    /**
+     * Asks the Marketing Cloud page of a tab for the data extensions of the folder of one, and
+     * answers the frame that asked. It never throws.
+     *
+     * @param {string} id id of the data extension
+     * @param {number} tabId the tab of that frame
+     * @param {(answer: object) => void} sendResponse answers the frame
+     */
+    async function askForList(id, tabId, sendResponse) {
+        let answer;
+        try {
+            answer = await chrome.tabs.sendMessage(
+                tabId,
+                { type: SWITCHER_LIST, id },
+                { frameId: TOP_FRAME },
+            );
+        } catch {
+            // the page is gone or does not listen: told as a failure
+        }
+        sendResponse(listed(answer));
+    }
+
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message?.type === SWITCHER_LIST) {
+            // taken from Email Studio's frame only, and only for an id of the form
+            if (
+                sender.id !== chrome.runtime.id ||
+                !isEmailStudioFrame(sender) ||
+                typeof message.id !== 'string' ||
+                !DE_ID.test(message.id)
+            ) {
+                return false;
+            }
+            askForList(message.id, sender.tab.id, sendResponse);
+            return true;
+        }
         const down = downward(message);
         if (down !== undefined) {
             // taken from the Marketing Cloud page only; nobody waits for an answer

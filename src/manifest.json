@@ -182,6 +182,19 @@
             "run_at": "document_start"
         },
         {
+            "matches": ["https://*.exacttarget.com/C12/Default.aspx*"],
+            "js": ["email-studio-de-switcher.js"],
+            "css": ["email-studio-de-switcher.css"],
+            "all_frames": true,
+            "run_at": "document_start"
+        },
+        {
+            "matches": ["https://*.exacttarget.com/cloud/*"],
+            "include_globs": ["https://mc.*"],
+            "js": ["email-studio-de-switcher-shell.js"],
+            "run_at": "document_idle"
+        },
+        {
             "matches": ["https://*.marketingcloudapps.com/contactsmeta/*"],
             "js": ["deep-link-contact-builder.js"],
             "all_frames": true,

@@ -20,6 +20,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Links to a Content Builder asset:** the address shows which asset is open, and in which business unit, so you can send it to a coworker who also has the extension. In another business unit, the link offers to switch first.
 - **Links into Email Studio:** the same for data extensions and lists, and for folders of data extensions, lists, groups and data filters.
 - **Links into Contact Builder:** the address in the browser now follows what you open in Contact Builder, so you can copy it and send it. Such a link also works for a coworker without the extension.
+- **Jump between the data extensions of a folder:** in Email Studio, click the name of an open data extension in the path above it to list the others of its folder. Pick one and it opens.
 - **Search data extension records on every field:** in Contact Builder, the search above the records of a data extension works on any field, also when the data extension has no primary key.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
@@ -47,6 +48,7 @@ Every section below starts with the platforms it works on: [![Engagement](images
 - **Contact Builder**: the **Records** tab of a data extension, for the [search on every field](#search-the-records-of-a-data-extension-on-every-field).
 - **Email Studio**: the dialog that saves a data filter, for readable keys.
 - **Email Studio**: the page that creates a triggered send, for readable keys.
+- **Email Studio**: an open data extension, for [the other data extensions of its folder](#jump-between-the-data-extensions-of-a-folder).
 - **Journey Builder**: new journeys and their API events, for readable keys and for [a real name before saving](#journey-builder-a-real-name-before-saving).
 - **Setup**: the pages for a new sender profile, send classification, delivery profile, file location, role or user, for readable keys.
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
@@ -777,6 +779,24 @@ In Contact Builder, the **Records** tab of a data extension only searches its pr
 - **Limits:**
     - One field at a time.
     - A search on a field that is not a primary key comes back in the order Marketing Cloud gives, not in the order of a column you sorted by.
+- **Always on:** there is no option for it.
+
+### Jump between the data extensions of a folder
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
+In Email Studio, an open data extension fills the page. To open another one of the same folder, you have to go back to the folder first. The extension lets you jump there directly.
+
+- **Where:** Email Studio → **Subscribers** → **Data Extensions** → open a data extension.
+- **Click its name in the path above it** (Data Extensions > … > the name), or the small arrow right after it. A list of all data extensions of the same folder opens, sorted by name. The open one is shown in bold.
+- **Pick one** and Email Studio opens it, the same as by a click in the folder. The page is not loaded again.
+- **Search:** the box at the top keeps the data extensions whose name holds what you type. Upper and lower case do not matter.
+- **With the keyboard:** press Tab until the name in the path is chosen, then **Enter** or **Space** opens the list. The arrow keys move between the search box and the list, **Enter** opens the chosen data extension, **Esc** closes the list.
+- **Read fresh each time:** the list is read from Marketing Cloud whenever you open it, so a data extension that was just created or moved is there.
+- **How it works:** the extension asks Marketing Cloud, through the Marketing Cloud page you are logged in to, for the folder of the open data extension and for the data extensions in that folder. Only their ids and names are used. Nothing is changed.
+- **Limits:**
+    - Subfolders are not listed, only the data extensions of the folder itself.
+    - At most 1,000 data extensions are listed. A folder with more says so below the search box.
 - **Always on:** there is no option for it.
 
 ### Options

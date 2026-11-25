@@ -162,6 +162,9 @@ The extension checks your AMPscript and SSJS while you type.
 - **Script activity**: a mark next to the line number shows where a problem is. Rest the mouse on the mark to read all problems of that line in the same box.
 - **Fixed in the script activity:** Marketing Cloud's own check marked the `<script runat="server">` tag as an error although it is correct. That false error is gone. **Validate Syntax** still asks Marketing Cloud as before.
 - **SQL query activity**: your query is checked while you type, without a click on **Validate Syntax**.
+
+    ![The SQL query activity in Automation Studio: an unknown field is underlined in red, a box under the mouse says the column name is invalid, and "1 error" is shown next to the { } button instead of Validate Syntax](images/sql-check.png)
+
     - **A status tells you the result:** next to the **{ }** button, marked with the extension's icon, you read **Checking…**, **No problems found**, or how many errors and hints there are, such as **2 errors, 1 hint**. It is always about the text that is in the editor right now, and it is empty while the query is empty.
     - **The Validate Syntax button is hidden while there is a query:** the status says what a click on it would say, so the button is not needed. While the query is empty, nothing is checked and the button stays.
     - **When the button comes back:** if Marketing Cloud gives no answer, the status says **Could not check** and **Validate Syntax** is shown again, so you can always check by hand. The extension tries again the next time you type.
@@ -534,6 +537,8 @@ The folder names of contents, the texts of a push content, the list for personal
 
 MobileConnect has no way to delete a message once it exists, and MobilePush only has one on the page of a single message. Marketing Cloud's API can delete them. The extension adds the buttons.
 
+![MobileConnect's message list with five messages ticked and the extension's Delete messages dialog: three messages will be deleted, two will not, each with its reason (one belongs to a transactional SMS message, one was made by a journey)](images/mobile-delete.png)
+
 **This deletes data in your account.** Everywhere else in these two apps the extension changes nothing by itself; here it deletes messages when you click and confirm. A deleted message cannot be brought back.
 
 - **Where the buttons are:**
@@ -593,6 +598,9 @@ The address of Content Builder is always the same, whatever you open in it. So y
     - The extension waits up to one minute for the asset to show up in the search. After that it gives up and shows a note.
     - The search is only a helper. Once the asset is open, the search box is emptied again, so the list behind the asset shows everything as before.
 - **When your coworker is in another business unit:**
+
+    ![A dialog over the greyed-out Marketing Cloud page says the link belongs to the business unit Demo Brand EU while you are in Demo Brand US, with the buttons Switch and open and Stay here](images/link-dialog.png)
+
     - The asset is not searched for. A dialog of the extension says which business unit the link belongs to, by name, and which one your coworker is in.
     - The dialog comes early, while Marketing Cloud is still loading behind it.
     - The page behind the dialog is greyed out and cannot be used until one of the buttons is clicked. The Escape key and a click next to the dialog do not close it.
@@ -740,6 +748,8 @@ In Contact Builder, the address in the browser stays the same whatever you open.
 
 In Contact Builder, the **Records** tab of a data extension only searches its primary key fields. A data extension without a primary key cannot be searched at all. The extension lets you search on any field.
 
+![The Records tab of a made-up data extension in Contact Builder: the field menu of the search is open and lists the primary key field SubscriberKey on top, marked as primary key, then every other field from A to Z below a line; the search box says "Starts with… (% = any text)" and has the extension's icon next to it](images/record-search.png)
+
 - **Where:**
     - Contact Builder → **Data Extensions** → open a data extension → **Records**.
     - The same tab when Email Studio shows it.
@@ -781,7 +791,7 @@ In Contact Builder, the **Records** tab of a data extension only searches its pr
 
 ### Options
 
-![The options page with its six groups: theme, menu of the code editor, format on save, readable keys, journey names and saved logins, each with its default ticked](images/options.png)
+![The options page with its seven groups: theme, menu of the code editor, format on save, readable keys, journey names and saved logins, each with its default ticked, and links to a Content Builder asset with the button that forgets the business units this browser has seen](images/options.png)
 
 Click the extension's icon in Chrome's toolbar. Every change applies at once; no reload is needed.
 

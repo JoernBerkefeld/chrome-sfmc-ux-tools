@@ -33,11 +33,11 @@
         "prepare": "husky || true"
     },
     "dependencies": {
-        "ampscript-data": "^4.3.0",
+        "ampscript-data": "^4.5.1",
         "codemirror": "5.65.21",
         "prettier": "^3.10.1",
-        "prettier-plugin-sfmc": "^2.3.1",
-        "sfmc-language-lsp": "^4.6.0",
+        "prettier-plugin-sfmc": "^2.3.2",
+        "sfmc-language-lsp": "^4.8.0",
         "ssjs-data": "^2.1.2",
         "typescript": "6.0.3"
     },

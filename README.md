@@ -59,7 +59,8 @@ Every section below starts with the platforms it works on: [![Engagement](images
 #### Marketing Cloud ![Next](images/badge-next.svg)
 
 - **CMS content editor**: the code of an email made with **Create with HTML**, and the **HTML** component in emails, landing pages and the content blocks for both. It gets [suggestions](#suggestions-while-you-type), [explanations](#explanations-when-you-point-at-code), [help with a function's inputs](#help-with-a-functions-inputs), [underlined mistakes](#mistakes-are-underlined) with [fixes](#one-click-fixes) and [tidying up](#tidy-up-your-code-formatting), all for AMPscript.
-- **Left to Salesforce:** the colours and everything about Handlebars. The extension explains, suggests and checks no Handlebars helper there, and adds no theme and no formatting on save.
+- **Handlebars too:** inside `{{ }}` the extension suggests, explains and checks the Handlebars helpers of Marketing Cloud Next, as it does AMPscript.
+- **Left to Salesforce:** the colours. The extension adds no theme and no formatting on save there.
 
 ### Colours in the code editor
 
@@ -109,7 +110,10 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 - **Not covered yet**: in browser scripts, what belongs to a value, such as the functions of `document`.
 - **In Marketing Cloud Next**: every AMPscript function, also the ones the editor leaves out. While you type a function name inside `%%[ ]%%` or `%%= =%%`, and on **Ctrl+Space** there, the extension suggests all 64 AMPscript functions Marketing Cloud Next has.
     - The editor's own list only opens at the moment you type `%%=` or `%%[`. While it is open, ours stays away.
-    - Inside `{{ }}`, **Ctrl+Space** still opens the editor's own list of Handlebars helpers.
+    - **Handlebars helpers:** inside `{{ }}`, while you type a name and on **Ctrl+Space**, the extension suggests the helpers Marketing Cloud Next has. Picking one writes its name and a blank.
+        - After `{{#` only helpers that open a block are offered, such as `if` and `each`. Picked without the `#`, such a helper brings it along.
+        - Nothing is offered where no helper goes: after `{{/`, `{{>` and `{{!`.
+        - While the editor's own list is open, ours stays away here too.
     - The editor's own list offers 37 AMPscript functions. These 27 are missing from it; with the extension you get them suggested, explained and with help for their inputs: `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `ContentBlockByID`, `ContentBlockByKey`, `ContentBlockByName`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `MD5`, `RaiseError`, `RegExMatch`, `ReplaceList`, `RetrieveSalesforceObjects`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
     - Counted in the editor of an email content block in November 2026; Salesforce may add to its lists at any time.
 
@@ -120,11 +124,12 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 ![Animation: the mouse comes to rest on the function AttributeValue and a box opens that explains it, with its input, links, an example and whether Marketing Cloud Next has it](images/hover.gif)
 
 - **Rest the mouse** on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions. A box explains what it does, what you have to give it, what you get back, shows an example and links to the full documentation.
+- **One link, to the page that fits:** for AMPscript the box links the function's page on sfmc.guide, for Engagement or for Next, matching the Marketing Cloud you are in. Where sfmc.guide has no Engagement page yet, it links ampscript.guide. For SSJS the box links ssjs.guide.
 - **Your own SSJS code is explained too**: point at one of your variables or functions and the box says what it is.
 - **You can move the mouse into the box** to scroll it or click a link.
 - Nothing is shown inside browser scripts.
 - **In Marketing Cloud Next**: every AMPscript function Marketing Cloud Next has is explained.
-    - The editor explains 41 functions itself, in one sentence each. While the mouse is on AMPscript, the extension hides that box and shows its own, so you never get two explanations at once. On a Handlebars helper it is the other way round: the editor's box shows and ours does not.
+    - The editor explains 41 functions itself, in one sentence each. While the mouse is on AMPscript, the extension hides that box and shows its own, so you never get two explanations at once. On a Handlebars helper it is the same: our box explains the helper, with its inputs and an example, and says where Marketing Cloud Next behaves differently from Salesforce's documentation. On a field inside `{{ }}`, which only the editor knows, the editor's box stays.
     - 23 functions that came with API version 68 get no explanation from the editor at all. For those, ours is the only one: `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `LookupOrderedRows`, `LookupRows`, `MD5`, `RegExMatch`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
 
 ### Which box is the extension's
@@ -177,7 +182,17 @@ The extension checks your AMPscript and SSJS while you type.
     - **Hints too:** Marketing Cloud's hints, such as a missing `WHERE`, are shown in yellow at the place they name.
     - **One wrong field at a time:** Marketing Cloud names only one unknown field per check. Fix it and the next one shows up.
     - **When Marketing Cloud does not say where:** the mark is at the start of the query.
-- **Not covered**: browser scripts are not checked, and there is no list of all problems yet.
+- **A `<script>` that will be lost** (Content Builder): Marketing Cloud removes JavaScript for the browser from emails, email templates and content blocks when it saves them, and still says the save worked. The extension underlines the opening `<script>` tag.
+    - **Red** in an email and an email template, also in a block you edit inside an email.
+    - **Yellow** in a content block on its own: it may have been meant for a CloudPage, but the block loses the script when it is saved all the same.
+    - **Not marked:** server-side scripts (`<script runat="server">`), AMPscript, and everything in CloudPages, which keeps such scripts.
+    - **Good to know:** after the save the editor may still show the tag although the stored content no longer has it. If you meant server-side JavaScript, add `runat="server"` to the tag.
+- **A tag typed into the text editor** (Content Builder): the **Content** tab of a free form block and a text block is a text editor. A tag typed there, such as `<script>` or `<div>`, is saved as plain text: readers see it as written, and code in it never runs.
+    - **Yellow underline** on every piece of text that looks like an HTML tag.
+    - **A note above the editor** says what happens and that HTML and code belong in the HTML Editor tab of the block.
+    - **Not marked:** formatting made with the editor's buttons, comparisons such as `a < b`, and AMPscript in `%%[ ]%%` and `%%= =%%`.
+    - **Only a warning:** saving works as before.
+- **Not covered**: what is inside a browser script is not checked, and there is no list of all problems yet.
 - **In Marketing Cloud Next**: AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why.
 
 ### One-click fixes
@@ -558,11 +573,21 @@ MobileConnect has no way to delete a message once it exists, and MobilePush only
 - **What is deleted:** every chosen message that is not refused below: SMS messages whatever their status, and push messages that are drafts or inactive. This was tried on a real account with a draft SMS message and with an active, API-triggered SMS message made in MobileConnect, and with a push message.
 - **What is refused, and why:**
     - **An SMS message that belongs to a transactional SMS message.** Deleting it leaves the transactional message broken for good: it stays listed and keeps its key, but can neither be opened nor deleted (seen on a real account). Delete the transactional message in the panel [Transactional Messages](#transactional-messages-sms-push-and-ott) instead.
+        - **A link takes you there:** the line ends with **Open the transactional message**, which closes the dialog and opens the panel on that message.
     - To find out, the extension reads every transactional SMS message of the business unit, once per dialog. This can take a moment on an account with many of them. If any of them cannot be read, the SMS message is refused, because the danger cannot be ruled out. The one exception: a transactional message that Marketing Cloud says no longer exists is passed over, because it has no SMS message left.
     - Deleted transactional messages stay readable, so they do not get in the way of this check (measured on a real account).
     - **A push message that is triggered by the API and has the same name as a transactional push message.** Nothing else links the two, so the name decides. Delete the transactional message in the panel instead. If the transactional push messages cannot be read, the message is refused.
+        - **A link takes you there:** the line of such a message ends with **Open the transactional message**. The click closes the dialog and opens the panel on that message. When several transactional messages have the name, each gets a link with its key.
+        - **The list follows:** when you delete a transactional message in the panel and close the panel, the list of MobilePush is loaded again; after a transactional SMS message, the list of MobileConnect.
     - **A push message that is active.** Active push messages are not deleted, however they are sent; drafts and inactive ones are. MobilePush's own delete button refuses active messages too. Make it inactive first.
     - **A message that a journey made.** The journey would lose its message, and deleting such a message was never tried.
+        - **A link looks for the journey:** in MobilePush and in MobileConnect, the line of such a message ends with **Find the journey**. Only the click starts the search: the extension reads all journeys of the business unit, in all their versions, which can take half a minute on a large account. The dialog says how far it is.
+        - **Found:** the line gets a link per journey version that uses the message, such as **Open journey "Welcome" (version 2, Published)**, which opens the journey in a new tab. The message stays refused.
+        - **No journey uses it any more:** the journey, or that version of it, was deleted and left its message behind. Such a message moves to **Will be deleted**, although it is still active. This was tried on a real account for a push message and for an SMS message: the message was deleted and nothing else changed.
+        - **The list can move while it is read:** Marketing Cloud hands out the journeys in no fixed order, so now and then one comes twice and another not at all. The extension then reads the list again, three times at most, until it has every version.
+        - **Before the delete,** the journeys are read once more. A message that a journey uses by then is left alone.
+        - **Push, only plain notifications:** an inbox or in-app message of a journey stays refused even when no journey is found, because nobody has seen how a journey names those.
+        - **When in doubt, nothing changes:** if the journeys cannot be read completely, or the Marketing Cloud page is in another business unit than MobilePush, the message stays refused and the link can be clicked again. The same goes for an account with Single Send journeys that the list of journeys does not show.
     - **A message that cannot be read again, or whose answer lacks what the check needs.** When in doubt, nothing is deleted.
 - **Never tried, and deleted without a special check:**
     - SMS messages that are scheduled or bound to a keyword.
@@ -849,7 +874,7 @@ npm run build
 ```
 
 - `src/` holds the extension's sources. `npm run build` writes the loadable extension to `dist/extension` and packs that folder as `dist/chrome-sfmc-ux-tools-v<version>.zip` for the Chrome Web Store. For **Load unpacked**, always pick `dist/extension`, not `src`.
-- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.6.0) into one classic script each with esbuild. A third bundle, `src/editor-typescript.js`, holds TypeScript (6.0.3, the exact version the service is built for), the SSJS service of `sfmc-language-lsp/typescript` and the text of `ssjs-data`'s `sfmc-globals.d.ts`; it alone is minified. The build fails if a bundle calls `eval` or `new Function`, which Chrome does not allow. A fourth bundle, `src/editor-codemirror.js`, holds CodeMirror 5 with its HTML mode and hint addon, and `src/editor-codemirror.css` becomes CodeMirror's stylesheet: the code editor for the text of a transactional SMS, the only place where the extension brings an editor instead of working on the page's own. `src/transactional-messages.js` loads that bundle, `language-data.js`, `editor-highlight.js` and `editor-language.js` with `import()` into its own (isolated) world when an SMS form opens, which is why the manifest lists them as web accessible for `exacttarget.com`. All other files are copied as they are.
+- The build bundles `src/editor-format.js` with Prettier and `prettier-plugin-sfmc`, and `src/editor-language.js`, the files in `src/editor-language` and the `sfmc-language-lsp` package (currently 4.8.0) into one classic script each with esbuild. A third bundle, `src/editor-typescript.js`, holds TypeScript (6.0.3, the exact version the service is built for), the SSJS service of `sfmc-language-lsp/typescript` and the text of `ssjs-data`'s `sfmc-globals.d.ts`; it alone is minified. The build fails if a bundle calls `eval` or `new Function`, which Chrome does not allow. A fourth bundle, `src/editor-codemirror.js`, holds CodeMirror 5 with its HTML mode and hint addon, and `src/editor-codemirror.css` becomes CodeMirror's stylesheet: the code editor for the text of a transactional SMS, the only place where the extension brings an editor instead of working on the page's own. `src/transactional-messages.js` loads that bundle, `language-data.js`, `editor-highlight.js` and `editor-language.js` with `import()` into its own (isolated) world when an SMS form opens, which is why the manifest lists them as web accessible for `exacttarget.com`. All other files are copied as they are.
 - `src/editor-language/core` holds the editor-independent logic (text and a position in, plain data out), and the files next to it bind it to CodeMirror.
 - The TypeScript bundle is about 4 MB, so it is not a content script. When the language script sets up its first editor in a frame, it dispatches `sfmc-ux-tools:need-typescript` on the document; `src/editor-typescript-loader.js` (extension world) passes that on, and the service worker `src/background.js` injects `editor-typescript.js` into the page world of the document that asked with `chrome.scripting.executeScript` and answers whether that worked; after a failure the next editor that is set up asks again. TypeScript's diagnostics only run in the check after typing has paused. The language script looks the TypeScript API up at every use and falls back to the catalogue without it.
 - `node scripts/measure-typescript.mjs` (after a build) prints the size of the TypeScript bundle and how long it takes to start and to answer for a 1,500-line document.

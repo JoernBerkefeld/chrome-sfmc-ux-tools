@@ -4,6 +4,17 @@
 
 ### Added
 
+- **Content Builder, a `<script>` that will be lost is underlined**: Marketing Cloud cuts JavaScript for the browser out of emails, email templates and content blocks when it saves them, the tag and what is in it, and still reports the save as done. The extension now underlines the opening tag of every such `<script>` and says so when you rest the mouse on it, with a link to the page on sfmc.guide that lists what is kept where.
+    - **What the note also says:** after the save the editor may still show the tag although the stored content no longer has it, and `runat="server"` may just be missing if server-side JavaScript was meant.
+    - **Error** in an email and an email template, also in a block you edit inside an email.
+    - **Warning** in a content block on its own (HTML block, code snippet, free form, text block): it may have been meant for a CloudPage, but the block loses the script when it is saved all the same.
+    - **Not marked:** server-side scripts (`<script runat="server">`), AMPscript in a script tag, and anything in CloudPages, which keeps scripts for the browser.
+- **Content Builder, a warning for HTML tags typed into the text editor**: the **Content** tab of a free form block and a text block is a text editor, not a code editor. A tag typed there, such as `<script>` or `<div>`, is saved as plain text: readers see it as written, and code in it never runs. Marketing Cloud still reports the save as done.
+    - **Underlined:** every piece of text that looks like an HTML tag gets a yellow wavy underline.
+    - **A note above the editor** names the first such tag, says what happens to it and that HTML and code belong in the HTML Editor tab of the block, with a link to the page on sfmc.guide that lists what is kept where. The extension's icon in the note says under the mouse that the extension added it.
+    - **Not marked:** formatting made with the editor's own buttons, comparisons such as `a < b`, and AMPscript in `%%[ ]%%` and `%%= =%%`.
+    - **Only a warning:** saving works as before, and the extension adds nothing to the content.
+    - The feature is always on and has no switch, and needs no new permission.
 - **Search the records of a data extension on every field**: in Contact Builder, the **Records** tab of a data extension searched its primary key fields only, and not at all without a primary key. Now it searches any field.
     - **The menu lists every field:** primary key fields on top, marked with **(primary key)**, then all other fields from A to Z below a line.
     - **Without a primary key** the extension adds the menu that Marketing Cloud leaves out and switches the greyed-out search box on.
@@ -30,10 +41,21 @@
     - **Refused, SMS:** a message that belongs to a transactional SMS message. Deleting it would leave that transactional message broken for good (seen on a real account). For this, every transactional SMS message of the business unit is read once per dialog; if they cannot all be read, the message is refused too. Transactional messages that Marketing Cloud says no longer exist are passed over.
     - **Refused, push:** a message triggered by the API that has the name of a transactional push message, and every active push message, however it is sent (make it inactive first). Drafts and inactive ones are deleted.
     - **Refused, both:** a message a journey made, and any message whose answer from Marketing Cloud lacks what the check needs.
+    - **A link to the transactional message:** in both apps, a message refused because of a transactional message has the link **Open the transactional message**, which closes the dialog and opens the panel Transactional Messages on that message. Several transactional messages with the same name get a link each, with the key.
+    - **A link that looks for the journey:** in both apps, a message a journey made has the link **Find the journey**. Only the click reads the journeys, in all their versions, once for all messages of the dialog; the dialog says how far it is. Every journey version that uses the message gets a link that opens it in a new tab.
+    - **A journey's message that no journey uses any more may be deleted:** when the search read every journey version and none names the message, it moves to **Will be deleted**, although it is active (tried on a real account for a push and for an SMS message: the journey was deleted, its message stayed, and deleting it changed nothing else). The list of journeys comes in no fixed order, so it is read again, three times at most, while a version is missing. The journeys are read again right before the delete. If they cannot be read completely, or belong to another business unit than MobilePush is in, the message stays refused. Of push messages, this holds for plain notifications only; an inbox or in-app message of a journey stays refused.
+    - **How the journeys are read:** MobilePush may not read journeys, so the Marketing Cloud page reads them for it, page by page, through the page you are logged in to. Nothing is written by it and no new permission is needed.
     - **One after the other:** a delete that fails is shown with what Marketing Cloud said and does not stop the rest; at the end the dialog says how many were deleted and how many failed, and the list is loaded again.
     - **Not tried, and deleted without a special check:** scheduled or keyword-bound SMS messages, and push messages with automations, which the message itself does not show.
     - The extension therefore also runs on `https://mc.<stack>.marketingcloudapps.com/MobileConnectFuel3/` and `…/mobilepush/`, which needs no new permission. The feature is always on and has no switch.
 - **Transactional messages, formatting the message:** the code editor of the form for an SMS or push message gets what the other code editors have: the **{ }** button, Shift+Alt+F, and formatting before the form is saved when that option is on. The details, which are only read, are never formatted. For this the formatter is loaded when such a form is opened.
+- **Marketing Cloud Next, Handlebars in the content editor**: inside `{{ }}` the extension now helps as it does with AMPscript. Before, everything about Handlebars was left to the editor.
+    - **Suggestions:** the helpers Marketing Cloud Next has, while you type a name and on **Ctrl+Space**. A helper is written with a blank after it. After `{{#` only helpers that open a block are offered, and nothing after `{{/`, `{{>` and `{{!`. While the editor shows its own list, ours stays away.
+    - **Explanations:** rest the mouse on a helper and the extension's box explains it, with its inputs, an example, a link to its page on sfmc.guide and a note where Marketing Cloud Next differs from Salesforce's documentation. The editor's own box is hidden there, so there are never two. On a field inside `{{ }}`, which only the editor knows, the editor's box stays.
+    - **Mistakes underlined:** a helper Marketing Cloud Next does not have, and a helper written in the wrong case (Marketing Cloud Next tells `properCase` from `propercase`), with a one-click fix that also corrects the closing tag of a block.
+    - **Known gaps**, all faults of the bundled language service that will come with its next version: a Handlebars block that is not closed is only called "Parse error", and one closed with the wrong name is underlined on the wrong line; a field that has the name of a helper, such as `{{uppercase add}}`, is explained as that helper; and helpers are also suggested where a field goes.
+    - Nothing changes in Marketing Cloud Engagement.
+- **Transactional Messages, the lists of Mobile Studio follow a delete:** when a transactional message was deleted in the panel, also when it is not known whether the delete arrived, closing the panel loads the list of MobilePush or MobileConnect again, whichever shows the messages of that channel.
 - **Transactional push, link to its content:** the details and the form of a transactional push message show **Open in Content Builder**, a link to the asset that holds the message, which opens in a new tab. For this the panel reads the business unit you are in once.
 - **Links to a Content Builder asset**: Content Builder's address never changes, so an asset could not be sent as a link. Now it can, to anyone who has the extension.
     - **The address names the open asset:** while an asset is open, the address of the Marketing Cloud page ends with `#app/Content%20Builder/ux-tools/<mid>/asset/<id>`, the business unit's MID and the asset's id; back on the list, it is Content Builder's plain address again. The page is not loaded again for this.
@@ -72,11 +94,21 @@
 
 - **Automation Studio's script activity, mark next to the line number:** resting the mouse on the mark of an error or warning opens the extension's box with everything that is wrong on that line, the same box as on an underline. The editor's own small tooltip, which appeared far from the mark in that dialog, is no longer shown in the editors the extension takes over.
 - **Links into Email Studio**: the extension stops listening for clicks and key presses in Email Studio once a link was followed or given up, and for loaded scripts once it found Email Studio's state. Nothing else about these links changes.
+- **One link in the box of an AMPscript function:** the box that explains a function now links one page only, the sfmc.guide page that fits where you are.
+    - **In Marketing Cloud Engagement:** the function's page for Engagement. Where sfmc.guide has none yet (26 rarely used functions, such as the Microsoft Dynamics ones), the page on ampscript.guide.
+    - **In Marketing Cloud Next:** the function's page for Next.
+    - The link to Salesforce's own documentation is gone from these boxes.
+    - In Marketing Cloud Next, the box of an AMPscript function also says what it returns there and shows an example for Next.
+    - Comes with the bundled language service, `sfmc-language-lsp` 4.8.0 (with `ampscript-data` 4.5.1 and `handlebars-data` 0.8.0).
 - **The extension's icon says what it marks:** wherever the extension shows its icon in Marketing Cloud (its boxes and its list of suggestions in the code editors, the status of the SQL check, its buttons, dialogs, menu entry and panel), resting the mouse on the icon now shows one sentence that starts with **SFMC UX Tools:** and says what the extension added or changed at that place. Before, it only named the extension, or said nothing.
 
 ### Fixed
 
-- **Formatting:** a short AMPscript expression inside text, such as `%%=v(@code)=%%` in an SMS, stays on one line instead of being spread over three. The bundled `prettier-plugin-sfmc` is now 2.3.1.
+- **Format on save and Ctrl+S in Content Builder saved outdated code**: Content Builder saves its own copy of the code, and copies a change from the editor only about half a second after it was made.
+    - **Format on save:** the save was let through 0.3 seconds after the formatting, so the code from before the formatting was stored while the editor showed the formatted code as **Saved**.
+    - **Ctrl+S:** pressed right after typing, the save could miss the last words.
+    - **Now** a save waits until Content Builder says that it has taken over what the editor shows. If it says nothing for three seconds, the save goes through anyway.
+- **Formatting:** a short AMPscript expression inside text, such as `%%=v(@code)=%%` in an SMS, stays on one line instead of being spread over three. The bundled `prettier-plugin-sfmc` is now 2.3.2.
 - **Suggestions in Marketing Cloud Next:** the extension's icon in the list of suggestions has a column of its own at the right edge. Before, it lay on top of the first suggestion.
 - **Delete in MobileConnect:** the checkboxes and the **Delete selected** button were missing when Marketing Cloud opened MobileConnect under an address in small letters, which it does at times. They are there now.
 - **Options:** when the options are higher than the popup, only the vertical scroll bar appears. The page now leaves room for it; before, that scroll bar made the page too wide and brought a horizontal one as well.

@@ -1188,12 +1188,70 @@ async function linkDialog(context) {
     await page.close();
 }
 
+/**
+ * Content Builder: a script for the browser in an email, underlined in red because Marketing Cloud
+ * removes it when it saves, with the box that says so.
+ *
+ * @param {object} context browser, origin and problems
+ */
+async function lostScript(context) {
+    const page = await editorPage(context, { sample: 'lost', pointer: 'on' }, SHARP);
+    await expect(page, 'the red underline on the <script> tag of the email', () =>
+        [...document.querySelectorAll('.CodeMirror .sfmc-diagnostic-error')].some((mark) =>
+            mark.textContent.includes('script'),
+        ),
+    );
+    const place = await placeOf(page, '<script>');
+    await page.mouse.move(place.x, place.y);
+    await expect(page, 'the box that says the script is removed on save', () =>
+        document
+            .querySelector('.sfmc-hover .sfmc-problem')
+            ?.textContent.includes('removes this <script> when you save'),
+    );
+    await pause(300);
+    await picture(page, 'lost-script.png', await regionOf(page, ['.CodeMirror', '.sfmc-hover']));
+    await page.close();
+}
+
+/**
+ * Content Builder: a tag typed into the text editor of a free form block, underlined in yellow,
+ * and the note above the editor.
+ *
+ * @param {object} context browser, origin and problems
+ */
+async function richText(context) {
+    const page = await openPage(context.browser, context.origin, context.problems, SHARP);
+    await page.goto(`${context.origin}/demo/rich-text.html`);
+    await expect(page, 'the note above the text editor', () =>
+        document
+            .querySelector('.sfmc-rich-text-notice')
+            ?.textContent.includes('saved as plain text'),
+    );
+    await expect(
+        page,
+        'the underline on the typed tag',
+        () =>
+            document
+                .querySelector('#editor iframe')
+                .contentWindow.CSS.highlights.get('sfmc-typed-tag')?.size > 0,
+    );
+    await pause(300);
+    await picture(
+        page,
+        'rich-text.png',
+        await regionOf(page, ['.block-tabs', '.sfmc-rich-text-notice', '#editor']),
+    );
+    await page.close();
+}
+
 const CAPTURES = {
     colours,
     completion,
     signature,
     hover,
     diagnostics,
+    lostScript,
+    richText,
     quickFix,
     format,
     panelList,

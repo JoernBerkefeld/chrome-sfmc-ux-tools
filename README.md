@@ -14,6 +14,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 
 - **Code editors you can read:** AMPscript and SSJS in colour, in a light or dark theme.
 - **Help while you type:** suggestions, explanations when you point at code, and mistakes underlined before you save.
+- **Warnings before Content Builder throws code away:** a `<script>` for the browser in an email, email template or content block, and an HTML tag typed into the text editor of a block, are marked. Marketing Cloud removes the one and stores the other as plain text, and still says the save worked.
 - **Tidy code with one click:** the **{ }** button or **Shift+Alt+F**, and **Ctrl+S** saves.
 - **Readable keys instead of random ones:** new automations, activities, data extensions, journeys, API events, sender profiles, send classifications, file locations, roles and users get a key made from their name, such as `Welcome_series`.
 - **No more "New Journey - 18 November…":** Journey Builder asks you for a real name before a new journey is saved.
@@ -24,6 +25,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Links into Contact Builder:** the address in the browser now follows what you open in Contact Builder, so you can copy it and send it. Such a link also works for a coworker without the extension.
 - **Search data extension records on every field:** in Contact Builder, the search above the records of a data extension works on any field, also when the data extension has no primary key.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
+- **Marketing Cloud Next:** the same help for AMPscript and for Handlebars in the content editor.
 - **Private:** nothing is collected and nothing leaves Marketing Cloud.
 
 ## Features
@@ -37,6 +39,7 @@ Every section below starts with the platforms it works on: [![Engagement](images
 #### Marketing Cloud ![Engagement](images/badge-engagement.svg)
 
 - **Content Builder**: the code view of emails, templates and content blocks, and new content blocks and emails for [readable keys](#readable-keys).
+- **Content Builder, the Content tab of a free form block and a text block**: the warning for [a tag typed into the text editor](#mistakes-are-underlined).
 - **Content Builder, opened from the Marketing Cloud menu**: the address of the page, for [links to an asset](#links-to-a-content-builder-asset).
 - **Email Studio, opened from the Marketing Cloud menu**: the address of the page, for [links into Email Studio](#links-into-email-studio).
 - **Contact Builder, opened from the Marketing Cloud menu**: the address of the page, for [links into Contact Builder](#links-into-contact-builder).
@@ -121,7 +124,7 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
 
 [![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement) [![Next](images/badge-next.svg)](#marketing-cloud-next)
 
-![Animation: the mouse comes to rest on the function AttributeValue and a box opens that explains it, with its input, links, an example and whether Marketing Cloud Next has it](images/hover.gif)
+![Animation: the mouse comes to rest on the function AttributeValue and a box opens that explains it, with its input, a link to sfmc.guide, an example and whether Marketing Cloud Next has it](images/hover.gif)
 
 - **Rest the mouse** on an AMPscript function, keyword or variable, or on one of Marketing Cloud's SSJS functions. A box explains what it does, what you have to give it, what you get back, shows an example and links to the full documentation.
 - **One link, to the page that fits:** for AMPscript the box links the function's page on sfmc.guide, for Engagement or for Next, matching the Marketing Cloud you are in. Where sfmc.guide has no Engagement page yet, it links ampscript.guide. For SSJS the box links ssjs.guide.
@@ -183,17 +186,24 @@ The extension checks your AMPscript and SSJS while you type.
     - **One wrong field at a time:** Marketing Cloud names only one unknown field per check. Fix it and the next one shows up.
     - **When Marketing Cloud does not say where:** the mark is at the start of the query.
 - **A `<script>` that will be lost** (Content Builder): Marketing Cloud removes JavaScript for the browser from emails, email templates and content blocks when it saves them, and still says the save worked. The extension underlines the opening `<script>` tag.
+
+    ![A made-up email in the code view: the opening <script> tag of a script for the browser is underlined in red, and the box above it says that Marketing Cloud removes this script, tag and content, when you save, that the editor may still show it afterwards, and that runat="server" may be missing](images/lost-script.png)
+
     - **Red** in an email and an email template, also in a block you edit inside an email.
     - **Yellow** in a content block on its own: it may have been meant for a CloudPage, but the block loses the script when it is saved all the same.
     - **Not marked:** server-side scripts (`<script runat="server">`), AMPscript, and everything in CloudPages, which keeps such scripts.
     - **Good to know:** after the save the editor may still show the tag although the stored content no longer has it. If you meant server-side JavaScript, add `runat="server"` to the tag.
 - **A tag typed into the text editor** (Content Builder): the **Content** tab of a free form block and a text block is a text editor. A tag typed there, such as `<script>` or `<div>`, is saved as plain text: readers see it as written, and code in it never runs.
+
+    ![The Content tab of a made-up free form block: a note above the text editor says that "<script>" and one more look like HTML tags, are saved as plain text and belong in the HTML Editor tab; in the text, the typed <script> and </script> are underlined in yellow](images/rich-text.png)
+
     - **Yellow underline** on every piece of text that looks like an HTML tag.
     - **A note above the editor** says what happens and that HTML and code belong in the HTML Editor tab of the block.
     - **Not marked:** formatting made with the editor's buttons, comparisons such as `a < b`, and AMPscript in `%%[ ]%%` and `%%= =%%`.
     - **Only a warning:** saving works as before.
 - **Not covered**: what is inside a browser script is not checked, and there is no list of all problems yet.
 - **In Marketing Cloud Next**: AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why.
+    - **Handlebars too:** a helper that Marketing Cloud Next does not have, and a helper written in the wrong case (`propercase` instead of `properCase`), are underlined.
 
 ### One-click fixes
 
@@ -204,7 +214,7 @@ The extension checks your AMPscript and SSJS while you type.
 - Where the extension knows a remedy, the box of a problem offers it as a button.
 - **Ctrl+.** (**Cmd+.** on a Mac) opens the fixes for the problem at your cursor. **Enter** applies the first one, **Esc** closes the box.
 - **Ctrl+Z** undoes a fix in one step.
-- **In Marketing Cloud Next**: the same, for the AMPscript mistakes the extension underlines there.
+- **In Marketing Cloud Next**: the same, for the AMPscript mistakes the extension underlines there. A Handlebars helper in the wrong case is corrected with one click, also in the closing tag of its block.
 
 ### Jump to where something is defined
 
@@ -237,6 +247,7 @@ The extension checks your AMPscript and SSJS while you type.
 
 - **Ctrl+S** (**Cmd+S** on a Mac) in the code view of Content Builder saves your content, just like Marketing Cloud's **Save** button.
 - Without the extension, that key opens the browser's "save this page" window instead.
+- **Saves what you see:** Content Builder takes over a change from the editor only about half a second after it was made. The save waits until Content Builder has the code the editor shows, so a save right after typing, or right after tidying with format on save, keeps your last change. If Content Builder gives no sign for three seconds, the save goes through anyway.
 - Content Builder only: the activities of Automation Studio save at the end of their wizard.
 
 ### The browser's right-click menu in the code editor

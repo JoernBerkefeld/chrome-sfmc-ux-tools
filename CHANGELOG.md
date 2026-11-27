@@ -100,7 +100,15 @@
     - **In Marketing Cloud Next:** the function's page for Next.
     - The link to Salesforce's own documentation is gone from these boxes.
     - In Marketing Cloud Next, the box of an AMPscript function also says what it returns there and shows an example for Next.
-    - Comes with the bundled language service, `sfmc-language-lsp` 4.8.0 (with `ampscript-data` 4.5.1 and `handlebars-data` 0.8.0).
+    - Comes with the bundled language service, `sfmc-language-lsp` (4.7.0 and 4.8.0) and `ampscript-data` (4.4.0 and 4.5.0).
+- **More that the extension knows, from the packages it bundles:** these features were built in the packages below and show up in the code editors without a change in the extension itself.
+    - **Marketing Cloud Next, functions it does not have:** an AMPscript function that Marketing Cloud Next does not support gets no explaining box any more; the underline on it says why. (`sfmc-language-lsp` 4.7.0)
+    - **Marketing Cloud Next, what was tried on a real account:** the box of an AMPscript function carries a note on how it behaved in a Next email. New or corrected are the notes for `Lookup` and `LookupRows` (as in Engagement), `LookupOrderedRows` (every tried call made the preview fail), `RetrieveSalesforceObjects` (operators and `LIKE`), `StringToDate` and `FormatDate`. (`ampscript-data` 4.5.0 to 4.5.2)
+    - **Marketing Cloud Next, Handlebars helpers tried on a real account:** the box of a helper says where it differs from Salesforce's documentation, for example `query` and `queryFirst` (which filters and sortings work for Sales Cloud objects and marketing objects, and that `type="DG"` failed) and `filter` (the documented form made the preview fail). (`handlebars-data` 0.7.0 to 0.8.2)
+    - **Marketing Cloud Next, helper names as Next accepts them:** suggestions, boxes and the formatter write `jsonpath`, `propercase` and `timezoneConversion`. The earlier spellings are rejected by Marketing Cloud Next when the email is saved. (`handlebars-data` 0.8.0, `prettier-plugin-sfmc` 2.3.2)
+    - **Marketing Cloud Next, two more Handlebars mistakes underlined:** an unfinished expression right before the next one (`{{upp {{x}}`) and a named input without a value (`{{foo bar=}}`), both of which Marketing Cloud Next rejects. (`sfmc-handlebars-parser` 0.2.1, `sfmc-language-lsp` 4.8.3)
+    - **SSJS, WSProxy `retrieve`:** its box now says what was measured on data extensions: `like` matches anywhere and ignores case, `equals` with an empty text is rejected, and the columns come back in the order asked for. (`ssjs-data` 2.1.3)
+    - **Bundled now:** `sfmc-language-lsp` 4.8.3, `prettier-plugin-sfmc` 2.3.3, `ampscript-data` 4.5.2, `ssjs-data` 2.1.3, `handlebars-data` 0.8.2 and `sfmc-handlebars-parser` 0.2.1.
 - **The extension's icon says what it marks:** wherever the extension shows its icon in Marketing Cloud (its boxes and its list of suggestions in the code editors, the status of the SQL check, its buttons, dialogs, menu entry and panel), resting the mouse on the icon now shows one sentence that starts with **SFMC UX Tools:** and says what the extension added or changed at that place. Before, it only named the extension, or said nothing.
 
 ### Fixed
@@ -109,7 +117,7 @@
     - **Format on save:** the save was let through 0.3 seconds after the formatting, so the code from before the formatting was stored while the editor showed the formatted code as **Saved**.
     - **Ctrl+S:** pressed right after typing, the save could miss the last words.
     - **Now** a save waits until Content Builder says that it has taken over what the editor shows. If it says nothing for three seconds, the save goes through anyway.
-- **Formatting:** a short AMPscript expression inside text, such as `%%=v(@code)=%%` in an SMS, stays on one line instead of being spread over three. The bundled `prettier-plugin-sfmc` is now 2.3.2.
+- **Formatting:** a short AMPscript expression inside text, such as `%%=v(@code)=%%` in an SMS, stays on one line instead of being spread over three. Comes with the bundled formatter (`prettier-plugin-sfmc` 2.3.1).
 - **Suggestions in Marketing Cloud Next:** the extension's icon in the list of suggestions has a column of its own at the right edge. Before, it lay on top of the first suggestion.
 - **Delete in MobileConnect:** the checkboxes and the **Delete selected** button were missing when Marketing Cloud opened MobileConnect under an address in small letters, which it does at times. They are there now.
 - **Options:** when the options are higher than the popup, only the vertical scroll bar appears. The page now leaves room for it; before, that scroll bar made the page too wide and brought a horizontal one as well.

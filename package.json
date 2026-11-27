@@ -39,7 +39,7 @@
         "prettier-plugin-sfmc": "^2.3.3",
         "sfmc-language-lsp": "^4.8.3",
         "ssjs-data": "^2.1.3",
-        "typescript": "6.0.3"
+        "typescript": "7.0.2"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

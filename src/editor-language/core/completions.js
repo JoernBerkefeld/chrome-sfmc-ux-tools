@@ -24,9 +24,6 @@ const DETAIL_LENGTH = 60;
 const WORD_BEFORE_CURSOR = /@{0,2}\w*$/;
 // what starts a Handlebars helper that has a block, as in "{{#if"
 const BLOCK_SIGN = '#';
-// what opens a Handlebars expression that takes no helper: the end of a block, a partial, a
-// comment, each also behind the sign that trims the blanks around the expression
-const NO_HELPER = /\{\{~?\s*[/>!][^{}]*$/;
 // the typed start of an SSJS name with the objects it belongs to, like "Platform.Function.Loo"
 const CHAIN_BEFORE_CURSOR = /(?:[\w$]+\.)*[\w$]*$/;
 // the typed start of a plain JavaScript name
@@ -275,10 +272,6 @@ function ampscriptHints(text, position, line) {
     const word = WORD_BEFORE_CURSOR.exec(before)[0];
     const start = before.slice(0, before.length - word.length);
     const isHandlebars = IS_NEXT && isInHandlebars(before);
-    // the end of a block, a partial and a comment name no helper
-    if (isHandlebars && NO_HELPER.test(before)) {
-        return { list: [], typed: word };
-    }
     // "{{#i": the sign belongs to what is typed, and only helpers with a block fit
     const isBlock = isHandlebars && start.endsWith(BLOCK_SIGN);
     const needle = word.toLowerCase();

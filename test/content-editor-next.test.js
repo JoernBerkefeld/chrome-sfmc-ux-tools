@@ -671,6 +671,46 @@ test('Next: a Handlebars helper is explained as a helper, a misspelt one can be 
     assert.equal(help.querySelector('strong').textContent, 'value2: number');
 });
 
+test('Next: a field with the name of a helper is left to the page, and no helper is suggested where a field goes', async () => {
+    const { window, editor, tooltip } = await withPageParts(
+        '<p>{{uppercase add}} {{Contact.length}}</p>\n<p>{{uppercase na}}</p>',
+    );
+    await checkPause();
+    const { document } = window;
+    assert.deepEqual(underlined(editor), []);
+    // "add" and "length" are helpers, but not where a field stands
+    for (const place of ['{{uppercase a', '{{Contact.len']) {
+        await rest(window, editor, place);
+        assert.equal(Object.hasOwn(tooltip.dataset, 'sfmcUxToolsMuted'), false, place);
+        assert.equal(document.querySelector(HOVER), null, place);
+    }
+    await rest(window, editor, '{{upper');
+    assert.match(document.querySelector(`${HOVER} pre`).textContent, /^\(helper\) uppercase\(/);
+
+    cursorBehind(editor, '{{uppercase na');
+    assert.equal(pressCtrlSpace(window, editor), 'page');
+    assert.equal(document.querySelector(POPUP), null);
+});
+
+test('Next: a Handlebars block that is closed wrongly or not at all is underlined at its name, next to the other mistakes', async () => {
+    const wrong = await withEditor('<p>{{#if a}}x{{/each}}</p>\n<p>{{properCase a}}</p>');
+    await checkPause();
+    assert.deepEqual(underlined(wrong.editor), ['error: each', 'warning: {{properCase a}}']);
+    await rest(wrong.window, wrong.editor, '{{/ea');
+    assert.match(
+        wrong.window.document.querySelector(`${HOVER} .sfmc-problem`).textContent,
+        /\{\{\/each\}\} does not close \{\{#if\}\}/,
+    );
+
+    const open = await withEditor('<p>{{nope a}}</p>\n<p>{{#if b}}</p>');
+    await checkPause();
+    assert.deepEqual(underlined(open.editor), ['error: if', 'warning: {{nope a}}']);
+
+    const unfinished = await withEditor('<p>fine</p>\n<p>{{upp');
+    await checkPause();
+    assert.deepEqual(underlined(unfinished.editor), ['error: {{']);
+});
+
 test('Next: server-side JavaScript is said to be unsupported, and nothing else is said about it', async () => {
     const { window, editor } = await withEditor(
         '<script runat="server">\nvar a = Platform.Function.Lookup("a", "b", "c", 1);\n</script>',

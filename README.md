@@ -115,7 +115,7 @@ While you type code, a small list offers what fits. Pick an entry and it is writ
     - The editor's own list only opens at the moment you type `%%=` or `%%[`. While it is open, ours stays away.
     - **Handlebars helpers:** inside `{{ }}`, while you type a name and on **Ctrl+Space**, the extension suggests the helpers Marketing Cloud Next has. Picking one writes its name and a blank.
         - After `{{#` only helpers that open a block are offered, such as `if` and `each`. Picked without the `#`, such a helper brings it along.
-        - Nothing is offered where no helper goes: after `{{/`, `{{>` and `{{!`.
+        - Nothing is offered where no helper goes: after `{{/`, `{{>` and `{{!`, and where a field stands, as after the helper in `{{uppercase …}}`.
         - While the editor's own list is open, ours stays away here too.
     - The editor's own list offers 37 AMPscript functions. These 27 are missing from it; with the extension you get them suggested, explained and with help for their inputs: `Base64Decode`, `Base64Encode`, `BeginImpressionRegion`, `BuildRowSetFromString`, `BuildRowSetFromXML`, `Char`, `ClaimRow`, `ClaimRowValue`, `ContentBlockByID`, `ContentBlockByKey`, `ContentBlockByName`, `DatePart`, `Domain`, `EndImpressionRegion`, `GUID`, `IsEmailAddress`, `IsNullDefault`, `MD5`, `RaiseError`, `RegExMatch`, `ReplaceList`, `RetrieveSalesforceObjects`, `SHA1`, `SHA256`, `SHA512`, `StringToHex`, `URLEncode`.
     - Counted in the editor of an email content block in November 2026; Salesforce may add to its lists at any time.
@@ -203,7 +203,7 @@ The extension checks your AMPscript and SSJS while you type.
     - **Only a warning:** saving works as before.
 - **Not covered**: what is inside a browser script is not checked, and there is no list of all problems yet.
 - **In Marketing Cloud Next**: AMPscript that Marketing Cloud Next does not support is underlined, such as a function that only Engagement has, and so is server-side JavaScript. Point at the underline to read why.
-    - **Handlebars too:** a helper that Marketing Cloud Next does not have, and a helper written in the wrong case (`propercase` instead of `properCase`), are underlined.
+    - **Handlebars too:** a helper that Marketing Cloud Next does not have, and a helper written in the wrong case (`properCase` instead of `propercase`), are underlined. So are a block closed with the wrong name, a block that is never closed, and an expression without its `}}`.
 
 ### One-click fixes
 

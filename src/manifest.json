@@ -37,6 +37,10 @@
             ]
         },
         {
+            "resources": ["icons/sidebar-hide.svg", "icons/sidebar-show.svg"],
+            "matches": ["https://*.exacttarget.com/*"]
+        },
+        {
             "resources": [
                 "editor-codemirror.js",
                 "language-data.js",

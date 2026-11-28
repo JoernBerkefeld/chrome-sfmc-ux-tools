@@ -23,7 +23,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Links to a Content Builder asset:** the address shows which asset is open, and in which business unit, so you can send it to a coworker who also has the extension. In another business unit, the link offers to switch first.
 - **Links into Email Studio:** the same for data extensions and lists, and for folders of data extensions, lists, groups and data filters.
 - **Links into Contact Builder:** the address in the browser now follows what you open in Contact Builder, so you can copy it and send it. Such a link also works for a coworker without the extension.
-- **A wider menu in Email Studio:** drag the right edge of the folder menu to make it wider. The width is remembered.
+- **A wider menu in Email Studio:** drag the right edge of the folder menu to make it wider or narrower. The width is remembered, and hiding the menu got a clearer button.
 - **Search data extension records on every field:** in Contact Builder, the search above the records of a data extension works on any field, also when the data extension has no primary key.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Marketing Cloud Next:** the same help for AMPscript and for Handlebars in the content editor.
@@ -835,12 +835,15 @@ In Contact Builder, the **Records** tab of a data extension only searches its pr
 
 The menu on the left of Email Studio, with the folders of data extensions, lists and more, is always 236 pixels wide. Long folder names are cut off, and deep folders need scrolling to the side. The extension lets you make it wider.
 
-- **Drag the right edge of the menu**, between the menu and the bar that collapses it. The mouse pointer turns into a double arrow there. While you drag, a blue line shows where the edge will be; the menu takes its new width when you let go.
+- **Drag the right edge of the menu**, the strip with the dotted grip between the menu and the content. The mouse pointer turns into a double arrow there. While you drag, a blue line shows where the edge will be; the menu takes its new width when you let go.
 - **The width is remembered** on this computer, for every tab and every business unit, also after a reload. A new width also applies at once to the other open tabs of Email Studio.
 - **Double-click the edge** to give the menu its own width back.
 - **With the keyboard:** press Tab until the edge is chosen, then the arrow keys make the menu narrower or wider. **Home** gives it its own width back, **End** makes it as wide as it may be.
-- **Limits:** never narrower than Email Studio's own width, and never wider than 60% of the window. In a smaller window the menu gets narrower; the remembered width comes back when the window is wide enough again.
-- **Collapsing the menu works as before:** the content then uses the whole width, the same as without the extension.
+- **Limits:** never narrower than 170 pixels, and never wider than 60% of the window. In a smaller window the menu gets narrower; the remembered width comes back when the window is wide enough again.
+- **Hide the menu** with the button above it, at the top right of the menu. It is Email Studio's own button; the extension gives it the icon of a side bar in place of the double arrow.
+- **Or drag the edge far to the left:** when you let go left of 170 pixels, the menu is hidden. It keeps the width it had before.
+- **Show the menu again** with the button at the top left, which has the same icon.
+- **One control for each:** a click on the strip between menu and content no longer hides the menu, and Email Studio's thin bar that showed a hidden menu is replaced by the button.
 - **Nothing is changed in Marketing Cloud**, and no request is made for it.
 - **Always on:** nothing changes until you drag the edge, so there is no option for it.
 

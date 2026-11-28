@@ -4199,6 +4199,12 @@ test('the entry and the panel carry the icon of the extension, which names it', 
                 'https://*.lightning.force.com/*',
             ],
         },
+        // the two icons of the buttons that hide and show the menu of Email Studio, which have
+        // a test of their own
+        {
+            resources: ['icons/sidebar-hide.svg', 'icons/sidebar-show.svg'],
+            matches: ['https://*.exacttarget.com/*'],
+        },
         {
             resources: [...EDITOR_FILES, FORMAT_FILE],
             matches: ['https://*.exacttarget.com/*'],

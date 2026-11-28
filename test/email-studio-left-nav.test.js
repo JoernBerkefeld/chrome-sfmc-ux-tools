@@ -7,11 +7,14 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const script = read('../src/email-studio-left-nav.js');
 const css = read('../src/email-studio-left-nav.css');
 const KEY = 'emailStudioLeftNavWidth';
-const LAYOUT =
+const MENU =
     '<div id="divLeftNav" class="legacy-left-nav"><div id="collapseLeftNav" class="toggle-bar"></div><iframe id="fraLeftNav"></iframe></div><div id="divContent" class="legacy-content"></div>';
+const LAYOUT = `<div><div id="expandLeftNav" class="toggle-bar" style="display: none;"></div></div>${MENU}`;
+const EXTENSION = 'chrome-extension://extension-id/';
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const fail = () => Promise.reject(new Error('broken'));
 const isSet = (element, name) => Object.hasOwn(element.dataset, name);
+const inner = (document) => document.querySelector('#fraLeftNav').contentDocument;
 
 /**
  * Runs the script in a page of Email Studio, with a window 1000px wide.
@@ -20,6 +23,7 @@ const isSet = (element, name) => Object.hasOwn(element.dataset, name);
  * @param {string} [options.html] the body of the page
  * @param {Object.<string, unknown>} [options.stored] what chrome.storage.local holds
  * @param {boolean} [options.isBroken] true makes every read and write of the storage fail
+ * @param {(document: Document) => void} [options.prepare] changes the page before the script runs
  * @param {(document: Document) => void} [options.beforeLoad] changes the page after the script ran, before it has loaded
  * @param {boolean} [options.isLate] true runs the script only once the page has loaded
  * @returns {Promise.<object>} the window, its document, the storage and helpers
@@ -28,6 +32,7 @@ async function page({
     html = LAYOUT,
     stored = {},
     isBroken = false,
+    prepare,
     beforeLoad,
     isLate = false,
 } = {}) {
@@ -40,6 +45,7 @@ async function page({
     const listeners = [];
     let reads = 0;
     window.chrome = {
+        runtime: { getURL: (path) => EXTENSION + path },
         storage: {
             local: {
                 get: (defaults) => {
@@ -98,6 +104,15 @@ async function page({
     if (isLate) {
         await loaded;
     }
+    let collapses = 0;
+    let expands = 0;
+    window.document.querySelector('#collapseLeftNav')?.addEventListener('click', () => {
+        collapses += 1;
+    });
+    window.document.querySelector('#expandLeftNav')?.addEventListener('click', () => {
+        expands += 1;
+    });
+    prepare?.(window.document);
     window.eval(script);
     beforeLoad?.(window.document);
     if (!isLate) {
@@ -117,6 +132,10 @@ async function page({
         guide: () => document.querySelector('[data-sfmc-ux-tools-left-nav-guide]'),
         pointer,
         resizes: () => resizes,
+        collapses: () => collapses,
+        expands: () => expands,
+        showButton: () => document.querySelector('[data-sfmc-ux-tools-left-nav-show]'),
+        areBarsReplaced: () => isSet(root, 'sfmcUxToolsLeftNavBars'),
         reads: () => reads,
         waits: () => timers.filter((timer) => !timer.isCleared).map((timer) => timer.delay),
         expire: () => {
@@ -154,7 +173,7 @@ test('the menu gets one handle that tells what it is and can be reached with the
     assert.equal(element.parentElement, document.querySelector('#divLeftNav'));
     assert.equal(element.getAttribute('role'), 'separator');
     assert.equal(element.getAttribute('aria-orientation'), 'vertical');
-    assert.equal(element.getAttribute('aria-valuemin'), '236');
+    assert.equal(element.getAttribute('aria-valuemin'), '170');
     assert.equal(element.getAttribute('aria-valuenow'), '236');
     assert.equal(element.getAttribute('aria-valuemax'), '600');
     assert.equal(element.tabIndex, 0);
@@ -198,12 +217,106 @@ test('only the main button drags', async () => {
     assert.equal(isWidened(), false);
 });
 
-test('the width stays between Email Studio’s own and 60% of the window', async () => {
-    const { drag, width, isWidened } = await page();
+test('the width stays between 170 pixels and 60% of the window', async () => {
+    const { drag, width, key, storage } = await page();
     drag(250, 2000);
     assert.equal(width(), '600px');
-    drag(250, -2000);
+    key('Home');
+    drag(250, 184);
+    assert.equal(width(), '170px');
+    await tick();
+    assert.equal(storage[KEY], 170);
+});
+
+test('a drag that ends left of the least width hides the menu and keeps its width', async () => {
+    const { pointer, guide, width, collapses, resizes, storage, handle } = await page({
+        stored: { [KEY]: 400 },
+    });
+    const told = resizes();
+    pointer('pointerdown', 414);
+    pointer('pointermove', 185);
+    assert.equal(guide().style.left, '-223px');
+    assert.equal(collapses(), 0);
+    pointer('pointermove', 183);
+    assert.equal(guide().style.left, '0px');
+    pointer('pointerup', 183);
+    assert.equal(guide(), null);
+    assert.equal(collapses(), 1);
+    assert.equal(width(), '400px');
+    assert.equal(handle().getAttribute('aria-valuenow'), '400');
+    assert.equal(resizes(), told);
+    await tick();
+    assert.equal(storage[KEY], 400);
+});
+
+test('a drag that comes back from left of the least width does not hide the menu', async () => {
+    const { pointer, width, collapses } = await page();
+    pointer('pointerdown', 250);
+    pointer('pointermove', 100);
+    pointer('pointermove', 200);
+    pointer('pointerup', 200);
+    assert.equal(collapses(), 0);
+    assert.equal(width(), '186px');
+});
+
+test('Email Studio’s two bars are replaced once the handle and the button that shows the menu exist', async () => {
+    const { showButton, areBarsReplaced, expands, document } = await page();
+    assert.equal(areBarsReplaced(), true);
+    const button = showButton();
+    assert.ok(button);
+    assert.equal(button.previousElementSibling, document.querySelector('#divLeftNav'));
+    assert.match(button.title, /^SFMC UX Tools: /);
+    assert.equal(button.getAttribute('aria-label'), 'Show the menu');
+    assert.equal(button.querySelector('img').src, `${EXTENSION}icons/sidebar-show.svg`);
+    assert.equal(document.querySelectorAll('[data-sfmc-ux-tools-left-nav-show]').length, 1);
+    button.click();
+    assert.equal(expands(), 1);
+});
+
+test('a press on the handle without a move neither hides the menu nor changes its width', async () => {
+    const { pointer, collapses, isWidened, resizes } = await page();
+    pointer('pointerdown', 250);
+    pointer('pointerup', 250);
+    assert.equal(collapses(), 0);
     assert.equal(isWidened(), false);
+    assert.equal(resizes(), 0);
+});
+
+test('the focus follows what is left to use: the button of a menu hidden by a drag, the handle of a shown one', async () => {
+    const { pointer, showButton, handle, document } = await page();
+    pointer('pointerdown', 250);
+    pointer('pointermove', 100);
+    pointer('pointerup', 100);
+    assert.equal(document.activeElement, showButton());
+    showButton().click();
+    assert.equal(document.activeElement, handle());
+});
+
+test('without one of Email Studio’s bars both stay as they are, and the handle still works', async () => {
+    for (const html of [MENU, LAYOUT.replace('id="collapseLeftNav"', 'id="other"')]) {
+        const { showButton, areBarsReplaced, drag, width } = await page({ html });
+        assert.equal(areBarsReplaced(), false);
+        assert.equal(showButton(), null);
+        drag(250, 350);
+        assert.equal(width(), '336px');
+    }
+});
+
+test('the button above the menu gets the icon of a side bar, again after the menu’s content is loaded again', async () => {
+    const BUTTON = '<img alt="Toggle Navigation" src="arrows-collapse.png">';
+    const { document, window } = await page({
+        prepare: (document) => {
+            inner(document).body.innerHTML = BUTTON;
+        },
+    });
+    const image = () => inner(document).querySelector('img');
+    assert.equal(image().src, `${EXTENSION}icons/sidebar-hide.svg`);
+    assert.match(image().title, /^SFMC UX Tools: /);
+    inner(document).body.innerHTML = BUTTON;
+    document.querySelector('#fraLeftNav').dispatchEvent(new window.Event('load'));
+    assert.equal(image().src, `${EXTENSION}icons/sidebar-hide.svg`);
+    const plain = await page();
+    assert.ok(plain.handle());
 });
 
 test('a double-click gives the menu its own width back and forgets the kept one', async () => {
@@ -227,7 +340,18 @@ test('the arrow keys, Home and End change the width', async () => {
     key('Home');
     assert.equal(isWidened(), false);
     key('ArrowLeft');
-    assert.equal(isWidened(), false);
+    assert.equal(width(), '220px');
+    for (let press = 0; press < 5; press += 1) {
+        key('ArrowLeft');
+    }
+    assert.equal(width(), '170px');
+});
+
+test('the keys never hide the menu', async () => {
+    const { key, collapses } = await page({ stored: { [KEY]: 170 } });
+    key('ArrowLeft');
+    key('Home');
+    assert.equal(collapses(), 0);
 });
 
 test('other keys are left to the page', async () => {
@@ -246,6 +370,7 @@ test('the kept width is shown when the page opens, and an odd one is not', async
     assert.equal((await page({ stored: { [KEY]: 380 } })).width(), '380px');
     assert.equal((await page({ stored: { [KEY]: 'wide' } })).isWidened(), false);
     assert.equal((await page({ stored: { [KEY]: 5000 } })).width(), '600px');
+    assert.equal((await page({ stored: { [KEY]: 50 } })).width(), '170px');
 });
 
 test('a width kept in another tab is taken over', async () => {
@@ -338,7 +463,32 @@ test('the stylesheet follows the width only while the menu is widened, and leave
     assert.match(css, /html\[data-sfmc-ux-tools-left-nav\] #divLeftNav \{/);
     assert.match(css, /html\[data-sfmc-ux-tools-left-nav\] #collapseLeftNav \{/);
     assert.match(css, /html\[data-sfmc-ux-tools-left-nav\] #divContent:not\(\.expanded\) \{/);
-    assert.doesNotMatch(css, /#divContent\.expanded/);
+});
+
+test('the stylesheet hides Email Studio’s bars only once the script has replaced them', () => {
+    const rules = css
+        .split('}')
+        .filter((rule) => /#(?:collapse|expand)LeftNav[^{]*\{\s*display: none/.test(rule));
+    assert.equal(rules.length, 1);
+    const selectors = rules[0].split('{', 1)[0].split(',');
+    for (const selector of selectors) {
+        assert.match(
+            selector.trim(),
+            /^html\[data-sfmc-ux-tools-left-nav-bars\] #(?:collapse|expand)LeftNav$/,
+        );
+    }
+    assert.match(css, /html\[data-sfmc-ux-tools-left-nav-bars\] #divContent\.expanded \{/);
+    assert.match(css, /\[data-sfmc-ux-tools-left-nav-show\] \{[^}]*display: none;/);
+    // a hidden menu always has its button: it is shown under the same mark that hides the bars
+    assert.match(
+        css,
+        /html\[data-sfmc-ux-tools-left-nav-bars\]:has\(#divContent\.expanded\)\s+\[data-sfmc-ux-tools-left-nav-show\] \{\s*display: block;/,
+    );
+});
+
+test('the handle shows a grip and the pointer of a width that can be dragged', () => {
+    assert.match(css, /\[data-sfmc-ux-tools-left-nav-handle\] \{[^}]*cursor: col-resize;/);
+    assert.match(css, /\[data-sfmc-ux-tools-left-nav-handle\]::after \{[^}]*radial-gradient/);
 });
 
 test('the manifest runs the script and its stylesheet in Email Studio’s frame, without a new permission', () => {
@@ -357,22 +507,31 @@ test('the manifest runs the script and its stylesheet in Email Studio’s frame,
     ]);
     assert.deepEqual(manifest.permissions, ['storage', 'scripting']);
     assert.deepEqual(manifest.host_permissions, ['https://*.marketingcloudapps.com/*']);
+    const icons = manifest.web_accessible_resources.filter((item) =>
+        item.resources.some((resource) => resource.startsWith('icons/sidebar-')),
+    );
+    assert.deepEqual(icons, [
+        {
+            resources: ['icons/sidebar-hide.svg', 'icons/sidebar-show.svg'],
+            matches: ['https://*.exacttarget.com/*'],
+        },
+    ]);
 });
 
 test('while the handle is dragged only a line moves, and the width changes once it is let go', async () => {
     const { pointer, guide, width, isWidened, resizes, storage, handle } = await page();
     pointer('pointerdown', 250);
     assert.ok(guide());
-    assert.equal(guide().style.left, '3px');
+    assert.equal(guide().style.left, '6px');
     pointer('pointermove', 300);
     pointer('pointermove', 414);
-    assert.equal(guide().style.left, '167px');
+    assert.equal(guide().style.left, '170px');
     assert.equal(handle().getAttribute('aria-valuenow'), '400');
     assert.equal(isWidened(), false);
     assert.equal(width(), '');
     assert.equal(resizes(), 0);
     pointer('pointermove', 5000);
-    assert.equal(guide().style.left, '367px');
+    assert.equal(guide().style.left, '370px');
     pointer('pointermove', 414);
     pointer('pointerup', 414);
     assert.equal(guide(), null);

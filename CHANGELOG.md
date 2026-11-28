@@ -16,9 +16,11 @@
     - **Only a warning:** saving works as before, and the extension adds nothing to the content.
     - The feature is always on and has no switch, and needs no new permission.
 - **A wider menu in Email Studio**: the menu on the left of Email Studio was always 236 pixels wide, so long folder names were cut off. Now its right edge can be dragged.
-    - **How:** a handle between the menu and the bar that collapses it. While it is dragged, a line shows where the edge will be, and the width changes once it is let go: Email Studio's tables lose their rows for a moment whenever they get less room, also when the window is made narrower. Double-click it for Email Studio's own width; with the keyboard, the arrow keys, **Home** and **End** change the width.
+    - **How:** a handle with a dotted grip between the menu and the content, in the place of the bar that collapsed the menu on a click. While it is dragged, a line shows where the edge will be, and the width changes once it is let go: Email Studio's tables lose their rows for a moment whenever they get less room, also when the window is made narrower. Double-click it for Email Studio's own width; with the keyboard, the arrow keys, **Home** and **End** change the width.
     - **Remembered:** the width is kept in Chrome's extension storage on this computer, for every tab and business unit, and a new width applies at once to the other open tabs. Email Studio's own width is not kept.
-    - **Limits:** between Email Studio's own width and 60% of the window. A collapsed menu is left to Email Studio, which gives the whole width to the content.
+    - **Limits:** between 170 pixels and 60% of the window.
+    - **Hiding and showing the menu:** the button above the menu, which hid it already, shows the icon of a side bar in place of the double arrow. A drag that ends left of 170 pixels hides the menu too, and the menu keeps the width it had. A hidden menu leaves a button with the same icon at the top left, which shows it again; it takes the place of Email Studio's thin bar for that.
+    - The page loads two more files of the extension for this, the icons of these two buttons.
     - The extension runs one more script and a stylesheet in Email Studio's frame (`https://*.exacttarget.com/C12/Default.aspx`), where it ran already. It makes no request and needs no new permission. The feature is always on and has no switch.
 - **Search the records of a data extension on every field**: in Contact Builder, the **Records** tab of a data extension searched its primary key fields only, and not at all without a primary key. Now it searches any field.
     - **The menu lists every field:** primary key fields on top, marked with **(primary key)**, then all other fields from A to Z below a line.

@@ -145,6 +145,7 @@ export default [
             'src/deep-link-content-builder.js',
             'src/deep-link-email-studio.js',
             'src/deep-link-contact-builder.js',
+            'src/email-studio-left-nav.js',
             'src/user-autofill.js',
             'src/background.js',
             'src/options.js',

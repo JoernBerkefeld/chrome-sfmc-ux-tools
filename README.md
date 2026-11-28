@@ -23,6 +23,7 @@ Install it and Marketing Cloud gets easier to work in. Nothing to set up.
 - **Links to a Content Builder asset:** the address shows which asset is open, and in which business unit, so you can send it to a coworker who also has the extension. In another business unit, the link offers to switch first.
 - **Links into Email Studio:** the same for data extensions and lists, and for folders of data extensions, lists, groups and data filters.
 - **Links into Contact Builder:** the address in the browser now follows what you open in Contact Builder, so you can copy it and send it. Such a link also works for a coworker without the extension.
+- **A wider menu in Email Studio:** drag the right edge of the folder menu to make it wider. The width is remembered.
 - **Search data extension records on every field:** in Contact Builder, the search above the records of a data extension works on any field, also when the data extension has no primary key.
 - **Small fixes for everyday annoyances:** select all scopes of an installed package, and a pasted name or key that Marketing Cloud would ignore is used.
 - **Marketing Cloud Next:** the same help for AMPscript and for Handlebars in the content editor.
@@ -52,6 +53,7 @@ Every section below starts with the platforms it works on: [![Engagement](images
 - **Contact Builder**: the **Records** tab of a data extension, for the [search on every field](#search-the-records-of-a-data-extension-on-every-field).
 - **Email Studio**: the dialog that saves a data filter, for readable keys.
 - **Email Studio**: the page that creates a triggered send, for readable keys.
+- **Email Studio**: the menu on the left, for [a wider menu](#a-wider-menu-in-email-studio).
 - **Journey Builder**: new journeys and their API events, for readable keys and for [a real name before saving](#journey-builder-a-real-name-before-saving).
 - **Setup**: the pages for a new sender profile, send classification, delivery profile, file location, role or user, for readable keys.
 - **Read-only editors**, such as the summary step of an activity, get colours, explanations and underlines, but no suggestions and no fixes.
@@ -826,6 +828,21 @@ In Contact Builder, the **Records** tab of a data extension only searches its pr
     - One field at a time.
     - A search on a field that is not a primary key comes back in the order Marketing Cloud gives, not in the order of a column you sorted by.
 - **Always on:** there is no option for it.
+
+### A wider menu in Email Studio
+
+[![Engagement](images/badge-engagement.svg)](#marketing-cloud-engagement)
+
+The menu on the left of Email Studio, with the folders of data extensions, lists and more, is always 236 pixels wide. Long folder names are cut off, and deep folders need scrolling to the side. The extension lets you make it wider.
+
+- **Drag the right edge of the menu**, between the menu and the bar that collapses it. The mouse pointer turns into a double arrow there. While you drag, a blue line shows where the edge will be; the menu takes its new width when you let go.
+- **The width is remembered** on this computer, for every tab and every business unit, also after a reload. A new width also applies at once to the other open tabs of Email Studio.
+- **Double-click the edge** to give the menu its own width back.
+- **With the keyboard:** press Tab until the edge is chosen, then the arrow keys make the menu narrower or wider. **Home** gives it its own width back, **End** makes it as wide as it may be.
+- **Limits:** never narrower than Email Studio's own width, and never wider than 60% of the window. In a smaller window the menu gets narrower; the remembered width comes back when the window is wide enough again.
+- **Collapsing the menu works as before:** the content then uses the whole width, the same as without the extension.
+- **Nothing is changed in Marketing Cloud**, and no request is made for it.
+- **Always on:** nothing changes until you drag the edge, so there is no option for it.
 
 ### Options
 
